@@ -28,27 +28,31 @@ export default function SmsOptInPage() {
               online booking form only. There is no keyword, verbal, or paper opt-in method.
             </p>
             <p className="text-grid-white font-bold">Step-by-step process:</p>
+            <p className="text-sm">
+              The booking form at{' '}
+              <a href="https://mcracingfortwayne.com/book" className="text-telemetry-cyan underline hover:text-white">
+                mcracingfortwayne.com/book
+              </a>{' '}
+              is a single scrollable page with four sections:
+            </p>
             <ol className="list-decimal list-inside space-y-2 ml-4">
               <li>
-                <span className="text-grid-white">Step 1 — Setup:</span> Customer visits{' '}
-                <a href="https://mcracingfortwayne.com/book" className="text-telemetry-cyan underline hover:text-white">
-                  mcracingfortwayne.com/book
-                </a>{' '}
-                to book a racing session.
+                <span className="text-grid-white">Section 1 — Session Setup:</span> Customer selects
+                the number of racers and session duration.
               </li>
               <li>
-                <span className="text-grid-white">Step 2 — Date &amp; Time:</span> Customer selects
+                <span className="text-grid-white">Section 2 — Date &amp; Time:</span> Customer selects
                 their desired date and available time slot.
               </li>
               <li>
-                <span className="text-grid-white">Step 3 — Details:</span> Customer enters their name,
-                phone number, email address, and birthday. Below the form fields, the customer must
-                check a <span className="text-grid-white">required SMS consent checkbox</span> (unchecked
-                by default) before proceeding.
+                <span className="text-grid-white">Section 3 — Your Details:</span> Customer enters their
+                name, phone number, email address, and birthday.
               </li>
               <li>
-                <span className="text-grid-white">Step 4 — Confirm:</span> Customer reviews all booking
-                details and confirms the booking.
+                <span className="text-grid-white">Section 4 — Waiver &amp; Consent:</span> Customer reads
+                the liability waiver and must check a{' '}
+                <span className="text-grid-white">required SMS consent checkbox</span> (unchecked
+                by default) before submitting.
               </li>
             </ol>
             <p>
@@ -62,8 +66,8 @@ export default function SmsOptInPage() {
           <section className="space-y-3 bg-telemetry-cyan/5 border border-telemetry-cyan/20 p-4 -mx-4 sm:mx-0">
             <h2 className="text-xl text-grid-white font-bold">Exact Opt-In Checkbox Language</h2>
             <p className="text-sm text-pit-gray">
-              The following is the exact text displayed next to the SMS consent checkbox on Step 3
-              of the booking form:
+              The following is the exact text displayed next to the SMS consent checkbox in Section 4
+              (Waiver &amp; Consent) of the booking form:
             </p>
             <div className="bg-carbon-black border border-telemetry-cyan/30 p-4 mt-2">
               <div className="flex items-start gap-3">
