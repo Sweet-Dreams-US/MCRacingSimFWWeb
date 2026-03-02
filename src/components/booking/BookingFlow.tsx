@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import RacerCountSelector from './RacerCountSelector'
 import DurationSelector from './DurationSelector'
@@ -27,13 +27,12 @@ interface AdditionalRacer {
   email: string
 }
 
-type Step = 'config' | 'datetime' | 'info' | 'confirm'
-
 export default function BookingFlow() {
   const router = useRouter()
-  const [step, setStep] = useState<Step>('config')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showConfirmation, setShowConfirmation] = useState(false)
+  const confirmRef = useRef<HTMLDivElement>(null)
 
   // Booking state
   const [racerCount, setRacerCount] = useState<1 | 2 | 3>(1)
@@ -53,12 +52,14 @@ export default function BookingFlow() {
     { name: '', phone: '', email: '' },
   ])
   const [waiverAccepted, setWaiverAccepted] = useState(false)
-  const [marketingOptIn, setMarketingOptIn] = useState(true)
+  const [smsConsent, setSmsConsent] = useState(false)
+  const [marketingOptIn, setMarketingOptIn] = useState(false)
 
   // Validation errors
   const [customerErrors, setCustomerErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
   const [racerErrors, setRacerErrors] = useState<{ [key: number]: Partial<Record<keyof AdditionalRacer, string>> }>({})
   const [waiverError, setWaiverError] = useState<string | undefined>()
+  const [smsConsentError, setSmsConsentError] = useState<string | undefined>()
 
   const validateCustomerInfo = (): boolean => {
     const errors: Partial<Record<keyof CustomerInfo, string>> = {}
@@ -106,39 +107,40 @@ export default function BookingFlow() {
   }
 
   const validateWaiver = (): boolean => {
+    let valid = true
     if (!waiverAccepted) {
       setWaiverError('You must accept the waiver to continue')
-      return false
+      valid = false
+    } else {
+      setWaiverError(undefined)
     }
-    setWaiverError(undefined)
-    return true
+    if (!smsConsent) {
+      setSmsConsentError('You must consent to SMS notifications to complete your booking')
+      valid = false
+    } else {
+      setSmsConsentError(undefined)
+    }
+    return valid
   }
 
-  const handleNext = () => {
-    if (step === 'config') {
-      setStep('datetime')
-    } else if (step === 'datetime') {
-      if (!selectedDate || !selectedTime) {
-        setError('Please select both a date and time')
-        return
-      }
-      setError(null)
-      setStep('info')
-    } else if (step === 'info') {
-      const customerValid = validateCustomerInfo()
-      const racersValid = validateAdditionalRacers()
-      const waiverValid = validateWaiver()
+  const handleReviewBooking = () => {
+    setError(null)
 
-      if (customerValid && racersValid && waiverValid) {
-        setStep('confirm')
-      }
+    if (!selectedDate || !selectedTime) {
+      setError('Please select both a date and time')
+      return
     }
-  }
 
-  const handleBack = () => {
-    if (step === 'datetime') setStep('config')
-    else if (step === 'info') setStep('datetime')
-    else if (step === 'confirm') setStep('info')
+    const customerValid = validateCustomerInfo()
+    const racersValid = validateAdditionalRacers()
+    const waiverValid = validateWaiver()
+
+    if (customerValid && racersValid && waiverValid) {
+      setShowConfirmation(true)
+      setTimeout(() => {
+        confirmRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
+    }
   }
 
   const handleSubmit = async () => {
@@ -179,6 +181,7 @@ export default function BookingFlow() {
         email: customerInfo.email,
         howDidYouHear: customerInfo.howHeard,
         signedWaiver: true,
+        smsConsent: true,
         marketingOptIn,
         // Additional racers
         racer2: racerCount >= 2 ? {
@@ -251,42 +254,6 @@ export default function BookingFlow() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      {/* Progress Indicator */}
-      <div className="flex items-center justify-between mb-8">
-        {['config', 'datetime', 'info', 'confirm'].map((s, i) => (
-          <div key={s} className="flex items-center flex-1">
-            <div
-              className={`w-10 h-10 flex items-center justify-center racing-headline ${
-                step === s
-                  ? 'bg-apex-red text-white'
-                  : ['config', 'datetime', 'info', 'confirm'].indexOf(step) > i
-                  ? 'bg-telemetry-cyan text-asphalt-dark'
-                  : 'bg-white/10 text-pit-gray'
-              }`}
-            >
-              {i + 1}
-            </div>
-            {i < 3 && (
-              <div
-                className={`flex-1 h-0.5 ${
-                  ['config', 'datetime', 'info', 'confirm'].indexOf(step) > i
-                    ? 'bg-telemetry-cyan'
-                    : 'bg-white/10'
-                }`}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Step Labels */}
-      <div className="flex justify-between mb-8 px-2">
-        <span className="telemetry-text text-xs text-pit-gray">Setup</span>
-        <span className="telemetry-text text-xs text-pit-gray">Date & Time</span>
-        <span className="telemetry-text text-xs text-pit-gray">Details</span>
-        <span className="telemetry-text text-xs text-pit-gray">Confirm</span>
-      </div>
-
       {/* Error Display */}
       {error && (
         <div className="mb-6 p-4 bg-apex-red/10 border border-apex-red text-apex-red telemetry-text">
@@ -296,66 +263,98 @@ export default function BookingFlow() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Step 1: Configuration */}
-          {step === 'config' && (
-            <>
-              <RacerCountSelector value={racerCount} onChange={setRacerCount} />
-              <DurationSelector value={duration} onChange={setDuration} />
-            </>
+        <div className="lg:col-span-2 space-y-8">
+          {/* Section 1: Session Setup */}
+          <div className="space-y-6">
+            <h3 className="racing-headline text-2xl text-grid-white">
+              1. Session <span className="text-apex-red">Setup</span>
+            </h3>
+            <RacerCountSelector value={racerCount} onChange={setRacerCount} />
+            <DurationSelector value={duration} onChange={setDuration} />
+          </div>
+
+          <div className="border-t border-white/10" />
+
+          {/* Section 2: Date & Time */}
+          <div className="space-y-6">
+            <h3 className="racing-headline text-2xl text-grid-white">
+              2. Date &amp; <span className="text-telemetry-cyan">Time</span>
+            </h3>
+            <BookingCalendar
+              value={selectedDate}
+              onChange={(date) => {
+                setSelectedDate(date)
+                setSelectedTime(null)
+              }}
+              duration={duration}
+              racerCount={racerCount}
+            />
+            <TimeSlotPicker
+              date={selectedDate}
+              duration={duration}
+              racerCount={racerCount}
+              value={selectedTime}
+              onChange={setSelectedTime}
+            />
+          </div>
+
+          <div className="border-t border-white/10" />
+
+          {/* Section 3: Your Details */}
+          <div className="space-y-6">
+            <h3 className="racing-headline text-2xl text-grid-white">
+              3. Your <span className="text-telemetry-cyan">Details</span>
+            </h3>
+            <CustomerInfoForm
+              value={customerInfo}
+              onChange={setCustomerInfo}
+              errors={customerErrors}
+            />
+            {racerCount > 1 && (
+              <AdditionalRacerForm
+                racerCount={racerCount as 2 | 3}
+                racers={additionalRacers}
+                onChange={setAdditionalRacers}
+                errors={racerErrors}
+              />
+            )}
+          </div>
+
+          <div className="border-t border-white/10" />
+
+          {/* Section 4: Waiver & Consent */}
+          <div className="space-y-6">
+            <h3 className="racing-headline text-2xl text-grid-white">
+              4. Waiver &amp; <span className="text-telemetry-cyan">Consent</span>
+            </h3>
+            <WaiverSection
+              waiverAccepted={waiverAccepted}
+              onWaiverChange={setWaiverAccepted}
+              smsConsent={smsConsent}
+              onSmsConsentChange={setSmsConsent}
+              marketingOptIn={marketingOptIn}
+              onMarketingChange={setMarketingOptIn}
+              error={waiverError}
+              smsConsentError={smsConsentError}
+            />
+          </div>
+
+          {/* Review Button */}
+          {!showConfirmation && (
+            <div className="pt-6 border-t border-white/10">
+              <button
+                type="button"
+                onClick={handleReviewBooking}
+                className="w-full px-8 py-4 bg-apex-red text-white racing-headline text-xl hover:bg-apex-red/90 transition-colors"
+              >
+                Review Booking
+              </button>
+            </div>
           )}
 
-          {/* Step 2: Date & Time */}
-          {step === 'datetime' && (
-            <>
-              <BookingCalendar
-                value={selectedDate}
-                onChange={(date) => {
-                  setSelectedDate(date)
-                  setSelectedTime(null) // Reset time when date changes
-                }}
-                duration={duration}
-                racerCount={racerCount}
-              />
-              <TimeSlotPicker
-                date={selectedDate}
-                duration={duration}
-                racerCount={racerCount}
-                value={selectedTime}
-                onChange={setSelectedTime}
-              />
-            </>
-          )}
-
-          {/* Step 3: Info */}
-          {step === 'info' && (
-            <>
-              <CustomerInfoForm
-                value={customerInfo}
-                onChange={setCustomerInfo}
-                errors={customerErrors}
-              />
-              {racerCount > 1 && (
-                <AdditionalRacerForm
-                  racerCount={racerCount as 2 | 3}
-                  racers={additionalRacers}
-                  onChange={setAdditionalRacers}
-                  errors={racerErrors}
-                />
-              )}
-              <WaiverSection
-                waiverAccepted={waiverAccepted}
-                onWaiverChange={setWaiverAccepted}
-                marketingOptIn={marketingOptIn}
-                onMarketingChange={setMarketingOptIn}
-                error={waiverError}
-              />
-            </>
-          )}
-
-          {/* Step 4: Confirm */}
-          {step === 'confirm' && (
-            <div className="space-y-6">
+          {/* Confirmation Section */}
+          {showConfirmation && (
+            <div ref={confirmRef} className="space-y-6 pt-6 border-t border-white/10">
               <h3 className="racing-headline text-2xl text-grid-white">
                 Review Your <span className="text-apex-red">Booking</span>
               </h3>
@@ -390,7 +389,7 @@ export default function BookingFlow() {
                     {customerInfo.firstName} {customerInfo.lastName}
                   </p>
                   <p className="telemetry-text text-sm text-pit-gray">
-                    {customerInfo.email} • {customerInfo.phone}
+                    {customerInfo.email} &bull; {customerInfo.phone}
                   </p>
                 </div>
 
@@ -401,7 +400,7 @@ export default function BookingFlow() {
                       <div key={i} className="mb-2">
                         <p className="telemetry-text text-grid-white">{racer.name}</p>
                         <p className="telemetry-text text-sm text-pit-gray">
-                          {racer.email} • {racer.phone}
+                          {racer.email} &bull; {racer.phone}
                         </p>
                       </div>
                     ))}
@@ -430,6 +429,31 @@ export default function BookingFlow() {
                   Please arrive 10 minutes early for your session
                 </p>
               </div>
+
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmation(false)}
+                  className="px-6 py-3 border border-white/20 text-grid-white telemetry-text hover:border-white/40 transition-colors"
+                >
+                  Edit Booking
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="flex-1 px-8 py-3 bg-apex-red text-white racing-headline hover:bg-apex-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                      Booking...
+                    </>
+                  ) : (
+                    'Confirm Booking'
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -445,47 +469,6 @@ export default function BookingFlow() {
             />
           </div>
         </div>
-      </div>
-
-      {/* Navigation Buttons */}
-      <div className="flex justify-between mt-8 pt-6 border-t border-white/10">
-        {step !== 'config' ? (
-          <button
-            type="button"
-            onClick={handleBack}
-            className="px-6 py-3 border border-white/20 text-grid-white telemetry-text hover:border-white/40 transition-colors"
-          >
-            Back
-          </button>
-        ) : (
-          <div />
-        )}
-
-        {step !== 'confirm' ? (
-          <button
-            type="button"
-            onClick={handleNext}
-            className="px-8 py-3 bg-apex-red text-white racing-headline hover:bg-apex-red/90 transition-colors"
-          >
-            Continue
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="px-8 py-3 bg-apex-red text-white racing-headline hover:bg-apex-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {submitting ? (
-              <>
-                <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-                Booking...
-              </>
-            ) : (
-              'Confirm Booking'
-            )}
-          </button>
-        )}
       </div>
     </div>
   )

@@ -1,11 +1,16 @@
 'use client'
 
+import Link from 'next/link'
+
 interface WaiverSectionProps {
   waiverAccepted: boolean
   onWaiverChange: (accepted: boolean) => void
+  smsConsent: boolean
+  onSmsConsentChange: (consent: boolean) => void
   marketingOptIn: boolean
   onMarketingChange: (optIn: boolean) => void
   error?: string
+  smsConsentError?: string
 }
 
 const WAIVER_TEXT = `RELEASE OF LIABILITY, WAIVER OF CLAIMS, AND INDEMNITY AGREEMENT
@@ -47,9 +52,12 @@ By checking the box below, I electronically sign this waiver and agree to all te
 export default function WaiverSection({
   waiverAccepted,
   onWaiverChange,
+  smsConsent,
+  onSmsConsentChange,
   marketingOptIn,
   onMarketingChange,
   error,
+  smsConsentError,
 }: WaiverSectionProps) {
   return (
     <div className="space-y-4">
@@ -84,6 +92,34 @@ export default function WaiverSection({
           </span>
         </label>
         {error && <p className="telemetry-text text-xs text-apex-red">{error}</p>}
+
+        {/* SMS Consent - TCR Required */}
+        <label
+          className={`flex items-start gap-3 cursor-pointer p-3 border ${
+            smsConsentError ? 'border-apex-red bg-apex-red/5' : 'border-telemetry-cyan/30 bg-telemetry-cyan/5'
+          } hover:border-telemetry-cyan/50 transition-colors`}
+        >
+          <input
+            type="checkbox"
+            checked={smsConsent}
+            onChange={(e) => onSmsConsentChange(e.target.checked)}
+            className="mt-1 w-5 h-5 accent-telemetry-cyan flex-shrink-0"
+          />
+          <span className="telemetry-text text-sm text-grid-white">
+            I agree to receive booking confirmations, reminders, and session updates via SMS from
+            MC Racing Fort Wayne. Message frequency varies. Msg &amp; data rates may apply. Reply
+            STOP to unsubscribe, HELP for help. View our{' '}
+            <Link href="/privacy" className="text-telemetry-cyan underline hover:text-white" target="_blank">
+              Privacy Policy
+            </Link>{' '}
+            and{' '}
+            <Link href="/terms" className="text-telemetry-cyan underline hover:text-white" target="_blank">
+              Terms of Service
+            </Link>
+            . <span className="text-apex-red">*</span>
+          </span>
+        </label>
+        {smsConsentError && <p className="telemetry-text text-xs text-apex-red">{smsConsentError}</p>}
 
         {/* Marketing Opt-in */}
         <label className="flex items-start gap-3 cursor-pointer p-3 border border-white/10 hover:border-white/30 transition-colors">
