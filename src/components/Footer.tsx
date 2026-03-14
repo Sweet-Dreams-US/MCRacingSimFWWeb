@@ -82,10 +82,10 @@ export default function Footer() {
                 <span className="text-telemetry-cyan">EMAIL://</span>
                 <br />
                 <a
-                  href="mailto:mcsimracing@gmail.com"
+                  href="mailto:mcsimracingfw@gmail.com"
                   className="hover:text-apex-red transition-colors"
                 >
-                  mcsimracing@gmail.com
+                  mcsimracingfw@gmail.com
                 </a>
               </div>
             </address>
@@ -99,16 +99,24 @@ export default function Footer() {
             <div className="space-y-2 telemetry-text text-sm">
               <div className="flex justify-between text-pit-gray">
                 <span>MON</span>
-                <span className="text-apex-red">Closed</span>
+                <span className="text-telemetry-cyan">Reservations Only</span>
               </div>
               <div className="flex justify-between text-pit-gray">
-                <span>TUE - SUN</span>
-                <span className="text-grid-white">11AM - 12AM</span>
+                <span>TUE - THU</span>
+                <span className="text-grid-white">Noon - Midnight</span>
+              </div>
+              <div className="flex justify-between text-pit-gray">
+                <span>FRI - SAT</span>
+                <span className="text-grid-white">Noon - 2AM</span>
+              </div>
+              <div className="flex justify-between text-pit-gray">
+                <span>SUN</span>
+                <span className="text-grid-white">Noon - Midnight</span>
               </div>
             </div>
             <div className="mt-6 p-3 bg-apex-red/10 border border-apex-red/30">
               <p className="telemetry-text text-xs text-apex-red">
-                PRIVATE EVENTS // AVAILABLE BY APPOINTMENT
+                ALWAYS OPEN FOR RESERVATIONS
               </p>
             </div>
           </div>

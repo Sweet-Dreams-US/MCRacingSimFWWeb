@@ -163,7 +163,7 @@ export default function SmsOptInPage() {
             </p>
             <p>
               You may also contact us at{' '}
-              <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a>{' '}
+              <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a>{' '}
               or{' '}
               <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>{' '}
               to opt out.
@@ -178,7 +178,7 @@ export default function SmsOptInPage() {
               contact us:
             </p>
             <div className="ml-4 space-y-1">
-              <p>Email: <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a></p>
+              <p>Email: <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a></p>
               <p>Phone: <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a></p>
             </div>
           </section>
@@ -223,7 +223,7 @@ export default function SmsOptInPage() {
               <p>1205 W Main St</p>
               <p>Fort Wayne, Indiana 46802</p>
               <p><span className="text-grid-white">Email:</span>{' '}
-                <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a>
+                <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a>
               </p>
               <p><span className="text-grid-white">Phone:</span>{' '}
                 <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>

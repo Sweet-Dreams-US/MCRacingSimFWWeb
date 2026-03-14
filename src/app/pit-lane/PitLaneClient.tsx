@@ -174,7 +174,7 @@ export default function PitLaneClient() {
             <Button href="tel:+18082202600" size="lg">Book a Birthday Party</Button>
             <p className="telemetry-text text-sm text-pit-gray mt-4">
               Call us at <a href="tel:+18082202600" className="text-telemetry-cyan hover:underline">(808) 220-2600</a> or
-              email <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan hover:underline">mcsimracing@gmail.com</a>
+              email <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan hover:underline">mcsimracingfw@gmail.com</a>
             </p>
           </div>
         </div>
@@ -202,7 +202,7 @@ export default function PitLaneClient() {
                 ))}
               </ul>
               <div className="flex flex-wrap gap-4">
-                <Button href="mailto:mcsimracing@gmail.com">Request Quote</Button>
+                <Button href="mailto:mcsimracingfw@gmail.com">Request Quote</Button>
                 <Button variant="secondary" href="tel:+18082202600">Call (808) 220-2600</Button>
               </div>
             </div>

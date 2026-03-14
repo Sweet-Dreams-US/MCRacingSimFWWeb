@@ -13,7 +13,7 @@ gsap.registerPlugin(ScrollTrigger)
 const features = [
   {
     icon: '🏭',
-    title: '8,000+ Sq Ft',
+    title: '4,000+ Sq Ft',
     description: 'Expansive industrial warehouse space',
   },
   {
@@ -368,7 +368,7 @@ export default function LocationClient() {
                   </svg>
                   Call Us
                 </Button>
-                <Button href="mailto:mcsimracing@gmail.com" variant="ghost">
+                <Button href="mailto:mcsimracingfw@gmail.com" variant="ghost">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
@@ -400,13 +400,24 @@ export default function LocationClient() {
               <div className="space-y-3 telemetry-text">
                 <div className="flex justify-between">
                   <span className="text-pit-gray">Monday</span>
-                  <span className="text-apex-red">Closed</span>
+                  <span className="text-telemetry-cyan">Reservations Only</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-pit-gray">Tuesday - Sunday</span>
-                  <span className="text-grid-white">11:00 AM - 12:00 AM</span>
+                  <span className="text-pit-gray">Tuesday - Thursday</span>
+                  <span className="text-grid-white">Noon - Midnight</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-pit-gray">Friday - Saturday</span>
+                  <span className="text-grid-white">Noon - 2:00 AM</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-pit-gray">Sunday</span>
+                  <span className="text-grid-white">Noon - Midnight</span>
                 </div>
               </div>
+              <p className="telemetry-text text-xs text-telemetry-cyan mt-4">
+                Always open anytime for reservations
+              </p>
             </div>
 
             <div className="hours-card bg-apex-red/10 p-6 border border-apex-red/30">

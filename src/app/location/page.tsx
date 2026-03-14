@@ -3,7 +3,7 @@ import LocationClient from './LocationClient'
 
 export const metadata: Metadata = {
   title: 'Location & Hours - The Paddock',
-  description: 'Visit MC Racing Sim Fort Wayne at 1205 W Main St, Fort Wayne, IN 46808. Open Tuesday-Sunday 11AM-12AM. 8,000+ sq ft facility with free parking. Directions from I-69 and downtown Fort Wayne. Call 1(808) 220-2600.',
+  description: 'Visit MC Racing Sim Fort Wayne at 1205 W Main St, Fort Wayne, IN 46808. Open Tue-Thu Noon-Midnight, Fri-Sat Noon-2AM, Sun Noon-Midnight. 4,000+ sq ft facility with free parking. Directions from I-69 and downtown Fort Wayne. Call 1(808) 220-2600.',
   keywords: [
     'MC Racing Sim location',
     'sim racing Fort Wayne address',
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     title: 'Location & Hours | MC Racing Sim Fort Wayne',
-    description: '1205 W Main St, Fort Wayne, IN 46808. Open Tue-Sun 11AM-12AM. 8,000+ sq ft facility with free parking.',
+    description: '1205 W Main St, Fort Wayne, IN 46808. Open Tue-Thu Noon-Midnight, Fri-Sat Noon-2AM, Sun Noon-Midnight. 4,000+ sq ft facility with free parking.',
     url: 'https://mcracingfortwayne.com/location',
     images: ['/assets/WideTwoRacingBays.webp'],
   },

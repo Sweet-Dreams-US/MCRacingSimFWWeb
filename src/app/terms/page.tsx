@@ -116,7 +116,7 @@ export default function TermsPage() {
                 MC Racing Fort Wayne, or contact us at:
               </p>
               <div className="ml-4">
-                <p>Email: <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a></p>
+                <p>Email: <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a></p>
                 <p>Phone: <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a></p>
               </div>
             </div>
@@ -191,8 +191,11 @@ export default function TermsPage() {
           <section className="space-y-3">
             <h2 className="text-xl text-grid-white font-bold">Hours of Operation</h2>
             <p>
-              <span className="text-grid-white">Tuesday – Sunday:</span> 12:00 PM – 2:00 AM<br />
-              <span className="text-grid-white">Monday:</span> Closed
+              <span className="text-grid-white">Monday:</span> Reservations Only<br />
+              <span className="text-grid-white">Tuesday – Thursday:</span> Noon – Midnight<br />
+              <span className="text-grid-white">Friday – Saturday:</span> Noon – 2:00 AM<br />
+              <span className="text-grid-white">Sunday:</span> Noon – Midnight<br />
+              Always open anytime for reservations.
             </p>
             <p>
               Hours may vary on holidays. Check our website or call for current hours.
@@ -285,7 +288,7 @@ export default function TermsPage() {
               <p>1205 W Main St</p>
               <p>Fort Wayne, Indiana 46802</p>
               <p><span className="text-grid-white">Email:</span>{' '}
-                <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a>
+                <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a>
               </p>
               <p><span className="text-grid-white">Phone:</span>{' '}
                 <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>

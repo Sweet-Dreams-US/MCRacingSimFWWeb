@@ -33,7 +33,7 @@ const weekendPricing = {
 const techSpecs = [
   { label: 'Simulator Rigs', value: '3', unit: 'STATIONS' },
   { label: 'Force Feedback', value: '20', unit: 'NM TORQUE' },
-  { label: 'Displays', value: '49"', unit: 'ULTRAWIDE' },
+  { label: 'Displays', value: '65"', unit: 'SCREENS' },
   { label: 'Refresh Rate', value: '240', unit: 'HZ' },
 ]
 
@@ -188,8 +188,8 @@ export default function GarageClient() {
             {/* Email option */}
             <p className="telemetry-text text-pit-gray mt-6 mb-4">
               or email us at{' '}
-              <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan hover:underline">
-                mcsimracing@gmail.com
+              <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan hover:underline">
+                mcsimracingfw@gmail.com
               </a>
             </p>
 
@@ -530,7 +530,7 @@ export default function GarageClient() {
               Call to Book: (808) 220-2600
             </Button>
             <p className="telemetry-text text-sm text-pit-gray mt-4">
-              Questions? Email us at <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan hover:underline">mcsimracing@gmail.com</a>
+              Questions? Email us at <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan hover:underline">mcsimracingfw@gmail.com</a>
             </p>
           </div>
         </div>

@@ -108,7 +108,7 @@ export default function PrivacyPage() {
             <p>
               For <span className="text-grid-white">help</span> with SMS messaging, reply{' '}
               <span className="text-telemetry-cyan font-bold">HELP</span> to any message or contact us at{' '}
-              <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a> or{' '}
+              <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a> or{' '}
               <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>.
             </p>
             <p>
@@ -167,7 +167,7 @@ export default function PrivacyPage() {
             </ul>
             <p>
               To exercise any of these rights, contact us at{' '}
-              <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a>.
+              <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a>.
             </p>
           </section>
 
@@ -201,7 +201,7 @@ export default function PrivacyPage() {
               <p>1205 W Main St</p>
               <p>Fort Wayne, Indiana 46802</p>
               <p><span className="text-grid-white">Email:</span>{' '}
-                <a href="mailto:mcsimracing@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracing@gmail.com</a>
+                <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a>
               </p>
               <p><span className="text-grid-white">Phone:</span>{' '}
                 <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>

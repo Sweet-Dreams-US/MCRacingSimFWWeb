@@ -212,7 +212,7 @@ export default function Home() {
               className="stat-item"
             />
             <StatCounter
-              value={8000}
+              value={4000}
               label="Sq Ft Facility"
               suffix="+"
               className="stat-item"
@@ -249,8 +249,8 @@ export default function Home() {
               <span className="text-telemetry-cyan"> MC Racing?</span>
             </h2>
             <p className="telemetry-text text-pit-gray max-w-2xl mx-auto">
-              More than simulators. It's a passion project built by racers, for racers.
-              Meet the team and discover what drives us.
+              A passion built by racers, but for everyone to experience the absolute blast
+              that real race car drivers get to experience.
             </p>
           </div>
 
@@ -258,7 +258,7 @@ export default function Home() {
           <div className="relative max-w-4xl mx-auto">
             <div className="relative aspect-video bg-asphalt-dark border border-white/10 overflow-hidden">
               <iframe
-                src="https://customer-w6h9o08eg118alny.cloudflarestream.com/a279eed7ef4ceef1b3b257b0fb4dfc67/iframe?poster=https%3A%2F%2Fcustomer-w6h9o08eg118alny.cloudflarestream.com%2Fa279eed7ef4ceef1b3b257b0fb4dfc67%2Fthumbnails%2Fthumbnail.jpg%3Ftime%3D25s"
+                src="https://customer-w6h9o08eg118alny.cloudflarestream.com/a279eed7ef4ceef1b3b257b0fb4dfc67/iframe?poster=https%3A%2F%2Fcustomer-w6h9o08eg118alny.cloudflarestream.com%2Fa279eed7ef4ceef1b3b257b0fb4dfc67%2Fthumbnails%2Fthumbnail.jpg%3Ftime%3D10s"
                 className="absolute inset-0 w-full h-full"
                 allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
                 allowFullScreen
@@ -301,9 +301,9 @@ export default function Home() {
               <ul className="space-y-4 mb-8">
                 {[
                   'Direct-drive force feedback wheels',
-                  'Hydraulic load cell pedals',
-                  'Triple-screen immersive displays',
-                  'Motion simulation platform',
+                  'Hydraulic handbrake',
+                  'Triple 65" immersive displays',
+                  'Pro racing H-pattern shifter',
                 ].map((feature, i) => (
                   <li key={i} className="flex items-center gap-3 telemetry-text text-grid-white">
                     <span className="w-2 h-2 bg-apex-red transform rotate-45" />
@@ -325,7 +325,7 @@ export default function Home() {
               <div className="relative aspect-[4/3] bg-asphalt-light overflow-hidden">
                 <Image
                   src="/assets/SimRacer.webp"
-                  alt="Professional racing simulator with triple screens and motion platform"
+                  alt="Professional racing simulator with triple 65-inch screens"
                   fill
                   className="object-cover"
                 />
@@ -340,7 +340,7 @@ export default function Home() {
               {/* Stats overlay */}
               <div className="absolute -bottom-6 -right-6 bg-asphalt-dark p-4 border border-white/10">
                 <p className="telemetry-text text-xs text-pit-gray">HARDWARE VALUE</p>
-                <p className="racing-headline text-2xl text-telemetry-cyan">$15K+ PER RIG</p>
+                <p className="racing-headline text-2xl text-telemetry-cyan">$20K+ PER RIG</p>
               </div>
             </div>
           </div>
@@ -370,12 +370,12 @@ export default function Home() {
               </div>
               <div className="absolute -bottom-6 -left-6 bg-asphalt p-4 border border-white/10">
                 <p className="telemetry-text text-xs text-pit-gray">TRACK TYPE</p>
-                <p className="racing-headline text-2xl text-apex-red">SHORT COURSE DIRT</p>
+                <p className="racing-headline text-2xl text-apex-red">INDOOR CARPET</p>
               </div>
             </div>
             <div className="rc-content">
               <span className="inline-block telemetry-text text-sm text-apex-red uppercase tracking-widest mb-4">
-                // The Dirt
+                // The Track
               </span>
               <h2 className="racing-headline text-4xl md:text-5xl lg:text-6xl text-grid-white mb-6">
                 <ScrambleText text="Technical" />
@@ -383,12 +383,13 @@ export default function Home() {
               </h2>
               <p className="telemetry-text text-pit-gray leading-relaxed mb-8">
                 Technical short-course RC racing. Jumps, rhythm sections, and head-to-head
-                battles on our indoor dirt track.
+                battles on our indoor carpet track.
               </p>
               <ul className="space-y-4 mb-6">
                 {[
-                  'Indoor climate-controlled track',
-                  'Professional-grade RC vehicles',
+                  'Indoor carpet track',
+                  'Rent for dirt cheap or bring your own',
+                  'Up to 1/10 scale',
                   'Jumps & rhythm sections',
                   'Head-to-head racing',
                 ].map((feature, i) => (
@@ -404,7 +405,7 @@ export default function Home() {
                 </p>
               </div>
               <Button href="/pricing" variant="secondary">
-                Hit The Dirt
+                Hit The Track
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>
@@ -439,8 +440,8 @@ export default function Home() {
             <span className="text-apex-red"> The Grid</span>
           </h2>
           <p className="telemetry-text text-xl text-pit-gray mb-10 max-w-2xl mx-auto">
-            We only have 3 simulator bays. Sessions fill up fast.
-            Book now to secure your spot.
+            We here at MC Racing prefer quality over quantity for our simulators.
+            We currently have three, so make sure to book ahead!
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
