@@ -258,7 +258,7 @@ export default function Home() {
           <div className="relative max-w-4xl mx-auto">
             <div className="relative aspect-video bg-asphalt-dark border border-white/10 overflow-hidden">
               <iframe
-                src="https://customer-w6h9o08eg118alny.cloudflarestream.com/a279eed7ef4ceef1b3b257b0fb4dfc67/iframe?poster=https%3A%2F%2Fcustomer-w6h9o08eg118alny.cloudflarestream.com%2Fa279eed7ef4ceef1b3b257b0fb4dfc67%2Fthumbnails%2Fthumbnail.jpg%3Ftime%3D10s"
+                src="https://customer-w6h9o08eg118alny.cloudflarestream.com/a279eed7ef4ceef1b3b257b0fb4dfc67/iframe?poster=https%3A%2F%2Fcustomer-w6h9o08eg118alny.cloudflarestream.com%2Fa279eed7ef4ceef1b3b257b0fb4dfc67%2Fthumbnails%2Fthumbnail.jpg%3Ftime%3D2m20s"
                 className="absolute inset-0 w-full h-full"
                 allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
                 allowFullScreen
