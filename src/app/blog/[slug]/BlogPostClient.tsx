@@ -102,10 +102,10 @@ function MobileTOC({ content }: { content: string }) {
   if (headings.length < 2) return null
 
   return (
-    <div className="xl:hidden fixed bottom-0 left-0 right-0 z-50">
+    <div className="xl:hidden fixed bottom-0 left-0 right-0" style={{ zIndex: 9999, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       {/* Expanded TOC */}
       {isOpen && (
-        <div className="bg-asphalt-dark/98 backdrop-blur-lg border-t border-white/10 max-h-[50vh] overflow-y-auto">
+        <div className="bg-asphalt-dark border-t border-apex-red/50 max-h-[50vh] overflow-y-auto">
           <ul className="px-6 py-4 space-y-1">
             {headings.map(({ id, text }) => (
               <li key={id}>
@@ -129,16 +129,16 @@ function MobileTOC({ content }: { content: string }) {
       {/* Collapsed bar showing current section */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-asphalt-dark/95 backdrop-blur-md border-t border-white/10 px-6 py-3 flex items-center justify-between"
+        className="w-full bg-asphalt-dark border-t-2 border-apex-red px-6 py-4 flex items-center justify-between"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <span className="w-2 h-2 bg-apex-red shrink-0"></span>
-          <span className="telemetry-text text-xs text-grid-white truncate">
+          <span className="w-2.5 h-2.5 bg-apex-red rounded-full shrink-0 animate-pulse"></span>
+          <span className="telemetry-text text-sm text-grid-white truncate">
             {activeHeading?.text || 'Table of Contents'}
           </span>
         </div>
         <svg
-          className={`w-4 h-4 text-pit-gray shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-5 h-5 text-grid-white shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
