@@ -24,6 +24,18 @@ function CheckinContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
+  // Auto-reset to a new blank inspection 2 seconds after a successful walk-in check-in.
+  // Linked bookings (SMS check-in for a specific racer slot) stay on the success screen
+  // to prevent accidental duplicate waiver submissions for the same slot.
+  useEffect(() => {
+    if (submitStatus === 'success' && !isLinkedBooking) {
+      const timer = setTimeout(() => {
+        setSubmitStatus('idle')
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [submitStatus, isLinkedBooking])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -155,28 +167,32 @@ function CheckinContent() {
       <section className="py-16 bg-asphalt">
         <div className="max-w-2xl mx-auto px-6">
           {submitStatus === 'success' ? (
-            <div className="bg-telemetry-cyan/10 border border-telemetry-cyan p-8 text-center">
-              <div className="text-5xl mb-4">✓</div>
-              <h2 className="racing-headline text-2xl text-grid-white mb-4">
-                Tech Inspection <span className="text-telemetry-cyan">Complete!</span>
-              </h2>
-              <p className="telemetry-text text-pit-gray mb-6">
-                {isLinkedBooking
-                  ? "You're all set! Your waiver has been linked to the booking. See you at the track!"
-                  : "You're cleared for the grid. See you at the track!"}
-              </p>
-              {isLinkedBooking && (
+            isLinkedBooking ? (
+              // Linked booking success — persistent screen (no auto-reset to avoid duplicate submissions)
+              <div className="bg-telemetry-cyan/10 border border-telemetry-cyan p-8 text-center">
+                <div className="text-5xl mb-4">✓</div>
+                <h2 className="racing-headline text-2xl text-grid-white mb-4">
+                  Tech Inspection <span className="text-telemetry-cyan">Complete!</span>
+                </h2>
+                <p className="telemetry-text text-pit-gray mb-6">
+                  You&apos;re all set! Your waiver has been linked to the booking. See you at the track!
+                </p>
                 <div className="bg-asphalt-dark border border-white/10 p-4 mb-6">
                   <p className="telemetry-text text-sm text-pit-gray mb-2">Session Location</p>
                   <p className="telemetry-text text-grid-white">MC Racing Sim</p>
                   <p className="telemetry-text text-pit-gray">1205 W Main St, Fort Wayne, IN</p>
                   <p className="telemetry-text text-xs text-apex-red mt-2">Arrive 10 minutes early</p>
                 </div>
-              )}
-              <Button onClick={() => setSubmitStatus('idle')}>
-                Submit Another Waiver
-              </Button>
-            </div>
+              </div>
+            ) : (
+              // Walk-in kiosk success — simple "Thank You!" that auto-clears after 2 seconds
+              <div className="bg-telemetry-cyan/10 border border-telemetry-cyan p-12 text-center">
+                <div className="text-6xl mb-4">✓</div>
+                <h2 className="racing-headline text-4xl md:text-5xl text-grid-white">
+                  Thank <span className="text-telemetry-cyan">You!</span>
+                </h2>
+              </div>
+            )
           ) : (
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Driver Information */}
