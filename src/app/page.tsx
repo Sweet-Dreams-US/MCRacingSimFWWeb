@@ -454,12 +454,6 @@ export default function Home() {
           </div>
 
           {/* Urgency indicator */}
-          <div className="mt-12 inline-flex items-center gap-2 px-4 py-2 bg-apex-red/10 border border-apex-red/30">
-            <span className="w-2 h-2 bg-apex-red rounded-full animate-pulse" />
-            <span className="telemetry-text text-sm text-apex-red">
-              Limited availability this weekend
-            </span>
-          </div>
         </div>
       </section>
     </>
