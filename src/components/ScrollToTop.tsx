@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 
 export default function ScrollToTop() {
   const [isVisible, setIsVisible] = useState(false)
+  const pathname = usePathname()
 
   useEffect(() => {
     const toggleVisibility = () => {
@@ -19,6 +21,11 @@ export default function ScrollToTop() {
       top: 0,
       behavior: 'smooth',
     })
+  }
+
+  // Admin panel has its own scrollable main area — skip the floating button there.
+  if (pathname?.startsWith('/admin')) {
+    return null
   }
 
   return (

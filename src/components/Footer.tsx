@@ -1,9 +1,16 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 export default function Footer() {
   const currentYear = new Date().getFullYear()
+  const pathname = usePathname()
+
+  // Admin panel renders its own chrome — hide the public footer on /admin/*.
+  if (pathname?.startsWith('/admin')) {
+    return null
+  }
 
   return (
     <footer className="bg-asphalt-dark border-t border-white/5">
