@@ -46,17 +46,75 @@ export default function TermsPage() {
               to change without notice for future bookings.
             </p>
             <p>
-              Payment is collected in person after your session. We accept cash, credit cards,
-              and debit cards.
+              <span className="text-grid-white">Online booking cutoff:</span> Online bookings close
+              90 minutes before session start time. For last-minute reservations, call us at{' '}
+              <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>.
+            </p>
+            <p>
+              <span className="text-grid-white">Payment for your session:</span> Session fees are
+              paid in person at the venue (cash or card) at the time of your session. We accept
+              cash, credit cards, and debit cards.
             </p>
             <ul className="list-disc list-inside space-y-1 ml-4">
-              <li>Cancellations must be made at least 24 hours before your session for a full refund</li>
-              <li>Cancellations made less than 24 hours in advance: Subject to a cancellation fee</li>
-              <li>No-shows may be charged the full session price</li>
+              <li>Cancellations made at least 24 hours before your session: full release of any holds, no charge</li>
+              <li>Cancellations made less than 24 hours in advance: may be charged the no-show fee</li>
+              <li>No-shows: <span className="text-grid-white">$20 per seat booked</span> charged to the card on file (see &quot;Card Authorization&quot; below)</li>
               <li>To cancel or reschedule, call us at{' '}
                 <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>
               </li>
             </ul>
+          </section>
+
+          <section className="space-y-3 bg-telemetry-cyan/5 border border-telemetry-cyan/20 p-4 -mx-4 sm:mx-0">
+            <h2 className="text-xl text-grid-white font-bold">Card Authorization &amp; No-Show Fee</h2>
+            <p>
+              To reserve a session online, you provide a credit or debit card at the time of
+              booking. <span className="text-grid-white">Your card is not charged at booking.</span> We
+              securely save the card on file through our payment processor, Stripe, exclusively for
+              the purpose of charging a no-show fee if you fail to show up for your reserved session.
+            </p>
+            <p>
+              <span className="text-grid-white">No-show fee:</span> $20 per seat booked. For example:
+              a 1-racer booking has a $20 no-show fee, a 2-racer booking has a $40 no-show fee, and
+              a 3-racer booking has a $60 no-show fee. The exact amount is shown to you at booking
+              and you must check a box authorizing the charge before the booking is confirmed. The
+              text of the authorization you agreed to is recorded and stored with your booking.
+            </p>
+            <p>
+              <span className="text-grid-white">Authorization scope:</span> By providing a card and
+              checking the no-show authorization box, you authorize MC Racing Sim Fort Wayne to
+              charge that card the disclosed no-show fee in the event you do not show up for your
+              session. We do not charge your card for any other purpose without your separate
+              consent.
+            </p>
+            <p>
+              <span className="text-grid-white">Failed charges:</span> If the no-show charge fails
+              (declined, insufficient funds, expired card, or any other reason), we may attempt to
+              re-charge the same card or contact you to arrange payment. A failed charge does not
+              cancel your obligation to pay the no-show fee.
+            </p>
+            <p>
+              <span className="text-grid-white">Refunds &amp; disputes:</span> If you believe a
+              no-show charge was made in error, contact us at{' '}
+              <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan underline hover:text-white">mcsimracingfw@gmail.com</a>{' '}
+              or{' '}
+              <a href="tel:+18082202600" className="text-telemetry-cyan underline hover:text-white">(808) 220-2600</a>{' '}
+              before initiating a chargeback. We respond to all inquiries within 1 business day.
+            </p>
+            <p>
+              <span className="text-grid-white">Payment data security:</span> We do not store your
+              full card number on our servers. Card details are stored only by Stripe (our PCI-DSS
+              Level 1 certified payment processor). For more information about how Stripe handles
+              payment data, see{' '}
+              <a
+                href="https://stripe.com/privacy"
+                className="text-telemetry-cyan underline hover:text-white"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Stripe&apos;s Privacy Policy
+              </a>.
+            </p>
           </section>
 
           <section className="space-y-3">

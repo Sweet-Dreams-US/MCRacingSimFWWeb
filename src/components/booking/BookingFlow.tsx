@@ -10,7 +10,7 @@ import CustomerInfoForm from './CustomerInfoForm'
 import AdditionalRacerForm from './AdditionalRacerForm'
 import WaiverSection from './WaiverSection'
 import PriceSummary from './PriceSummary'
-import { calculatePrice, formatDateLong } from '@/lib/pricing'
+import { calculatePrice, calculateNoShowFeeCents, formatDateLong } from '@/lib/pricing'
 
 interface CustomerInfo {
   firstName: string
@@ -52,14 +52,14 @@ export default function BookingFlow() {
     { name: '', phone: '', email: '' },
   ])
   const [waiverAccepted, setWaiverAccepted] = useState(false)
-  const [smsConsent, setSmsConsent] = useState(false)
+  const [noShowConsentAccepted, setNoShowConsentAccepted] = useState(false)
   const [marketingOptIn, setMarketingOptIn] = useState(false)
 
   // Validation errors
   const [customerErrors, setCustomerErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
   const [racerErrors, setRacerErrors] = useState<{ [key: number]: Partial<Record<keyof AdditionalRacer, string>> }>({})
   const [waiverError, setWaiverError] = useState<string | undefined>()
-  const [smsConsentError, setSmsConsentError] = useState<string | undefined>()
+  const [noShowConsentError, setNoShowConsentError] = useState<string | undefined>()
 
   const validateCustomerInfo = (): boolean => {
     const errors: Partial<Record<keyof CustomerInfo, string>> = {}
@@ -89,11 +89,11 @@ export default function BookingFlow() {
       const racer = additionalRacers[i]
       const racerError: Partial<Record<keyof AdditionalRacer, string>> = {}
 
+      // Name still required — we need to know who's coming.
       if (!racer.name.trim()) racerError.name = 'Required'
-      if (!racer.phone.trim()) racerError.phone = 'Required'
-      if (!racer.email.trim()) {
-        racerError.email = 'Required'
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(racer.email)) {
+      // Phone is optional now (collected for records, not messaging).
+      // Email is optional — only used to send the friend FYI if provided.
+      if (racer.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(racer.email)) {
         racerError.email = 'Invalid email'
       }
 
@@ -114,11 +114,13 @@ export default function BookingFlow() {
     } else {
       setWaiverError(undefined)
     }
-    if (!smsConsent) {
-      setSmsConsentError('You must consent to SMS notifications to complete your booking')
+    if (!noShowConsentAccepted) {
+      setNoShowConsentError(
+        'You must authorize the no-show fee to complete your booking'
+      )
       valid = false
     } else {
-      setSmsConsentError(undefined)
+      setNoShowConsentError(undefined)
     }
     return valid
   }
@@ -128,6 +130,19 @@ export default function BookingFlow() {
 
     if (!selectedDate || !selectedTime) {
       setError('Please select both a date and time')
+      return
+    }
+
+    // Defense-in-depth 90-minute cutoff check at submit time. The TimeSlotPicker
+    // already grays out within-cutoff slots, but a user could pick a slot, fill
+    // out the form for an hour, and then try to submit — by which point their
+    // selection might have slipped under the cutoff window.
+    if (isSelectedSlotWithinCutoff()) {
+      setError(
+        'Sorry — that time is now less than 90 minutes away. ' +
+          'Online booking closes 90 min before session start. ' +
+          'Call (808) 220-2600 for a last-minute reservation, or pick a later time.'
+      )
       return
     }
 
@@ -143,6 +158,45 @@ export default function BookingFlow() {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // 90-minute cutoff helper — duplicated wall-clock logic from TimeSlotPicker.
+  // Keeping the check at the orchestrator level prevents an edge-case where
+  // the picker rendered the slot as available but enough wall-clock time has
+  // since passed that submission would now violate the cutoff.
+  // ---------------------------------------------------------------------
+  const isSelectedSlotWithinCutoff = (): boolean => {
+    if (!selectedDate || !selectedTime) return false
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date())
+    const get = (type: string) =>
+      parseInt(parts.find((p) => p.type === type)?.value ?? '0', 10)
+    let easternHour = get('hour')
+    if (easternHour === 24) easternHour = 0
+    const easternMinutes = easternHour * 60 + get('minute')
+
+    const [slotYear, slotMonth, slotDay] = selectedDate.split('-').map(Number)
+    const slotEpoch = Date.UTC(slotYear, slotMonth - 1, slotDay, 0, 0)
+    const easternEpoch = Date.UTC(get('year'), get('month') - 1, get('day'), 0, 0)
+    if (slotEpoch > easternEpoch) return false
+    if (slotEpoch < easternEpoch) return true
+
+    const [t, period] = selectedTime.split(' ')
+    const [hStr, mStr] = t.split(':')
+    let h = parseInt(hStr, 10)
+    const m = parseInt(mStr, 10)
+    if (period === 'PM' && h !== 12) h += 12
+    if (period === 'AM' && h === 12) h = 0
+    const slotMinutes = h * 60 + m
+    return slotMinutes - easternMinutes < 90
+  }
+
   const handleSubmit = async () => {
     setSubmitting(true)
     setError(null)
@@ -156,24 +210,29 @@ export default function BookingFlow() {
       if (period === 'AM' && hours === 12) hour24 = 0
       const startTime24 = `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 
-      // Calculate end time
-      let endHour = hour24 + duration
-      const endPeriod = endHour >= 12 && endHour < 24 ? 'PM' : 'AM'
-      if (endHour >= 24) endHour -= 24
-      const displayEndHour = endHour % 12 || 12
-      const endTime = `${displayEndHour}:${String(minutes).padStart(2, '0')} ${endPeriod}`
-
       const { price } = calculatePrice(selectedDate!, duration, racerCount)
+      const noShowFeeCents = calculateNoShowFeeCents(racerCount)
 
-      // Format data to match Google Apps Script expectations
+      // The exact text the customer agreed to. Stored on the booking row for
+      // chargeback defense — if they dispute the no-show charge, we can prove
+      // they consented to this specific amount at this specific time.
+      const consentText =
+        `I authorize MC Racing Sim Fort Wayne to charge the card I provide a ` +
+        `no-show fee of $${(noShowFeeCents / 100).toFixed(0)} ` +
+        `($20 per seat booked, ${racerCount} seat${racerCount > 1 ? 's' : ''}) ` +
+        `if I fail to show up for my session. ` +
+        `My card is not charged at booking — only if I no-show. ` +
+        `Cancellations made at least 24 hours before the session are free.`
+
+      // Format data to match Google Apps Script expectations (legacy — Phase 4
+      // moves this off Apps Script onto the Supabase + Stripe pipeline).
       const bookingData = {
-        type: 'booking', // Script expects 'type' not 'action'
+        type: 'booking',
         sessionDate: selectedDate,
-        startTime: startTime24, // 24-hour format like "14:00"
+        startTime: startTime24,
         duration: String(duration),
-        numberOfRacers: racerCount, // Script expects 'numberOfRacers'
+        numberOfRacers: racerCount,
         price: String(price),
-        // Primary racer - separate fields
         firstName: customerInfo.firstName,
         lastName: customerInfo.lastName,
         birthday: customerInfo.birthday,
@@ -181,9 +240,12 @@ export default function BookingFlow() {
         email: customerInfo.email,
         howDidYouHear: customerInfo.howHeard,
         signedWaiver: true,
-        smsConsent: true,
         marketingOptIn,
-        // Additional racers
+        // No-show consent snapshot (used by Phase 3 Stripe integration)
+        noShowFeeCents,
+        consentText,
+        consentTimestamp: new Date().toISOString(),
+        // Additional racers — phone/email are now optional
         racer2: racerCount >= 2 ? {
           firstName: additionalRacers[0].name.split(' ')[0] || '',
           lastName: additionalRacers[0].name.split(' ').slice(1).join(' ') || '',
@@ -210,28 +272,9 @@ export default function BookingFlow() {
         throw new Error(result.error || 'Booking failed')
       }
 
-      // Send SMS notifications via our API routes
-      try {
-        await fetch('/api/sms/send-confirmation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            bookingId: result.bookingId,
-            customerPhone: customerInfo.phone,
-            customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
-            date: selectedDate,
-            startTime: selectedTime, // Keep 12-hour format for SMS display
-            endTime,
-            racerCount,
-            duration,
-            price,
-            additionalRacers: racerCount > 1 ? additionalRacers.slice(0, racerCount - 1) : [],
-          }),
-        })
-      } catch (smsError) {
-        console.error('SMS error:', smsError)
-        // Don't fail the booking if SMS fails
-      }
+      // No SMS at launch (per spec, June 23 2026). Phase 7a wires up
+      // transactional email via Resend instead; for now, the booking
+      // confirmation lives on the redirect page.
 
       // Redirect to confirmation page
       const params = new URLSearchParams({
@@ -330,12 +373,13 @@ export default function BookingFlow() {
             <WaiverSection
               waiverAccepted={waiverAccepted}
               onWaiverChange={setWaiverAccepted}
-              smsConsent={smsConsent}
-              onSmsConsentChange={setSmsConsent}
+              noShowConsentAccepted={noShowConsentAccepted}
+              onNoShowConsentChange={setNoShowConsentAccepted}
+              noShowFeeCents={calculateNoShowFeeCents(racerCount)}
               marketingOptIn={marketingOptIn}
               onMarketingChange={setMarketingOptIn}
               error={waiverError}
-              smsConsentError={smsConsentError}
+              noShowConsentError={noShowConsentError}
             />
           </div>
 
@@ -405,18 +449,22 @@ export default function BookingFlow() {
                       </div>
                     ))}
                     <p className="telemetry-text text-xs text-telemetry-cyan mt-2">
-                      They will receive an SMS to complete their waiver
+                      We&apos;ll send a courtesy FYI email to anyone whose email you provided.
+                      All waivers are signed at the front desk on arrival.
                     </p>
                   </div>
                 )}
 
-                <div className="border-t border-white/10 pt-4">
+                <div className="border-t border-white/10 pt-4 space-y-2">
                   <div className="flex justify-between items-center">
-                    <p className="telemetry-text text-pit-gray">Total Due</p>
+                    <p className="telemetry-text text-pit-gray">Session Price</p>
                     <p className="racing-headline text-4xl text-apex-red">${price}</p>
                   </div>
-                  <p className="telemetry-text text-xs text-pit-gray mt-2">
-                    Payment collected in person after your session
+                  <p className="telemetry-text text-xs text-pit-gray">
+                    Paid in person at your session — cash or card.
+                  </p>
+                  <p className="telemetry-text text-xs text-telemetry-cyan">
+                    Card on file charged only if you no-show: ${(calculateNoShowFeeCents(racerCount) / 100).toFixed(0)} ($20/seat).
                   </p>
                 </div>
               </div>

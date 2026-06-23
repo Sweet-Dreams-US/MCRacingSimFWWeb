@@ -34,7 +34,8 @@ export default function AdditionalRacerForm({
       </h3>
 
       <p className="telemetry-text text-sm text-pit-gray">
-        We&apos;ll send them a link to complete their check-in and waiver before your session.
+        Tell us who&apos;s coming with you. Their email is optional — if you add it,
+        we&apos;ll send them a friendly heads-up that you&apos;ve booked them in.
       </p>
 
       <div className="space-y-4">
@@ -55,7 +56,7 @@ export default function AdditionalRacerForm({
                 <span className="telemetry-text text-grid-white">Racer {racerNumber}</span>
               </div>
 
-              {/* Name */}
+              {/* Name — required, so we know who's coming */}
               <div>
                 <label className="block telemetry-text text-xs text-pit-gray mb-1">
                   Full Name <span className="text-apex-red">*</span>
@@ -74,11 +75,11 @@ export default function AdditionalRacerForm({
                 )}
               </div>
 
-              {/* Contact Row */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Phone + Email — both optional */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block telemetry-text text-xs text-pit-gray mb-1">
-                    Phone <span className="text-apex-red">*</span>
+                    Phone <span className="text-pit-gray/60">(optional)</span>
                   </label>
                   <input
                     type="tel"
@@ -95,7 +96,7 @@ export default function AdditionalRacerForm({
                 </div>
                 <div>
                   <label className="block telemetry-text text-xs text-pit-gray mb-1">
-                    Email <span className="text-apex-red">*</span>
+                    Email <span className="text-pit-gray/60">(optional — for FYI)</span>
                   </label>
                   <input
                     type="email"
@@ -117,8 +118,8 @@ export default function AdditionalRacerForm({
       </div>
 
       <p className="telemetry-text text-xs text-pit-gray">
-        <span className="text-telemetry-cyan">Note:</span> Additional racers will receive an SMS
-        with a link to complete their waiver before the session.
+        <span className="text-telemetry-cyan">Note:</span> Waivers are signed at the front desk
+        on arrival — please show up 10 minutes early so everyone is checked in by session time.
       </p>
     </div>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { calculatePrice, formatDate, getDayType } from '@/lib/pricing'
+import { calculatePrice, calculateNoShowFeeCents, formatDate, getDayType } from '@/lib/pricing'
 
 interface PriceSummaryProps {
   date: string | null
@@ -84,14 +84,24 @@ export default function PriceSummary({ date, duration, racerCount, startTime }: 
         )}
       </div>
 
-      <div className="border-t border-white/10 pt-4">
+      <div className="border-t border-white/10 pt-4 space-y-3">
         <div className="flex justify-between items-center">
-          <p className="telemetry-text text-pit-gray">Total Due</p>
+          <p className="telemetry-text text-pit-gray">Session Price</p>
           <p className="racing-headline text-4xl text-apex-red">${price}</p>
         </div>
-        <p className="telemetry-text text-xs text-pit-gray mt-2">
-          Payment collected in person after your session
+        <p className="telemetry-text text-xs text-pit-gray">
+          Paid in person at your session — cash or card.
         </p>
+        <div className="bg-telemetry-cyan/5 border border-telemetry-cyan/20 p-3 mt-2">
+          <p className="telemetry-text text-xs text-telemetry-cyan font-bold mb-1">
+            CARD HELD ON FILE
+          </p>
+          <p className="telemetry-text text-xs text-pit-gray leading-relaxed">
+            We save your card at booking but only charge it if you no-show
+            (<span className="text-grid-white">${(calculateNoShowFeeCents(racerCount) / 100).toFixed(0)}</span>{' '}
+            — $20 per seat). Cancel 24+ hours in advance for free.
+          </p>
+        </div>
       </div>
     </div>
   )

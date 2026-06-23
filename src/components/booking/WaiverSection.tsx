@@ -5,12 +5,15 @@ import Link from 'next/link'
 interface WaiverSectionProps {
   waiverAccepted: boolean
   onWaiverChange: (accepted: boolean) => void
-  smsConsent: boolean
-  onSmsConsentChange: (consent: boolean) => void
+  // No-show consent — replaces the old SMS consent. Mandatory; the booking
+  // can't proceed without explicit acknowledgment of the card-on-file charge.
+  noShowConsentAccepted: boolean
+  onNoShowConsentChange: (accepted: boolean) => void
+  noShowFeeCents: number // displayed in the consent text and stored on the booking
   marketingOptIn: boolean
   onMarketingChange: (optIn: boolean) => void
   error?: string
-  smsConsentError?: string
+  noShowConsentError?: string
 }
 
 const WAIVER_TEXT = `RELEASE OF LIABILITY, WAIVER OF CLAIMS, AND INDEMNITY AGREEMENT
@@ -49,15 +52,20 @@ I have read this agreement, understand its contents, and sign it voluntarily. I 
 
 By checking the box below, I electronically sign this waiver and agree to all terms above.`
 
+function formatDollars(cents: number): string {
+  return `$${(cents / 100).toFixed(0)}`
+}
+
 export default function WaiverSection({
   waiverAccepted,
   onWaiverChange,
-  smsConsent,
-  onSmsConsentChange,
+  noShowConsentAccepted,
+  onNoShowConsentChange,
+  noShowFeeCents,
   marketingOptIn,
   onMarketingChange,
   error,
-  smsConsentError,
+  noShowConsentError,
 }: WaiverSectionProps) {
   return (
     <div className="space-y-4">
@@ -93,33 +101,34 @@ export default function WaiverSection({
         </label>
         {error && <p className="telemetry-text text-xs text-apex-red">{error}</p>}
 
-        {/* SMS Consent - TCR Required */}
+        {/* No-Show Consent — required to book. Stored as a snapshot on the
+            booking row for chargeback defense. */}
         <label
           className={`flex items-start gap-3 cursor-pointer p-3 border ${
-            smsConsentError ? 'border-apex-red bg-apex-red/5' : 'border-telemetry-cyan/30 bg-telemetry-cyan/5'
+            noShowConsentError
+              ? 'border-apex-red bg-apex-red/5'
+              : 'border-telemetry-cyan/30 bg-telemetry-cyan/5'
           } hover:border-telemetry-cyan/50 transition-colors`}
         >
           <input
             type="checkbox"
-            checked={smsConsent}
-            onChange={(e) => onSmsConsentChange(e.target.checked)}
+            checked={noShowConsentAccepted}
+            onChange={(e) => onNoShowConsentChange(e.target.checked)}
             className="mt-1 w-5 h-5 accent-telemetry-cyan flex-shrink-0"
           />
           <span className="telemetry-text text-sm text-grid-white">
-            I agree to receive booking confirmations, reminders, and session updates via SMS from
-            MC Racing Fort Wayne. Message frequency varies. Msg &amp; data rates may apply. Reply
-            STOP to unsubscribe, HELP for help. View our{' '}
-            <Link href="/privacy" className="text-telemetry-cyan underline hover:text-white" target="_blank">
-              Privacy Policy
-            </Link>{' '}
-            and{' '}
+            I authorize MC Racing Sim Fort Wayne to charge the card I provide a{' '}
+            <span className="text-telemetry-cyan font-bold">no-show fee of {formatDollars(noShowFeeCents)}</span>{' '}
+            ($20 per seat booked) if I fail to show up for my session. My card is not
+            charged at booking — only if I no-show. Cancellations made at least 24 hours
+            before the session are free. View our{' '}
             <Link href="/terms" className="text-telemetry-cyan underline hover:text-white" target="_blank">
               Terms of Service
             </Link>
             . <span className="text-apex-red">*</span>
           </span>
         </label>
-        {smsConsentError && <p className="telemetry-text text-xs text-apex-red">{smsConsentError}</p>}
+        {noShowConsentError && <p className="telemetry-text text-xs text-apex-red">{noShowConsentError}</p>}
 
         {/* Marketing Opt-in */}
         <label className="flex items-start gap-3 cursor-pointer p-3 border border-white/10 hover:border-white/30 transition-colors">
