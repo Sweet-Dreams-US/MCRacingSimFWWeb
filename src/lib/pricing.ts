@@ -94,3 +94,21 @@ export function formatDateLong(dateStr: string): string {
     day: 'numeric',
   })
 }
+
+// ============================================================================
+// No-show fee
+// ============================================================================
+// Per spec (June 23, 2026): flat $20 per seat booked, charged to card on file
+// if the customer no-shows. Stored on the booking at creation time so we can't
+// retroactively change what they consented to.
+
+export const NO_SHOW_FEE_CENTS_PER_SEAT = 2000 // $20.00
+
+export function calculateNoShowFeeCents(racerCount: RacerCount): number {
+  return racerCount * NO_SHOW_FEE_CENTS_PER_SEAT
+}
+
+export function formatNoShowFee(racerCount: RacerCount): string {
+  const cents = calculateNoShowFeeCents(racerCount)
+  return `$${(cents / 100).toFixed(0)}`
+}
