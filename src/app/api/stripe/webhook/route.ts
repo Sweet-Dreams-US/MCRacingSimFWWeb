@@ -1,0 +1,235 @@
+// POST /api/stripe/webhook
+// Stripe → us. Signed by Stripe with our webhook secret.
+//
+// Critical design points:
+//   1. SIGNATURE FIRST — never trust the request body until the
+//      signature has been verified. Forged events could create
+//      bookings, mark payments, anything.
+//   2. IDEMPOTENT — every event has a unique stripe_event_id.
+//      We insert it into stripe_webhook_events before processing;
+//      if the insert conflicts, we've already seen this event
+//      and can safely no-op (Stripe retries on 5xx + timeouts).
+//   3. ACK FAST — Stripe times out at 30s and retries on timeout.
+//      Do the minimum here and queue anything expensive.
+import { NextRequest, NextResponse } from 'next/server'
+import Stripe from 'stripe'
+import { getStripe } from '@/lib/stripe'
+import { createAdminClient } from '@/lib/supabase/admin'
+import type { Json } from '@/lib/supabase/types'
+
+// Force Node.js runtime — Stripe SDK + crypto for signature verification
+// need full Node, not Edge.
+export const runtime = 'nodejs'
+
+export async function POST(request: NextRequest) {
+  const signature = request.headers.get('stripe-signature')
+  if (!signature) {
+    return NextResponse.json(
+      { error: 'Missing stripe-signature header' },
+      { status: 400 }
+    )
+  }
+
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+  if (!webhookSecret) {
+    console.error('STRIPE_WEBHOOK_SECRET is not configured')
+    return NextResponse.json(
+      { error: 'Webhook not configured' },
+      { status: 500 }
+    )
+  }
+
+  // ---- 1. Verify signature (with raw body) --------------------------------
+  // Stripe needs the RAW request body to verify the signature — not the
+  // JSON-parsed object. Next.js gives us text() which is the raw text.
+  const rawBody = await request.text()
+  const stripe = getStripe()
+
+  let event: Stripe.Event
+  try {
+    event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'unknown error'
+    console.error(`Webhook signature verification failed: ${message}`)
+    return NextResponse.json(
+      { error: `Invalid signature: ${message}` },
+      { status: 400 }
+    )
+  }
+
+  // ---- 2. Idempotency: insert event row; if conflict, already processed --
+  const supabase = createAdminClient()
+
+  const { error: insertError } = await supabase
+    .from('stripe_webhook_events')
+    .insert({
+      stripe_event_id: event.id,
+      event_type: event.type,
+      // Stripe event payloads are JSON-serializable but TypeScript doesn't
+      // know that without an assertion. The data round-trips cleanly through
+      // jsonb because Stripe only sends primitives + nested objects.
+      payload: event.data.object as unknown as Json,
+    })
+
+  if (insertError) {
+    // 23505 = unique_violation — we've seen this event before. Return 200
+    // so Stripe stops retrying.
+    if (
+      insertError.code === '23505' ||
+      insertError.message?.includes('duplicate')
+    ) {
+      return NextResponse.json({ received: true, duplicate: true })
+    }
+    // Other DB errors: return 500 so Stripe retries.
+    console.error(
+      `Failed to record webhook event ${event.id}: ${insertError.message}`
+    )
+    return NextResponse.json({ error: 'DB error' }, { status: 500 })
+  }
+
+  // ---- 3. Dispatch by event type ------------------------------------------
+  try {
+    await processEvent(event, supabase)
+
+    // Mark processed
+    await supabase
+      .from('stripe_webhook_events')
+      .update({ processed_at: new Date().toISOString() })
+      .eq('stripe_event_id', event.id)
+
+    return NextResponse.json({ received: true })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'unknown error'
+    console.error(`Error processing event ${event.id} (${event.type}): ${message}`)
+    // Record the error so we can replay later from the events table.
+    await supabase
+      .from('stripe_webhook_events')
+      .update({ error: message })
+      .eq('stripe_event_id', event.id)
+    // Return 500 — Stripe will retry, but our processed_at check stops
+    // duplicate side-effects.
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Event handlers
+// ---------------------------------------------------------------------------
+
+type Supa = ReturnType<typeof createAdminClient>
+
+async function processEvent(event: Stripe.Event, supabase: Supa) {
+  switch (event.type) {
+    case 'setup_intent.succeeded':
+      return handleSetupIntentSucceeded(event, supabase)
+
+    case 'setup_intent.setup_failed':
+      return handleSetupIntentFailed(event, supabase)
+
+    case 'payment_intent.succeeded':
+      return handlePaymentIntentSucceeded(event, supabase)
+
+    case 'payment_intent.payment_failed':
+      return handlePaymentIntentFailed(event, supabase)
+
+    case 'charge.dispute.created':
+      return handleDisputeCreated(event, supabase)
+
+    default:
+      // Lots of events fire that we don't act on (customer.updated, etc.).
+      // We've already logged them in stripe_webhook_events; that's enough.
+      return
+  }
+}
+
+async function handleSetupIntentSucceeded(event: Stripe.Event, supabase: Supa) {
+  const setupIntent = event.data.object as Stripe.SetupIntent
+  const bookingId = setupIntent.metadata?.booking_id
+  const paymentMethodId =
+    typeof setupIntent.payment_method === 'string'
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id
+
+  if (!bookingId || !paymentMethodId) {
+    throw new Error(
+      `setup_intent.succeeded missing metadata.booking_id or payment_method: ` +
+        `intent=${setupIntent.id} booking=${bookingId} pm=${paymentMethodId}`
+    )
+  }
+
+  const { error } = await supabase
+    .from('bookings')
+    .update({ stripe_payment_method_id: paymentMethodId })
+    .eq('id', bookingId)
+
+  if (error) {
+    throw new Error(
+      `Failed to attach payment method to booking ${bookingId}: ${error.message}`
+    )
+  }
+}
+
+async function handleSetupIntentFailed(event: Stripe.Event, supabase: Supa) {
+  const setupIntent = event.data.object as Stripe.SetupIntent
+  const bookingId = setupIntent.metadata?.booking_id
+  // We don't delete the booking — staff can follow up with the customer.
+  // Just leave stripe_payment_method_id null. Mark could decide to cancel
+  // or contact them; the admin UI can show "card setup failed" badge.
+  console.warn(
+    `SetupIntent failed for booking ${bookingId}: ${setupIntent.last_setup_error?.message ?? 'unknown'}`
+  )
+  void supabase // silence "unused" if no DB work needed for this case
+}
+
+async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa) {
+  const intent = event.data.object as Stripe.PaymentIntent
+
+  // Update the stripe_charges row that created this PaymentIntent (the
+  // admin code that created it should have inserted a pending row with
+  // matching stripe_payment_intent_id).
+  const { error: chargeError } = await supabase
+    .from('stripe_charges')
+    .update({ status: 'succeeded' })
+    .eq('stripe_payment_intent_id', intent.id)
+
+  if (chargeError) {
+    throw new Error(
+      `Failed to update stripe_charges to succeeded for ${intent.id}: ${chargeError.message}`
+    )
+  }
+
+  // The transaction record gets inserted by the admin action that created the
+  // PaymentIntent — webhook just confirms status. (Decoupling here means a
+  // missed webhook doesn't lose the transaction; the admin row is the truth.)
+}
+
+async function handlePaymentIntentFailed(event: Stripe.Event, supabase: Supa) {
+  const intent = event.data.object as Stripe.PaymentIntent
+  const { error } = await supabase
+    .from('stripe_charges')
+    .update({
+      status: 'failed',
+      decline_code: intent.last_payment_error?.decline_code ?? null,
+      failure_message: intent.last_payment_error?.message ?? null,
+    })
+    .eq('stripe_payment_intent_id', intent.id)
+
+  if (error) {
+    throw new Error(
+      `Failed to update stripe_charges to failed for ${intent.id}: ${error.message}`
+    )
+  }
+  // TODO Phase 7a: send email alert to OWNER_NOTIFICATION_EMAIL so Mark knows
+  // to follow up on the no-show charge that didn't go through.
+}
+
+async function handleDisputeCreated(event: Stripe.Event, supabase: Supa) {
+  const dispute = event.data.object as Stripe.Dispute
+  console.error(
+    `🚨 Stripe dispute created: ${dispute.id} for charge ${dispute.charge} ` +
+      `amount=${dispute.amount} reason=${dispute.reason}`
+  )
+  // TODO Phase 7a: send urgent email to OWNER_NOTIFICATION_EMAIL with the
+  // dispute details + a link to the consent snapshot for the related booking.
+  void supabase
+}

@@ -2,6 +2,8 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Elements } from '@stripe/react-stripe-js'
+import { loadStripe, type Stripe as StripeJs } from '@stripe/stripe-js'
 import RacerCountSelector from './RacerCountSelector'
 import DurationSelector from './DurationSelector'
 import BookingCalendar from './BookingCalendar'
@@ -10,7 +12,32 @@ import CustomerInfoForm from './CustomerInfoForm'
 import AdditionalRacerForm from './AdditionalRacerForm'
 import WaiverSection from './WaiverSection'
 import PriceSummary from './PriceSummary'
+import CardSetupForm from './CardSetupForm'
 import { calculatePrice, calculateNoShowFeeCents, formatDateLong } from '@/lib/pricing'
+
+// Stripe.js is heavy; load lazily on demand. Returns a Promise<Stripe | null>.
+// We resolve it once at module scope so we don't redownload Stripe.js on
+// every re-render.
+let stripePromise: Promise<StripeJs | null> | null = null
+function getStripePromise(): Promise<StripeJs | null> {
+  if (!stripePromise) {
+    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    if (!publishableKey) {
+      // Unconfigured: return null so the UI can render an error.
+      stripePromise = Promise.resolve(null)
+    } else {
+      stripePromise = loadStripe(publishableKey)
+    }
+  }
+  return stripePromise
+}
+
+interface CardSetupSession {
+  bookingId: string
+  setupIntentClientSecret: string
+  sessionPriceCents: number
+  noShowFeeCents: number
+}
 
 interface CustomerInfo {
   firstName: string
@@ -32,7 +59,10 @@ export default function BookingFlow() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  // Set after the booking is created — triggers the Stripe Elements card step
+  const [cardSetup, setCardSetup] = useState<CardSetupSession | null>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
+  const cardSetupRef = useRef<HTMLDivElement>(null)
 
   // Booking state
   const [racerCount, setRacerCount] = useState<1 | 2 | 3>(1)
@@ -260,7 +290,8 @@ export default function BookingFlow() {
         } : null,
       }
 
-      // Use our API route to avoid CORS issues with Google Apps Script
+      // POST to our API → creates Supabase customer + booking + Stripe
+      // SetupIntent. Returns the client_secret so the card step can collect.
       const response = await fetch('/api/booking/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -272,21 +303,22 @@ export default function BookingFlow() {
         throw new Error(result.error || 'Booking failed')
       }
 
-      // No SMS at launch (per spec, June 23 2026). Phase 7a wires up
-      // transactional email via Resend instead; for now, the booking
-      // confirmation lives on the redirect page.
-
-      // Redirect to confirmation page
-      const params = new URLSearchParams({
+      // Step into the card-collection UI. The booking row is already created
+      // in Supabase with status='confirmed'; the SetupIntent is created and
+      // the only thing missing is the actual card attachment, which happens
+      // browser → Stripe via Elements (we never see card data).
+      setCardSetup({
         bookingId: result.bookingId,
-        date: selectedDate!,
-        time: selectedTime!,
-        duration: duration.toString(),
-        racers: racerCount.toString(),
-        price: price.toString(),
-        name: customerInfo.firstName,
+        setupIntentClientSecret: result.setupIntentClientSecret,
+        sessionPriceCents: result.sessionPriceCents,
+        noShowFeeCents: result.noShowFeeCents,
       })
-      router.push(`/book/confirmation?${params.toString()}`)
+      setSubmitting(false)
+
+      // Scroll the card step into view
+      setTimeout(() => {
+        cardSetupRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setSubmitting(false)
@@ -478,30 +510,77 @@ export default function BookingFlow() {
                 </p>
               </div>
 
-              <div className="flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmation(false)}
-                  className="px-6 py-3 border border-white/20 text-grid-white telemetry-text hover:border-white/40 transition-colors"
-                >
-                  Edit Booking
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="flex-1 px-8 py-3 bg-apex-red text-white racing-headline hover:bg-apex-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {submitting ? (
-                    <>
-                      <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-                      Booking...
-                    </>
-                  ) : (
-                    'Confirm Booking'
-                  )}
-                </button>
+              {!cardSetup && (
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmation(false)}
+                    className="px-6 py-3 border border-white/20 text-grid-white telemetry-text hover:border-white/40 transition-colors"
+                  >
+                    Edit Booking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="flex-1 px-8 py-3 bg-apex-red text-white racing-headline hover:bg-apex-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                        Preparing checkout...
+                      </>
+                    ) : (
+                      'Continue to Payment'
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Card setup step — appears after the booking row is created in Supabase.
+              The <Elements> provider hydrates Stripe.js with the SetupIntent's
+              client_secret; <CardSetupForm /> handles the actual card collection. */}
+          {cardSetup && (
+            <div ref={cardSetupRef} className="space-y-6 pt-6 border-t border-white/10">
+              <div>
+                <p className="telemetry-text text-xs text-telemetry-cyan uppercase tracking-wider">
+                  Step 5 of 5
+                </p>
+                <h3 className="racing-headline text-2xl text-grid-white">
+                  Save Your <span className="text-telemetry-cyan">Card</span>
+                </h3>
+                <p className="telemetry-text text-sm text-pit-gray mt-1">
+                  Booking <span className="text-grid-white">{cardSetup.bookingId}</span> reserved.
+                  Save a card to lock it in — your card isn&apos;t charged today.
+                </p>
               </div>
+              <Elements
+                stripe={getStripePromise()}
+                options={{
+                  clientSecret: cardSetup.setupIntentClientSecret,
+                  appearance: {
+                    theme: 'night',
+                    variables: {
+                      colorPrimary: '#E62322',
+                      colorBackground: '#0D0D0D',
+                      colorText: '#F5F5F5',
+                      colorDanger: '#E62322',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      borderRadius: '0px',
+                    },
+                  },
+                }}
+              >
+                <CardSetupForm
+                  bookingId={cardSetup.bookingId}
+                  sessionPriceCents={cardSetup.sessionPriceCents}
+                  noShowFeeCents={cardSetup.noShowFeeCents}
+                  customerFirstName={customerInfo.firstName}
+                  customerEmail={customerInfo.email}
+                />
+              </Elements>
             </div>
           )}
         </div>
