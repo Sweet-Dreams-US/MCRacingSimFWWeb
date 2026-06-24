@@ -84,6 +84,16 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/admin/payouts/marketing',
+    label: 'Marketing',
+    icon: ({ className }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <polyline points="3 17 9 11 13 15 21 7" />
+        <polyline points="14 7 21 7 21 14" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/reports',
     label: 'Reports',
     icon: ({ className }) => (
@@ -125,10 +135,25 @@ export default function AdminSidebar({ fullName, role }: AdminSidebarProps) {
 
   // /admin is the dashboard; treat sub-routes as belonging to their own item.
   // Without this, "Dashboard" would stay highlighted on every /admin/* page.
-  const isActive = (href: string): boolean => {
-    if (href === '/admin') return pathname === '/admin'
-    return pathname === href || pathname.startsWith(`${href}/`)
-  }
+  //
+  // We also need to make sure that a parent route (e.g. /admin/payouts) doesn't
+  // light up when a more specific sibling item (e.g. /admin/payouts/marketing)
+  // is the better match. Pick the longest matching href and only highlight that.
+  const matchedHref = (() => {
+    let best: string | null = null
+    for (const item of navItems) {
+      const matches =
+        item.href === '/admin'
+          ? pathname === '/admin'
+          : pathname === item.href || pathname.startsWith(`${item.href}/`)
+      if (matches && (best === null || item.href.length > best.length)) {
+        best = item.href
+      }
+    }
+    return best
+  })()
+
+  const isActive = (href: string): boolean => href === matchedHref
 
   return (
     <>

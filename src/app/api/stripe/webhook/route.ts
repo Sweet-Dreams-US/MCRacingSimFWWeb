@@ -1,6 +1,13 @@
 // POST /api/stripe/webhook
 // Stripe → us. Signed by Stripe with our webhook secret.
 //
+// TODO (Phase 7a follow-up): build src/app/api/resend/webhook/route.ts to
+// handle Resend's delivery / bounce / complaint events. That handler will
+// update email_log.status (e.g. 'delivered', 'bounced', 'complained') so
+// the admin panel can show real delivery state per message. Resend signs
+// its webhooks with Svix &mdash; verify the signature before trusting the
+// payload, same idempotency pattern as below.
+//
 // Critical design points:
 //   1. SIGNATURE FIRST — never trust the request body until the
 //      signature has been verified. Forged events could create

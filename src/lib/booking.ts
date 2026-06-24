@@ -17,6 +17,8 @@ import {
   calculatePrice,
   calculateNoShowFeeCents,
 } from './pricing'
+import { createBookingCalendarEvent } from './calendar'
+import { sendBookingEmails } from './emails/send-booking-emails'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -273,6 +275,60 @@ export async function createBooking(
   if (!setupIntent.client_secret) {
     throw new Error('Stripe returned a SetupIntent without a client_secret')
   }
+
+  // 6. Fire-and-forget calendar event creation.
+  //
+  // We don't await this — the booking is already committed to the DB and
+  // Stripe, and the user is waiting on a response so they can enter their
+  // card details. A slow Google API call (or a missing service account in
+  // dev/preview) must never block that.
+  //
+  // If the event creates successfully, we persist its ID on the booking
+  // row so future reschedules / cancellations can update or delete the
+  // same event. If the create fails, we log and move on — Mark can add
+  // the event manually if needed, and the booking record itself is intact.
+  const primaryName =
+    `${input.customer.firstName} ${input.customer.lastName}`.trim()
+  createBookingCalendarEvent({
+    bookingId,
+    customerName: primaryName,
+    customerEmail: emailLower,
+    customerPhone: input.customer.phone || null,
+    sessionDate: input.sessionDate,
+    startTime: input.startTime,
+    durationHours: input.durationHours,
+    racerCount: input.racerCount,
+    sessionPriceCents,
+    noShowFeeCents,
+    source: input.source ?? 'online',
+  })
+    .then(async (eventId) => {
+      if (!eventId) return
+      const { error: calendarUpdateError } = await supabase
+        .from('bookings')
+        .update({ google_calendar_event_id: eventId })
+        .eq('id', bookingId)
+      if (calendarUpdateError) {
+        console.error(
+          `Failed to persist google_calendar_event_id for ${bookingId}:`,
+          calendarUpdateError.message
+        )
+      }
+    })
+    .catch((err) =>
+      console.error(`Calendar event creation failed for ${bookingId}:`, err)
+    )
+
+  // 7. Fire-and-forget transactional emails.
+  //
+  // Same reasoning as the calendar block: the booking is already committed,
+  // and the user is waiting on the SetupIntent client_secret. Emails are
+  // best-effort — sendBookingEmails() never throws and logs each attempt
+  // to email_log so the admin panel can show delivery state and offer
+  // manual resend from the booking detail page (Phase 4).
+  sendBookingEmails(bookingId).catch((err) =>
+    console.error(`Email send failed for ${bookingId}:`, err)
+  )
 
   return {
     bookingId,
