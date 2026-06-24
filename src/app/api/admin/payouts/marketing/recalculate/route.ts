@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
   // Guard against runaway pagination if something goes very wrong with the
   // range query. 50 pages × 1000 = 50K rows per month is a hard ceiling well
   // beyond plausible volume.
-  for (let pageNum = 0; pageNum < 50; pageNum++) {
+  for (let page = 0; page < 50; page++) {
     const { data: rows, error: txErr } = await admin
       .from('transactions')
       .select('amount_cents')

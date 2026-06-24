@@ -12,8 +12,10 @@
 // regular ledger entry that an owner can clean up manually, which is better
 // than the inverse (marked paid with no money record).
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+
+export const runtime = 'nodejs'
 
 // Get today's date in Eastern time as YYYY-MM-DD. Same reasoning as the
 // recalculate endpoint: the books are kept on Fort Wayne local time.
@@ -49,7 +51,7 @@ const MONTH_NAMES = [
 ] as const
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
@@ -59,33 +61,21 @@ export async function POST(
   }
 
   // ---- Auth gate (owner only) ---------------------------------------------
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  }
-
-  const admin = createAdminClient()
-  const { data: adminUser, error: adminLookupErr } = await admin
-    .from('admin_users')
-    .select('id, role, active')
-    .eq('auth_user_id', user.id)
-    .maybeSingle()
-
-  if (adminLookupErr || !adminUser || !adminUser.active) {
-    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-  }
-  if (adminUser.role !== 'owner') {
-    return NextResponse.json(
-      { error: 'Only the owner can mark a marketing payout as paid' },
-      { status: 403 }
-    )
+  let adminCtx
+  try {
+    adminCtx = await requireAdmin(['owner'])
+  } catch (err) {
+    if (err instanceof AdminAuthError) {
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status: err.code === 'unauthenticated' ? 401 : 403 }
+      )
+    }
+    throw err
   }
 
   // ---- Load the calculation row -------------------------------------------
+  const admin = createAdminClient()
   const { data: calc, error: calcErr } = await admin
     .from('marketing_payout_calculations')
     .select('id, period_year, period_month, computed_payout_cents, paid, paid_transaction_id')
@@ -143,7 +133,7 @@ export async function POST(
       // anyone scanning the ledger can see exactly which month this paid out.
       payout_period_start: `${calc.period_year}-${String(calc.period_month).padStart(2, '0')}-01`,
       payout_period_end: occurredOn,
-      created_by_user_id: adminUser.id,
+      created_by_user_id: adminCtx.admin.id,
     })
     .select('id')
     .single()
