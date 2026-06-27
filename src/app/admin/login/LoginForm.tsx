@@ -1,69 +1,49 @@
 'use client'
 
-// Magic-link login form. Hits Supabase's OTP flow with the current origin as
-// the redirect target — the email link lands at /auth/callback which finishes
-// the exchange and forwards to /admin.
+// Email + password login. One admin account, no email confirmation, no
+// magic-link redirect. On success we hard-navigate to /admin so the
+// middleware picks up the fresh session cookie.
 import { useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 interface LoginFormProps {
   initialError: string | null
 }
 
-type Status = 'idle' | 'sending' | 'sent' | 'error'
+type Status = 'idle' | 'signing-in' | 'error'
 
 export default function LoginForm({ initialError }: LoginFormProps) {
+  const router = useRouter()
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [status, setStatus] = useState<Status>('idle')
-  // We seed errorMessage from the server-side ?error= query (e.g. failed callback)
-  // so users see why they bounced back here.
   const [errorMessage, setErrorMessage] = useState<string | null>(initialError)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
-    setStatus('sending')
+    setStatus('signing-in')
     setErrorMessage(null)
 
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+      password,
     })
 
     if (error) {
       setStatus('error')
-      setErrorMessage(error.message)
+      setErrorMessage(
+        error.message === 'Invalid login credentials'
+          ? 'Wrong email or password.'
+          : error.message
+      )
       return
     }
 
-    setStatus('sent')
-  }
-
-  if (status === 'sent') {
-    return (
-      <div className="text-center">
-        <div className="text-5xl mb-4 text-telemetry-cyan">✓</div>
-        <h2 className="racing-headline text-2xl text-grid-white mb-3">
-          Check Your <span className="text-telemetry-cyan">Email</span>
-        </h2>
-        <p className="telemetry-text text-sm text-pit-gray mb-6">
-          We sent a sign-in link to <span className="text-grid-white">{email}</span>.
-          Click it to enter the pit crew console.
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setStatus('idle')
-            setEmail('')
-          }}
-          className="telemetry-text text-xs text-pit-gray uppercase tracking-wider hover:text-apex-red transition-colors"
-        >
-          Use a different email
-        </button>
-      </div>
-    )
+    // Full navigation (not router.push) so the middleware reads the new
+    // session cookie and the (authed) layout admits us.
+    window.location.assign('/admin')
   }
 
   return (
@@ -83,9 +63,29 @@ export default function LoginForm({ initialError }: LoginFormProps) {
           autoFocus
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          disabled={status === 'sending'}
+          disabled={status === 'signing-in'}
           className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors disabled:opacity-50"
           placeholder="you@mcracingfortwayne.com"
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="admin-password"
+          className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-2"
+        >
+          Password *
+        </label>
+        <input
+          id="admin-password"
+          type="password"
+          required
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          disabled={status === 'signing-in'}
+          className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors disabled:opacity-50"
+          placeholder="••••••••"
         />
       </div>
 
@@ -97,15 +97,14 @@ export default function LoginForm({ initialError }: LoginFormProps) {
 
       <button
         type="submit"
-        disabled={status === 'sending' || email.trim() === ''}
+        disabled={status === 'signing-in' || email.trim() === '' || password === ''}
         className="btn-primary w-full text-sm disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {status === 'sending' ? 'Sending Link…' : 'Send Magic Link'}
+        {status === 'signing-in' ? 'Signing In…' : 'Sign In'}
       </button>
 
       <p className="telemetry-text text-xs text-pit-gray text-center leading-relaxed">
-        We&apos;ll email you a one-time sign-in link. No password to remember,
-        no password to leak.
+        Authorized staff only.
       </p>
     </form>
   )
