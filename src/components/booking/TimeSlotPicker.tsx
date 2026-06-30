@@ -113,46 +113,17 @@ export default function TimeSlotPicker({
     })
   }
 
+  // Slots are computed locally (every operating-hours slot open), then the
+  // 90-minute online cutoff is applied. We migrated off the old Google Apps
+  // Script — real per-slot sim-capacity checking against Supabase bookings is
+  // a future enhancement; the 3 simulators absorb overlapping bookings for now.
   useEffect(() => {
     if (!date) {
       setSlots([])
       return
     }
-
-    async function fetchTimeSlots() {
-      setLoading(true)
-
-      // Generate local slots as baseline
-      const localSlots = generateLocalSlots()
-
-      try {
-        const scriptUrl = process.env.NEXT_PUBLIC_BOOKING_SCRIPT_URL
-        if (!scriptUrl) {
-          setSlots(applyCutoff(localSlots, date!))
-          setLoading(false)
-          return
-        }
-
-        const response = await fetch(
-          `${scriptUrl}?action=getTimeSlots&date=${date}&duration=${duration}&racerCount=${racerCount}`
-        )
-        const data = await response.json()
-
-        if (data.success && data.slots && data.slots.length > 0) {
-          setSlots(applyCutoff(data.slots, date!))
-        } else {
-          // Fallback to all available
-          setSlots(applyCutoff(localSlots, date!))
-        }
-      } catch (error) {
-        console.error('Error fetching time slots:', error)
-        // Fallback to all available
-        setSlots(applyCutoff(localSlots, date!))
-      }
-      setLoading(false)
-    }
-
-    fetchTimeSlots()
+    setSlots(applyCutoff(generateLocalSlots(), date))
+    setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, duration, racerCount])
 

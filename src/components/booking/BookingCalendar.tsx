@@ -54,44 +54,16 @@ export default function BookingCalendar({ value, onChange, duration, racerCount 
     return localAvailability
   }
 
-  // Fetch availability when month, duration, or racer count changes
+  // Availability is computed locally: open Tue–Sun, closed Mondays, no past
+  // dates. (We migrated off the old Google Apps Script — bookings now live in
+  // Supabase. Real per-day sim-capacity checking against existing bookings is
+  // a future enhancement; for now the venue's 3 simulators comfortably absorb
+  // overlapping bookings, so every open day is selectable.)
   useEffect(() => {
-    async function fetchAvailability() {
-      setLoading(true)
-
-      // Always start with local availability as baseline
-      const localAvailability = generateLocalAvailability()
-
-      try {
-        const scriptUrl = process.env.NEXT_PUBLIC_BOOKING_SCRIPT_URL
-        if (!scriptUrl) {
-          setAvailability(localAvailability)
-          setLoading(false)
-          return
-        }
-
-        const response = await fetch(
-          `${scriptUrl}?action=getAvailability&month=${currentMonth}&duration=${duration}&racerCount=${racerCount}`
-        )
-        const data = await response.json()
-
-        if (data.success && data.availability && data.availability.length > 0) {
-          setAvailability(data.availability)
-        } else {
-          // API didn't return valid data, use local
-          setAvailability(localAvailability)
-        }
-      } catch (error) {
-        console.error('Error fetching availability:', error)
-        // Fallback to local calculation
-        setAvailability(localAvailability)
-      }
-      setLoading(false)
-    }
-
-    fetchAvailability()
+    setAvailability(generateLocalAvailability())
+    setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth, duration, racerCount, daysInMonth, year, month])
+  }, [currentMonth, daysInMonth, year, month])
 
   const goToPreviousMonth = () => {
     const date = new Date(year, month - 2, 1)
