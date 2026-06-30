@@ -54,6 +54,16 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/admin/pos',
+    label: 'Point of Sale',
+    icon: ({ className }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="2" y="5" width="20" height="14" rx="2" />
+        <path d="M2 10h20M6 15h4" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/transactions',
     label: 'Transactions',
     icon: ({ className }) => (

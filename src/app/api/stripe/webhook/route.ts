@@ -200,13 +200,13 @@ async function handleSetupIntentFailed(event: Stripe.Event, supabase: Supa) {
 async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa) {
   const intent = event.data.object as Stripe.PaymentIntent
 
-  // Update the stripe_charges row that created this PaymentIntent (the
-  // admin code that created it should have inserted a pending row with
-  // matching stripe_payment_intent_id).
-  const { error: chargeError } = await supabase
+  // Flip our charge row to succeeded.
+  const { data: charge, error: chargeError } = await supabase
     .from('stripe_charges')
     .update({ status: 'succeeded' })
     .eq('stripe_payment_intent_id', intent.id)
+    .select('id, amount_cents, booking_id, customer_id')
+    .maybeSingle()
 
   if (chargeError) {
     throw new Error(
@@ -214,9 +214,46 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
     )
   }
 
-  // The transaction record gets inserted by the admin action that created the
-  // PaymentIntent — webhook just confirms status. (Decoupling here means a
-  // missed webhook doesn't lose the transaction; the admin row is the truth.)
+  // For in-person POS (Terminal) charges, the webhook is the source of truth
+  // for recording the accounting transaction — the customer might still be
+  // tapping when the POS tab closes, so we can't rely on the UI to record it.
+  // Idempotent: only insert if no transaction already references this charge.
+  if (intent.metadata?.source === 'pos' && charge) {
+    const { count } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('stripe_charge_id', charge.id)
+
+    if (!count) {
+      const saleType =
+        intent.metadata.sale_type === 'booking_income'
+          ? 'booking_income'
+          : intent.metadata.sale_type === 'other_income'
+            ? 'other_income'
+            : 'in_person_sale'
+      const todayEastern = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date())
+
+      await supabase.from('transactions').insert({
+        type: saleType,
+        amount_cents: charge.amount_cents, // positive — money in
+        occurred_on: todayEastern,
+        description: intent.description || 'In-person sale (Terminal)',
+        booking_id: charge.booking_id,
+        customer_id: charge.customer_id,
+        stripe_charge_id: charge.id,
+        payment_method: 'stripe_terminal',
+        created_by_user_id: intent.metadata.admin_user_id || null,
+      })
+    }
+  }
+
+  // No-show charges are recorded by the admin action that created them, so we
+  // don't double-insert here for those.
 }
 
 async function handlePaymentIntentFailed(event: Stripe.Event, supabase: Supa) {
