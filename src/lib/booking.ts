@@ -138,8 +138,18 @@ export async function createBooking(
   let customerId: string
   let stripeCustomerId: string | null = (existingCustomer as { stripe_customer_id?: string } | null)?.stripe_customer_id ?? null
 
+  // The booker accepts the liability waiver during booking, so we stamp their
+  // waiver here — a returning customer who booked online doesn't have to
+  // re-sign at the front desk. (Additional racers still sign at check-in.)
+  const nowIso = new Date().toISOString()
+
   if (existingCustomer) {
     customerId = (existingCustomer as { id: string }).id
+    // Refresh their waiver timestamp on this booking.
+    await supabase
+      .from('customers')
+      .update({ waiver_signed_at: nowIso, marketing_opt_in: input.marketingOptIn })
+      .eq('id', customerId)
   } else {
     // Insert a new customer row
     const { data: inserted, error: insertError } = await supabase
@@ -152,6 +162,8 @@ export async function createBooking(
         birthday: input.customer.birthday || null,
         how_heard: input.customer.howHeard || null,
         marketing_opt_in: input.marketingOptIn,
+        waiver_signed_at: nowIso,
+        source: 'booking',
       })
       .select('id')
       .single()
@@ -222,7 +234,9 @@ export async function createBooking(
     throw new Error(`Booking insert failed: ${bookingError.message}`)
   }
 
-  // 4. Insert one row per racer (slot 1 = primary, slots 2+ = friends)
+  // 4. Insert one row per racer (slot 1 = primary, slots 2+ = friends).
+  // Slot 1 (the booker) signed the waiver during booking → stamp it. Friends
+  // sign at check-in.
   const racerRows = [
     {
       booking_id: bookingId,
@@ -230,6 +244,7 @@ export async function createBooking(
       name: `${input.customer.firstName} ${input.customer.lastName}`.trim(),
       email: emailLower,
       phone: input.customer.phone || null,
+      waiver_signed_at: nowIso,
     },
     ...input.additionalRacers.slice(0, input.racerCount - 1).map((r, i) => ({
       booking_id: bookingId,
