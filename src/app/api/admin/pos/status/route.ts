@@ -54,10 +54,15 @@ export async function GET(request: NextRequest) {
     state = 'waiting'
   }
 
+  const tipCents =
+    (intent.amount_details as { tip?: { amount?: number } } | undefined)?.tip
+      ?.amount ?? 0
+
   return NextResponse.json({
     state,
     stripeStatus: intent.status,
-    amountCents: intent.amount,
+    amountCents: intent.amount, // final total (incl. tip once selected)
+    tipCents,
     lastError: intent.last_payment_error?.message ?? null,
   })
 }

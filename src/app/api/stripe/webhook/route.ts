@@ -200,12 +200,20 @@ async function handleSetupIntentFailed(event: Stripe.Event, supabase: Supa) {
 async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa) {
   const intent = event.data.object as Stripe.PaymentIntent
 
-  // Flip our charge row to succeeded.
+  // After on-reader tipping, intent.amount is the FINAL captured total (base +
+  // tip). The charge row was inserted with the pre-tip base, so sync it to the
+  // real captured amount here. The tip portion lives in amount_details.tip.
+  const finalAmount = intent.amount
+  const tipCents =
+    (intent.amount_details as { tip?: { amount?: number } } | undefined)?.tip
+      ?.amount ?? 0
+
+  // Flip our charge row to succeeded and record the final amount.
   const { data: charge, error: chargeError } = await supabase
     .from('stripe_charges')
-    .update({ status: 'succeeded' })
+    .update({ status: 'succeeded', amount_cents: finalAmount })
     .eq('stripe_payment_intent_id', intent.id)
-    .select('id, amount_cents, booking_id, customer_id')
+    .select('id, booking_id, customer_id')
     .maybeSingle()
 
   if (chargeError) {
@@ -238,11 +246,15 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
         day: '2-digit',
       }).format(new Date())
 
+      const tipNote =
+        tipCents > 0 ? ` (incl. $${(tipCents / 100).toFixed(2)} tip)` : ''
+
       await supabase.from('transactions').insert({
         type: saleType,
-        amount_cents: charge.amount_cents, // positive — money in
+        amount_cents: finalAmount, // total captured, incl. tip — positive (money in)
+        tip_cents: tipCents, // tip portion broken out for staff tip-outs
         occurred_on: todayEastern,
-        description: intent.description || 'In-person sale (Terminal)',
+        description: `${intent.description || 'In-person sale (Terminal)'}${tipNote}`,
         booking_id: charge.booking_id,
         customer_id: charge.customer_id,
         stripe_charge_id: charge.id,

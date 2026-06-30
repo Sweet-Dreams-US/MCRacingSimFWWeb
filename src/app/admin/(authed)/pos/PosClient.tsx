@@ -29,6 +29,9 @@ export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
   const [error, setError] = useState<string | null>(null)
   const [intentId, setIntentId] = useState<string | null>(null)
   const [readerId, setReaderId] = useState<string | null>(null)
+  // Final captured total + tip (resolved from the status poll once paid)
+  const [paidCents, setPaidCents] = useState<number | null>(null)
+  const [tipCents, setTipCents] = useState(0)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Debounced customer search
@@ -91,6 +94,8 @@ export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
         const data = await res.json()
         if (data.state === 'paid') {
           stopPolling()
+          setPaidCents(data.amountCents ?? amountCents)
+          setTipCents(data.tipCents ?? 0)
           setPhase('paid')
         } else if (data.state === 'failed') {
           stopPolling()
@@ -125,6 +130,8 @@ export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
     setError(null)
     setIntentId(null)
     setReaderId(null)
+    setPaidCents(null)
+    setTipCents(0)
     setAmount('')
     setDescription('')
     setBookingId('')
@@ -143,9 +150,10 @@ export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
           Tap Card on <span className="text-telemetry-cyan">Reader</span>
         </h2>
         <p className="telemetry-text text-sm text-pit-gray">
-          Charging <span className="text-grid-white">${(amountCents / 100).toFixed(2)}</span>
-          {selected ? <> to <span className="text-grid-white">{selected.name}</span></> : null}.
-          Ask the customer to tap, insert, or swipe.
+          <span className="text-grid-white">${(amountCents / 100).toFixed(2)}</span> subtotal
+          {selected ? <> for <span className="text-grid-white">{selected.name}</span></> : null}.
+          The reader will ask the customer to <span className="text-telemetry-cyan">choose a tip</span>,
+          then tap, insert, or swipe.
         </p>
         <button
           type="button"
@@ -159,15 +167,23 @@ export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
   }
 
   if (phase === 'paid') {
+    const total = paidCents ?? amountCents
     return (
       <div className="bg-green-500/10 border border-green-500/30 p-8 text-center space-y-4">
         <div className="text-5xl">✓</div>
         <h2 className="racing-headline text-2xl text-grid-white">
           Payment <span className="text-green-400">Approved</span>
         </h2>
+        <p className="racing-headline text-3xl text-grid-white">
+          ${(total / 100).toFixed(2)}
+        </p>
+        {tipCents > 0 && (
+          <p className="telemetry-text text-sm text-telemetry-cyan">
+            Includes ${(tipCents / 100).toFixed(2)} tip 🎉
+          </p>
+        )}
         <p className="telemetry-text text-sm text-pit-gray">
-          ${(amountCents / 100).toFixed(2)} charged
-          {selected ? <> to {selected.name}</> : null}.
+          Charged{selected ? <> to {selected.name}</> : null}.
           {selected?.email ? ` Receipt sent to ${selected.email}.` : ''}
         </p>
         <button type="button" onClick={resetForm} className="btn-primary">
