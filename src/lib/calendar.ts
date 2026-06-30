@@ -144,8 +144,14 @@ function toCalendarDateTime(
   sessionDate: string,
   time: string
 ): calendar_v3.Schema$EventDateTime {
+  // `time` may arrive as "HH:MM" (from the booking form) or "HH:MM:SS" (from
+  // the Postgres TIME column). Normalize to a zero-padded "HH:MM" so we always
+  // emit a valid "YYYY-MM-DDTHH:MM:00" — appending ":00" to a value that
+  // already had seconds produced "...T13:00:00:00" and Google rejected it 400.
+  const [h = '00', m = '00'] = time.split(':')
+  const hhmm = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
   return {
-    dateTime: `${sessionDate}T${time}:00`,
+    dateTime: `${sessionDate}T${hhmm}:00`,
     timeZone: CALENDAR_TIMEZONE,
   }
 }
