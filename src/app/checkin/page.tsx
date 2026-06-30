@@ -24,6 +24,11 @@ function CheckinContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
+  // "Been here before?" returning-customer lookup state.
+  const [lookupEmail, setLookupEmail] = useState('')
+  const [lookupStatus, setLookupStatus] = useState<'idle' | 'searching' | 'found' | 'notFound'>('idle')
+  const [welcomeName, setWelcomeName] = useState('')
+
   // Auto-reset to a new blank inspection 2 seconds after a successful walk-in check-in.
   // Linked bookings (SMS check-in for a specific racer slot) stay on the success screen
   // to prevent accidental duplicate waiver submissions for the same slot.
@@ -31,10 +36,52 @@ function CheckinContent() {
     if (submitStatus === 'success' && !isLinkedBooking) {
       const timer = setTimeout(() => {
         setSubmitStatus('idle')
+        // Clear the returning-customer banner so the kiosk is fully blank for
+        // the next walk-in.
+        setLookupEmail('')
+        setLookupStatus('idle')
+        setWelcomeName('')
       }, 2000)
       return () => clearTimeout(timer)
     }
   }, [submitStatus, isLinkedBooking])
+
+  // Returning-customer lookup: find an existing customer by email and prefill
+  // the form so they only have to confirm details and re-sign the waiver.
+  const handleLookup = async () => {
+    const email = lookupEmail.trim()
+    if (!email) return
+
+    setLookupStatus('searching')
+    setWelcomeName('')
+
+    try {
+      const res = await fetch('/api/checkin/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+
+      if (data.found && data.customer) {
+        setFormData((prev) => ({
+          ...prev,
+          firstName: data.customer.firstName || prev.firstName,
+          lastName: data.customer.lastName || prev.lastName,
+          phone: data.customer.phone || prev.phone,
+          birthday: data.customer.birthday || prev.birthday,
+          email,
+        }))
+        setWelcomeName(data.customer.firstName || '')
+        setLookupStatus('found')
+      } else {
+        setLookupStatus('notFound')
+      }
+    } catch (error) {
+      console.error('Lookup error:', error)
+      setLookupStatus('notFound')
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,56 +89,25 @@ function CheckinContent() {
     setSubmitStatus('idle')
 
     try {
-      // Submit to Google Sheets via Apps Script
-      const scriptUrl = process.env.NEXT_PUBLIC_CHECKIN_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwbD9jbCxOl0gl_aUob_GuQ5IXK7-PujlfC_4JnqUrTBxazZWxeZf9EX0QxPY7j4Rkb/exec'
-
-      const submitData: Record<string, string | boolean> = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        birthday: formData.birthday,
-        phone: formData.phone,
-        email: formData.email,
-        howDidYouHear: formData.howDidYouHear,
-        signedWaiver: formData.agreedToWaiver ? 'Yes' : 'No',
-        marketingOptIn: formData.marketingOptIn ? 'Yes' : 'No',
-        timestamp: new Date().toISOString(),
-      }
-
-      // If this is a linked booking, include booking info
-      if (isLinkedBooking) {
-        submitData.bookingId = bookingId!
-        submitData.racerSlot = slot!
-      }
-
-      await fetch(scriptUrl, {
+      const res = await fetch('/api/checkin', {
         method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(submitData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          birthday: formData.birthday,
+          phone: formData.phone,
+          email: formData.email,
+          howDidYouHear: formData.howDidYouHear,
+          marketingOptIn: formData.marketingOptIn,
+          agreedToWaiver: formData.agreedToWaiver,
+          ...(isLinkedBooking ? { bookingId, slot } : {}),
+        }),
       })
 
-      // If linked to a booking, also update the main booking sheet
-      if (isLinkedBooking) {
-        const bookingScriptUrl = process.env.NEXT_PUBLIC_BOOKING_SCRIPT_URL
-        if (bookingScriptUrl) {
-          try {
-            await fetch(bookingScriptUrl, {
-              method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'updateRacerWaiver',
-                bookingId,
-                slot,
-                waiverSigned: true,
-              }),
-            })
-          } catch (err) {
-            console.error('Failed to update booking waiver status:', err)
-          }
-        }
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Submission failed')
       }
 
       setSubmitStatus('success')
@@ -195,6 +211,58 @@ function CheckinContent() {
             )
           ) : (
             <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Returning customer lookup */}
+              <div className="bg-asphalt-dark p-6 border border-telemetry-cyan/30">
+                <h2 className="racing-headline text-lg text-grid-white mb-1">
+                  Been here <span className="text-telemetry-cyan">before?</span>
+                </h2>
+                <p className="telemetry-text text-xs text-pit-gray mb-4">
+                  Enter your email and we&apos;ll fill in the rest — just confirm and re-sign.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    type="email"
+                    value={lookupEmail}
+                    onChange={(e) => {
+                      setLookupEmail(e.target.value)
+                      if (lookupStatus !== 'idle') setLookupStatus('idle')
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleLookup()
+                      }
+                    }}
+                    className="flex-1 bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors"
+                    placeholder="racer@email.com"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLookup}
+                    disabled={lookupStatus === 'searching' || !lookupEmail.trim()}
+                    className="px-6 py-3 border-2 border-telemetry-cyan text-telemetry-cyan telemetry-text uppercase tracking-wider font-bold hover:bg-telemetry-cyan hover:text-asphalt-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {lookupStatus === 'searching' ? 'Finding…' : 'Find Me'}
+                  </button>
+                </div>
+
+                {lookupStatus === 'found' && (
+                  <div className="mt-4 bg-telemetry-cyan/10 border border-telemetry-cyan px-4 py-3">
+                    <p className="telemetry-text text-sm text-telemetry-cyan">
+                      Welcome back{welcomeName ? `, ${welcomeName}` : ''}! We filled in your info
+                      below — double-check it and sign the waiver.
+                    </p>
+                  </div>
+                )}
+                {lookupStatus === 'notFound' && (
+                  <div className="mt-4 bg-asphalt border border-white/10 px-4 py-3">
+                    <p className="telemetry-text text-sm text-pit-gray">
+                      No account found for that email — no problem, just fill out the form below.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* Driver Information */}
               <div className="bg-asphalt-dark p-6 border border-white/10">
                 <h2 className="racing-headline text-xl text-grid-white mb-6">
@@ -233,11 +301,10 @@ function CheckinContent() {
 
                 <div className="mt-4">
                   <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-2">
-                    Birthday *
+                    Birthday
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.birthday}
                     onChange={(e) => setFormData({ ...formData, birthday: e.target.value })}
                     className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors"
