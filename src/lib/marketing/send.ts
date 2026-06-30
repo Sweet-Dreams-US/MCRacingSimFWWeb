@@ -72,13 +72,16 @@ function getResend(): Resend | null {
 // ---------------------------------------------------------------------------
 
 // Human-facing unsubscribe page (footer link).
+// NOTE: the site runs trailingSlash:true, so we emit the slash BEFORE the query
+// string. Without it the request 308-redirects, and the one-click unsubscribe
+// bot may not follow the redirect — which would silently break unsubscribe.
 export function unsubscribeUrlFor(token: string): string {
-  return `${getSiteUrl()}/unsubscribe?token=${encodeURIComponent(token)}`
+  return `${getSiteUrl()}/unsubscribe/?token=${encodeURIComponent(token)}`
 }
 
 // Machine endpoint for RFC 8058 one-click unsubscribe (List-Unsubscribe-Post).
 export function unsubscribePostUrlFor(token: string): string {
-  return `${getSiteUrl()}/api/unsubscribe?token=${encodeURIComponent(token)}`
+  return `${getSiteUrl()}/api/unsubscribe/?token=${encodeURIComponent(token)}`
 }
 
 // ---------------------------------------------------------------------------
