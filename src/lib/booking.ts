@@ -11,7 +11,6 @@
 // IDEMPOTENCY: callers should pass a unique idempotency_key when retrying.
 // Stripe's idempotency layer ensures we don't create duplicate SetupIntents.
 
-import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from './supabase/admin'
 import { getStripe } from './stripe'
 import {
@@ -205,7 +204,11 @@ export async function createBooking(
     racer_count: input.racerCount,
     session_price_cents: sessionPriceCents,
     no_show_fee_cents: noShowFeeCents,
-    status: 'confirmed',
+    // Starts 'pending' — the booking only becomes 'confirmed' once the card is
+    // saved (the setup_intent.succeeded webhook). Confirmation emails + the
+    // calendar event fire at THAT point, not here — otherwise the customer
+    // would get a confirmation before they've actually submitted a card.
+    status: 'pending',
     source: input.source ?? 'online',
     // Consent snapshot — exactly what the user agreed to + when + from where
     consent_text: input.consentText,
@@ -277,61 +280,10 @@ export async function createBooking(
     throw new Error('Stripe returned a SetupIntent without a client_secret')
   }
 
-  // 6. Calendar event creation — deferred with waitUntil().
-  //
-  // We don't AWAIT this (the user is waiting on the SetupIntent client_secret
-  // so they can enter their card — a slow Google API call must never block
-  // that). But we can't plain fire-and-forget either: on Vercel the serverless
-  // function is frozen the instant the HTTP response is sent, which kills any
-  // unsettled promise. waitUntil() registers the promise with the platform so
-  // the function stays alive until it resolves, WITHOUT blocking the response.
-  //
-  // If the event creates successfully, we persist its ID on the booking row so
-  // future reschedules / cancellations can update or delete the same event. If
-  // it fails, we log and move on — the booking record itself is intact.
-  const primaryName =
-    `${input.customer.firstName} ${input.customer.lastName}`.trim()
-  waitUntil(
-    createBookingCalendarEvent({
-      bookingId,
-      customerName: primaryName,
-      customerEmail: emailLower,
-      customerPhone: input.customer.phone || null,
-      sessionDate: input.sessionDate,
-      startTime: input.startTime,
-      durationHours: input.durationHours,
-      racerCount: input.racerCount,
-      sessionPriceCents,
-      noShowFeeCents,
-      source: input.source ?? 'online',
-    })
-      .then(async (eventId) => {
-        if (!eventId) return
-        const { error: calendarUpdateError } = await supabase
-          .from('bookings')
-          .update({ google_calendar_event_id: eventId })
-          .eq('id', bookingId)
-        if (calendarUpdateError) {
-          console.error(
-            `Failed to persist google_calendar_event_id for ${bookingId}:`,
-            calendarUpdateError.message
-          )
-        }
-      })
-      .catch((err) =>
-        console.error(`Calendar event creation failed for ${bookingId}:`, err)
-      )
-  )
-
-  // 7. Transactional emails — also deferred with waitUntil() for the same
-  // serverless-freeze reason. sendBookingEmails() never throws and logs each
-  // attempt to email_log, so the admin panel can show delivery state and offer
-  // manual resend from the booking detail page.
-  waitUntil(
-    sendBookingEmails(bookingId).catch((err) =>
-      console.error(`Email send failed for ${bookingId}:`, err)
-    )
-  )
+  // NOTE: No emails or calendar event here. The booking is still 'pending'
+  // until the card is saved. Confirmation emails + the calendar event are
+  // fired by finalizeConfirmedBooking(), called from the
+  // setup_intent.succeeded webhook once the card is actually on file.
 
   return {
     bookingId,
@@ -340,5 +292,90 @@ export async function createBooking(
     setupIntentClientSecret: setupIntent.client_secret,
     noShowFeeCents,
     sessionPriceCents,
+  }
+}
+
+/**
+ * Promote a booking from 'pending' to 'confirmed' and fire the side effects
+ * that should only happen once a card is genuinely on file: the Google
+ * Calendar event + the confirmation/owner emails.
+ *
+ * Called from the setup_intent.succeeded webhook AFTER the payment method has
+ * been attached. Idempotent: if the booking is already 'confirmed' (e.g. a
+ * duplicate/re-fired SetupIntent), it no-ops so we never send duplicate
+ * confirmations.
+ *
+ * Awaited by the webhook (not fire-and-forget) so the work completes before
+ * the serverless function freezes.
+ */
+export async function finalizeConfirmedBooking(bookingId: string): Promise<void> {
+  const supabase = createAdminClient()
+
+  // Load the booking + its customer. Only finalize a still-pending booking.
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select(
+      `id, status, session_date, start_time, duration_hours, racer_count,
+       session_price_cents, no_show_fee_cents, source, google_calendar_event_id,
+       customer:customers(first_name, last_name, email, phone)`
+    )
+    .eq('id', bookingId)
+    .maybeSingle()
+
+  if (error || !booking) {
+    console.error(`finalizeConfirmedBooking: booking ${bookingId} not found`)
+    return
+  }
+
+  // Idempotency guard — only the first pending→confirmed transition fires
+  // emails + calendar.
+  if (booking.status !== 'pending') {
+    return
+  }
+
+  // Flip to confirmed first so a retry can't double-fire even if the work below
+  // partially fails.
+  await supabase
+    .from('bookings')
+    .update({ status: 'confirmed' })
+    .eq('id', bookingId)
+    .eq('status', 'pending')
+
+  const customer = Array.isArray(booking.customer)
+    ? booking.customer[0]
+    : booking.customer
+
+  // Calendar event (only if not already created)
+  if (customer && !booking.google_calendar_event_id) {
+    try {
+      const eventId = await createBookingCalendarEvent({
+        bookingId,
+        customerName: `${customer.first_name} ${customer.last_name}`.trim(),
+        customerEmail: customer.email,
+        customerPhone: customer.phone,
+        sessionDate: booking.session_date,
+        startTime: booking.start_time,
+        durationHours: booking.duration_hours as 1 | 2 | 3,
+        racerCount: booking.racer_count as 1 | 2 | 3,
+        sessionPriceCents: booking.session_price_cents,
+        noShowFeeCents: booking.no_show_fee_cents,
+        source: booking.source,
+      })
+      if (eventId) {
+        await supabase
+          .from('bookings')
+          .update({ google_calendar_event_id: eventId })
+          .eq('id', bookingId)
+      }
+    } catch (err) {
+      console.error(`Calendar event creation failed for ${bookingId}:`, err)
+    }
+  }
+
+  // Confirmation + owner + friend-FYI emails
+  try {
+    await sendBookingEmails(bookingId)
+  } catch (err) {
+    console.error(`Email send failed for ${bookingId}:`, err)
   }
 }

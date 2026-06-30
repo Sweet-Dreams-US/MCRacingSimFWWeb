@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getStripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { finalizeConfirmedBooking } from '@/lib/booking'
 import type { Json } from '@/lib/supabase/types'
 
 // Force Node.js runtime — Stripe SDK + crypto for signature verification
@@ -174,6 +175,14 @@ async function handleSetupIntentSucceeded(event: Stripe.Event, supabase: Supa) {
       `Failed to attach payment method to booking ${bookingId}: ${error.message}`
     )
   }
+
+  // Card is now genuinely on file → promote the booking from pending to
+  // confirmed AND fire the confirmation/owner/friend emails + calendar event.
+  // This is the correct moment for those side effects — NOT at booking
+  // creation, when no card had been submitted yet. finalizeConfirmedBooking
+  // is idempotent (no-ops if already confirmed) so a retried webhook won't
+  // send duplicate confirmations.
+  await finalizeConfirmedBooking(bookingId)
 }
 
 async function handleSetupIntentFailed(event: Stripe.Event, supabase: Supa) {

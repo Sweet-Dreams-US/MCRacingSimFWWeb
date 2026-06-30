@@ -16,7 +16,7 @@ interface BookingRow {
   racer_count: number
   session_price_cents: number
   no_show_fee_cents: number
-  status: 'confirmed' | 'completed' | 'partial_noshow' | 'noshow' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'completed' | 'partial_noshow' | 'noshow' | 'cancelled'
   source: 'online' | 'admin' | 'imported'
   stripe_payment_method_id: string | null
   customer: { first_name: string; last_name: string; email: string; phone: string | null } | null
@@ -78,6 +78,10 @@ export default async function BookingsPage() {
     `
     )
     .gte('session_date', today)
+    // Exclude 'pending' bookings — those are incomplete (customer started a
+    // booking but never saved a card). They become 'confirmed' only once the
+    // card is on file, so the list shows real bookings only.
+    .neq('status', 'pending')
     .order('session_date', { ascending: true })
     .order('start_time', { ascending: true })
     .limit(100)

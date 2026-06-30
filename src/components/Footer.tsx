@@ -52,6 +52,7 @@ export default function Footer() {
                 { href: '/pit-lane', label: 'Parties' },
                 { href: '/location', label: 'The Paddock' },
                 { href: '/blog', label: 'Pit Wall (Blog)' },
+                { href: '/booking-lookup', label: 'Find My Booking' },
               ].map((link) => (
                 <li key={link.href}>
                   <Link

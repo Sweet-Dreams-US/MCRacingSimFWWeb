@@ -47,6 +47,7 @@ function Badge({ label, variant, showDot = true }: BadgeProps) {
 
 export function BookingStatusBadge({ status }: { status: BookingStatus }) {
   const map: Record<BookingStatus, { label: string; variant: BadgeProps['variant'] }> = {
+    pending: { label: 'Pending Payment', variant: 'gray' },
     confirmed: { label: 'Confirmed', variant: 'cyan' },
     completed: { label: 'Completed', variant: 'green' },
     partial_noshow: { label: 'Partial No-Show', variant: 'amber' },

@@ -574,6 +574,7 @@ export type Database = {
       admin_role: "owner" | "staff" | "sweet_dreams" | "readonly"
       booking_source: "online" | "admin" | "imported"
       booking_status:
+        | "pending"
         | "confirmed"
         | "completed"
         | "partial_noshow"
