@@ -54,19 +54,22 @@ data class CaptureResponse(
 // ---- Retrofit service -------------------------------------------------------
 
 interface BackendService {
-    @POST("connection_token")
+    // Trailing slashes are intentional: the Next.js backend runs trailingSlash:true,
+    // so the slash-less form 308-redirects. Hitting the canonical URL avoids a
+    // redirect hop on every call.
+    @POST("connection_token/")
     suspend fun connectionToken(): ConnectionTokenResponse
 
-    @GET("bookings")
+    @GET("bookings/")
     suspend fun bookings(): BookingsResponse
 
-    @POST("create_payment_intent")
+    @POST("create_payment_intent/")
     suspend fun createPaymentIntent(@Body body: CreatePaymentRequest): PaymentIntentResponse
 
-    @POST("update_payment_intent")
+    @POST("update_payment_intent/")
     suspend fun updatePaymentIntent(@Body body: UpdatePaymentRequest): PaymentIntentResponse
 
-    @POST("capture_payment_intent")
+    @POST("capture_payment_intent/")
     suspend fun capturePaymentIntent(@Body body: CapturePaymentRequest): CaptureResponse
 }
 
