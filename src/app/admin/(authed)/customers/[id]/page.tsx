@@ -127,7 +127,7 @@ export default async function CustomerDetailPage({
           <div className="bg-asphalt-dark border border-white/5 p-6">
             <h2 className="racing-headline text-lg text-grid-white mb-4">Contact</h2>
             <div className="space-y-3">
-              <Field label="Email" value={customer.email} />
+              <Field label="Email" value={customer.email ?? '—'} />
               <Field label="Phone" value={customer.phone ?? '—'} />
               <Field
                 label="Birthday"

@@ -213,7 +213,7 @@ export type Database = {
         Row: {
           birthday: string | null
           created_at: string
-          email: string
+          email: string | null
           first_name: string
           how_heard: string | null
           id: string
@@ -221,15 +221,18 @@ export type Database = {
           last_visit_at: string | null
           marketing_opt_in: boolean
           phone: string | null
+          source: string | null
           stripe_customer_id: string | null
           total_bookings: number
           total_spent_cents: number
           updated_at: string
+          waiver_form_data: Json | null
+          waiver_signed_at: string | null
         }
         Insert: {
           birthday?: string | null
           created_at?: string
-          email: string
+          email?: string | null
           first_name: string
           how_heard?: string | null
           id?: string
@@ -237,15 +240,18 @@ export type Database = {
           last_visit_at?: string | null
           marketing_opt_in?: boolean
           phone?: string | null
+          source?: string | null
           stripe_customer_id?: string | null
           total_bookings?: number
           total_spent_cents?: number
           updated_at?: string
+          waiver_form_data?: Json | null
+          waiver_signed_at?: string | null
         }
         Update: {
           birthday?: string | null
           created_at?: string
-          email?: string
+          email?: string | null
           first_name?: string
           how_heard?: string | null
           id?: string
@@ -253,10 +259,13 @@ export type Database = {
           last_visit_at?: string | null
           marketing_opt_in?: boolean
           phone?: string | null
+          source?: string | null
           stripe_customer_id?: string | null
           total_bookings?: number
           total_spent_cents?: number
           updated_at?: string
+          waiver_form_data?: Json | null
+          waiver_signed_at?: string | null
         }
         Relationships: []
       }

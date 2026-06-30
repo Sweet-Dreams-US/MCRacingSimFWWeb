@@ -96,17 +96,21 @@ export async function sendBookingEmails(
     noShowFeeCents: booking.no_show_fee_cents,
   })
 
-  await tally(
-    summary,
-    sendEmail({
-      to: customer.email,
-      subject: confirmation.subject,
-      html: confirmation.html,
-      template: 'booking_confirmation',
-      relatedBookingId: booking.id,
-      relatedCustomerId: customer.id,
-    })
-  )
+  // Online bookings always have a customer email; guard anyway since the
+  // column is nullable (walk-in / imported customers may lack one).
+  if (customer.email) {
+    await tally(
+      summary,
+      sendEmail({
+        to: customer.email,
+        subject: confirmation.subject,
+        html: confirmation.html,
+        template: 'booking_confirmation',
+        relatedBookingId: booking.id,
+        relatedCustomerId: customer.id,
+      })
+    )
+  }
 
   // ---- 5. Send: friend FYIs (slot 2+ with email) --------------------------
   const bookerFullName = `${customer.first_name} ${customer.last_name}`.trim()
@@ -154,7 +158,7 @@ export async function sendBookingEmails(
   const owner = ownerNewBookingEmail({
     bookingId: booking.id,
     customerName: bookerFullName,
-    customerEmail: customer.email,
+    customerEmail: customer.email ?? '',
     customerPhone: customer.phone ?? '',
     sessionDate: booking.session_date,
     startTime: booking.start_time,

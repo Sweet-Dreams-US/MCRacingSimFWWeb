@@ -70,11 +70,11 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (customer) {
-      receiptEmail = receiptEmail ?? customer.email
+      receiptEmail = receiptEmail ?? customer.email ?? undefined
       stripeCustomerId = customer.stripe_customer_id ?? undefined
       if (!stripeCustomerId) {
         const sc = await stripe.customers.create({
-          email: customer.email,
+          email: customer.email ?? undefined,
           name: `${customer.first_name} ${customer.last_name}`.trim(),
           metadata: { supabase_customer_id: customer.id },
         })

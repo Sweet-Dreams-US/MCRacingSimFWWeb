@@ -1,9 +1,13 @@
-// GET /api/admin/reports/export?year=YYYY&month=MM
+// GET /api/admin/reports/export
+//   Date range form:  ?from=YYYY-MM-DD&to=YYYY-MM-DD   (preferred)
+//   Legacy month form: ?year=YYYY&month=MM
 //
-// Returns a CSV of every non-soft-deleted transaction in the given month
+// Returns a CSV of every non-soft-deleted transaction in the given range
 // (Eastern timezone), joined to expense_categories for the category column.
-// Owner-only — exporting the full transaction log is more sensitive than
-// reading the on-screen summary.
+// Owner + Sweet Dreams only — gated to match the Reports page that drives it,
+// since this exports the same period the user is already viewing on screen.
+// The Reports page feeds this the currently selected period's from/to; the
+// year/month form is kept for back-compat.
 //
 // No CSV library because the column set is tiny and rules are clear:
 //   - Wrap any field containing comma / quote / newline in double quotes
@@ -19,6 +23,7 @@ import {
   type PaymentMethod,
   type TransactionType,
 } from '@/lib/accounting'
+import { isValidDateString } from '@/lib/report-periods'
 
 export const runtime = 'nodejs'
 
@@ -54,7 +59,7 @@ function paymentMethodLabel(m: PaymentMethod): string {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin(['owner'])
+    await requireAdmin(['owner', 'sweet_dreams'])
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json(
@@ -66,25 +71,49 @@ export async function GET(request: NextRequest) {
   }
 
   const url = new URL(request.url)
-  const yearParam = url.searchParams.get('year')
-  const monthParam = url.searchParams.get('month')
-  const year = parseInt(yearParam ?? '', 10)
-  const month = parseInt(monthParam ?? '', 10)
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    month < 1 ||
-    month > 12 ||
-    year < 2000 ||
-    year > 2200
-  ) {
-    return NextResponse.json(
-      { success: false, error: 'year and month query params required' },
-      { status: 400 }
-    )
-  }
+  const fromParam = url.searchParams.get('from')
+  const toParam = url.searchParams.get('to')
 
-  const { start, end } = monthBounds(year, month)
+  // Resolve the date range. Prefer an explicit from/to range (used by the
+  // Reports period filter); fall back to the legacy year/month form.
+  let start: string
+  let end: string
+  let filenameTag: string
+
+  if (fromParam || toParam) {
+    if (!isValidDateString(fromParam) || !isValidDateString(toParam)) {
+      return NextResponse.json(
+        { success: false, error: 'from and to must be valid YYYY-MM-DD dates' },
+        { status: 400 }
+      )
+    }
+    // Swap if reversed so the query bounds are always start <= end.
+    ;[start, end] = fromParam <= toParam ? [fromParam, toParam] : [toParam, fromParam]
+    filenameTag = `${start}_${end}`
+  } else {
+    const year = parseInt(url.searchParams.get('year') ?? '', 10)
+    const month = parseInt(url.searchParams.get('month') ?? '', 10)
+    if (
+      !Number.isFinite(year) ||
+      !Number.isFinite(month) ||
+      month < 1 ||
+      month > 12 ||
+      year < 2000 ||
+      year > 2200
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'from/to or year/month query params required',
+        },
+        { status: 400 }
+      )
+    }
+    const bounds = monthBounds(year, month)
+    start = bounds.start
+    end = bounds.end
+    filenameTag = `${year}-${String(month).padStart(2, '0')}`
+  }
 
   const supabase = createAdminClient()
   const { data: rawRows, error } = await supabase
@@ -144,7 +173,7 @@ export async function GET(request: NextRequest) {
   }
 
   const body = '﻿' + lines.join('\r\n') + '\r\n'
-  const filename = `mcracing-${year}-${String(month).padStart(2, '0')}.csv`
+  const filename = `mcracing-${filenameTag}.csv`
 
   return new NextResponse(body, {
     status: 200,
