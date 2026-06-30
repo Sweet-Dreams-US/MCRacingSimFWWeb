@@ -369,10 +369,17 @@ export function ownerNewBookingEmail(
 
   const subject = `[New Booking] ${customerName} — ${formatDateLong(sessionDate)} ${formatTimeDisplay(startTime)} (${bookingId})`
 
+  // Admin-invited bookings have no card on file — say so honestly so the owner
+  // knows a no-show fee can't be auto-charged on these.
+  const introLine =
+    source === 'admin'
+      ? `An admin-invited booking was just created (<strong style="color:${COLOR.gridWhite};">no card on file</strong>). Calendar event created.`
+      : `A new ${escapeHtml(source)} booking just came in. Card-on-file captured. Calendar event created.`
+
   const inner = `
     ${bookingIdBadge(bookingId)}
     ${h1('New booking on the grid')}
-    ${p(`A new ${escapeHtml(source)} booking just came in. Card-on-file captured. Calendar event created.`)}
+    ${p(introLine)}
 
     ${h2('Session')}
     ${detailsCard([
@@ -505,5 +512,134 @@ export function noShowChargeFailedAdminEmail(
   return {
     subject,
     html: layout(inner, `${formatCents(amountCents)} charge failed for ${customerName}.`),
+  }
+}
+
+// ===========================================================================
+// TEMPLATE 6: inviteBookingEmail
+// Sent to a customer when an admin INVITES them to a booking (no card on file,
+// no no-show fee). Different from bookingConfirmationEmail — no card/no-show
+// language, since the admin set this up on their behalf.
+// ===========================================================================
+
+export interface InviteBookingEmailParams {
+  customerFirstName: string
+  bookingId: string
+  sessionDate: string
+  startTime: string
+  durationHours: number
+  racerCount: number
+  sessionPriceCents: number
+}
+
+export function inviteBookingEmail(
+  params: InviteBookingEmailParams
+): { subject: string; html: string } {
+  const {
+    customerFirstName,
+    bookingId,
+    sessionDate,
+    startTime,
+    durationHours,
+    racerCount,
+    sessionPriceCents,
+  } = params
+
+  const subject = `You're booked at MC Racing Sim — ${formatDateLong(sessionDate)} (${bookingId})`
+  const racerWord = racerCount === 1 ? 'Racer' : 'Racers'
+  const hourWord = durationHours === 1 ? 'Hour' : 'Hours'
+
+  const inner = `
+    ${bookingIdBadge(bookingId)}
+    ${h1(`We saved you a spot, ${escapeHtml(customerFirstName)}.`)}
+    ${p(`MC Racing Sim Fort Wayne booked a sim racing session for you. Here are the details &mdash; no payment needed to reserve it.`)}
+
+    ${h2('Your Session')}
+    ${detailsCard([
+      ['Date', escapeHtml(formatDateLong(sessionDate))],
+      ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
+      ['Duration', `${durationHours} ${hourWord}`],
+      ['Racers', `${racerCount} ${racerWord}`],
+      ['Price (due at venue)', `<span style="color:${COLOR.telemetryCyan};">${formatCents(sessionPriceCents)}</span>`],
+    ])}
+
+    ${h2('Day of Race')}
+    ${p(`Arrive <strong style="color:${COLOR.gridWhite};">15 minutes before your start time</strong>. You'll sign a quick waiver, get a sim walkthrough, and we'll get you on track. Pay when you arrive.`)}
+
+    ${noticeBox(
+      'Need to change it?',
+      `Just reply to this email or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a> and we'll sort it out.`
+    )}
+
+    ${divider()}
+
+    ${p(`<strong style="color:${COLOR.gridWhite};">Location:</strong> 1205 W Main St, Fort Wayne, IN`)}
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">See you trackside.</span>`)}
+  `
+
+  return {
+    subject,
+    html: layout(inner, `We booked you a session on ${formatDateLong(sessionDate)} at ${formatTimeDisplay(startTime)}.`),
+  }
+}
+
+// ===========================================================================
+// TEMPLATE 7: bookingReminderEmail
+// Day-before reminder. Sent by the reminder cron for any confirmed booking.
+// ===========================================================================
+
+export interface BookingReminderEmailParams {
+  customerFirstName: string
+  bookingId: string
+  sessionDate: string
+  startTime: string
+  durationHours: number
+  racerCount: number
+}
+
+export function bookingReminderEmail(
+  params: BookingReminderEmailParams
+): { subject: string; html: string } {
+  const {
+    customerFirstName,
+    bookingId,
+    sessionDate,
+    startTime,
+    durationHours,
+    racerCount,
+  } = params
+
+  const subject = `Reminder: your MC Racing Sim session is tomorrow 🏁`
+  const racerWord = racerCount === 1 ? 'Racer' : 'Racers'
+  const hourWord = durationHours === 1 ? 'Hour' : 'Hours'
+
+  const inner = `
+    ${bookingIdBadge(bookingId)}
+    ${h1(`See you tomorrow, ${escapeHtml(customerFirstName)}.`)}
+    ${p(`Quick reminder that your session at <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong> is coming up tomorrow.`)}
+
+    ${detailsCard([
+      ['Date', escapeHtml(formatDateLong(sessionDate))],
+      ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
+      ['Duration', `${durationHours} ${hourWord}`],
+      ['Racers', `${racerCount} ${racerWord}`],
+    ])}
+
+    ${p(`Arrive <strong style="color:${COLOR.gridWhite};">15 minutes early</strong> to sign your waiver and get a quick walkthrough before you strap in.`)}
+
+    ${noticeBox(
+      'Need to reschedule?',
+      `Reply to this email or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a> as soon as you can.`
+    )}
+
+    ${divider()}
+
+    ${p(`<strong style="color:${COLOR.gridWhite};">Location:</strong> 1205 W Main St, Fort Wayne, IN`)}
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">See you trackside.</span>`)}
+  `
+
+  return {
+    subject,
+    html: layout(inner, `Your session is tomorrow at ${formatTimeDisplay(startTime)} — arrive 15 min early.`),
   }
 }

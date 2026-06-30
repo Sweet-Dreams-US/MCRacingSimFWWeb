@@ -118,6 +118,7 @@ export type Database = {
           no_show_fee_cents: number
           notes: string | null
           racer_count: number
+          reminder_email_sent_at: string | null
           session_date: string
           session_price_cents: number
           source: Database["public"]["Enums"]["booking_source"]
@@ -143,6 +144,7 @@ export type Database = {
           no_show_fee_cents: number
           notes?: string | null
           racer_count: number
+          reminder_email_sent_at?: string | null
           session_date: string
           session_price_cents: number
           source?: Database["public"]["Enums"]["booking_source"]
@@ -168,6 +170,7 @@ export type Database = {
           no_show_fee_cents?: number
           notes?: string | null
           racer_count?: number
+          reminder_email_sent_at?: string | null
           session_date?: string
           session_price_cents?: number
           source?: Database["public"]["Enums"]["booking_source"]

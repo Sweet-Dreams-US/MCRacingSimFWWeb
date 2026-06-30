@@ -31,11 +31,12 @@ export default async function PosPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="racing-headline text-3xl text-grid-white">Point of Sale</h1>
         <p className="telemetry-text text-sm text-pit-gray mt-1">
-          Take an in-person payment on the Terminal reader.
+          Pick a booking on the right to prefill it, or charge a walk-in. Then hand
+          the reader to the customer to tap &amp; tip.
         </p>
       </div>
 

@@ -19,6 +19,8 @@ import {
 } from './pricing'
 import { createBookingCalendarEvent } from './calendar'
 import { sendBookingEmails } from './emails/send-booking-emails'
+import { sendEmail, getOwnerNotificationEmail } from './email'
+import { inviteBookingEmail, ownerNewBookingEmail } from './emails/templates'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -125,10 +127,12 @@ export async function createBooking(
   const emailLower = input.customer.email.trim().toLowerCase()
 
   // 1. Find or create the customer (case-insensitive email match)
+  // Exact lowercased match — NOT ilike. An email local-part can contain `_` or
+  // `%`, which ilike would treat as LIKE wildcards and match the wrong customer.
   const { data: existingCustomer, error: lookupError } = await supabase
     .from('customers')
     .select('id, stripe_customer_id, first_name, last_name')
-    .ilike('email', emailLower)
+    .eq('email', emailLower)
     .maybeSingle()
 
   if (lookupError) {
@@ -393,4 +397,245 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
   } catch (err) {
     console.error(`Email send failed for ${bookingId}:`, err)
   }
+}
+
+// ---------------------------------------------------------------------------
+// Admin "invite to booking" — card-less booking created on the customer's
+// behalf by an admin.
+// ---------------------------------------------------------------------------
+
+export interface InviteBookingInput {
+  email: string
+  firstName?: string
+  lastName?: string
+  phone?: string
+  sessionDate: string // "YYYY-MM-DD"
+  startTime: string // "HH:MM" 24-hour
+  durationHours: 1 | 2 | 3
+  racerCount: 1 | 2 | 3
+  notes?: string
+  createdByUserId?: string | null
+}
+
+export interface InviteBookingResult {
+  bookingId: string
+  customerId: string
+}
+
+/**
+ * Create a confirmed booking on a customer's behalf WITHOUT collecting a card.
+ *
+ * Unlike createBooking() (which is hard-wired to a Stripe SetupIntent + the
+ * pending→confirmed webhook flow), this inserts a 'confirmed' booking directly
+ * and fires its side effects inline: a calendar event + an invite email to the
+ * customer + an owner alert. No card means no no-show fee can apply, so
+ * no_show_fee_cents / consent_fee_cents are 0 and the consent text is a sentinel.
+ *
+ * The booking becomes reminder-eligible automatically (status 'confirmed' with a
+ * customer email) via the day-before reminder cron.
+ */
+export async function createInviteBooking(
+  input: InviteBookingInput
+): Promise<InviteBookingResult> {
+  const supabase = createAdminClient()
+
+  const emailLower = input.email.trim().toLowerCase()
+  if (!emailLower.includes('@')) {
+    throw new Error('A valid email address is required')
+  }
+
+  // Amounts (price is informational — collected in person, not now).
+  const { price: sessionPriceDollars } = calculatePrice(
+    input.sessionDate,
+    input.durationHours,
+    input.racerCount
+  )
+  const sessionPriceCents = sessionPriceDollars * 100
+  const endTime = computeEndTime(input.startTime, input.durationHours)
+
+  // 1. Find-or-create the customer by email (don't overwrite a returning
+  //    customer's real name with a synthesized one).
+  // Exact lowercased match — NOT ilike (see note in createBooking).
+  const { data: existing, error: lookupError } = await supabase
+    .from('customers')
+    .select('id, first_name, last_name')
+    .eq('email', emailLower)
+    .maybeSingle()
+
+  if (lookupError) {
+    throw new Error(`Customer lookup failed: ${lookupError.message}`)
+  }
+
+  let customerId: string
+  let firstName: string
+  let lastName: string
+
+  if (existing) {
+    customerId = existing.id
+    firstName = existing.first_name
+    lastName = existing.last_name
+  } else {
+    const localPart = emailLower.split('@')[0] || 'racer'
+    firstName =
+      input.firstName?.trim() ||
+      localPart.charAt(0).toUpperCase() + localPart.slice(1)
+    lastName = input.lastName?.trim() || ''
+    const { data: inserted, error: insertError } = await supabase
+      .from('customers')
+      .insert({
+        first_name: firstName,
+        last_name: lastName,
+        email: emailLower,
+        phone: input.phone?.trim() || null,
+        marketing_opt_in: false,
+        source: 'admin',
+      })
+      .select('id')
+      .single()
+    if (insertError || !inserted) {
+      // A concurrent request may have created this email between our lookup and
+      // this insert (unique LOWER(email) index, code 23505). Recover by reusing
+      // the now-existing row instead of failing the booking.
+      if (insertError?.code === '23505') {
+        const { data: raced } = await supabase
+          .from('customers')
+          .select('id, first_name, last_name')
+          .eq('email', emailLower)
+          .maybeSingle()
+        if (!raced) {
+          throw new Error(`Customer insert failed: ${insertError.message}`)
+        }
+        customerId = raced.id
+        firstName = raced.first_name
+        lastName = raced.last_name
+      } else {
+        throw new Error(`Customer insert failed: ${insertError?.message ?? 'unknown'}`)
+      }
+    } else {
+      customerId = inserted.id
+    }
+  }
+
+  const fullName = `${firstName} ${lastName}`.trim() || emailLower
+
+  // Idempotency: if an active booking already exists for this customer at the
+  // exact same date + time (e.g. a double-clicked invite), reuse it instead of
+  // creating a duplicate booking + re-sending emails.
+  const { data: dupRows } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('customer_id', customerId)
+    .eq('session_date', input.sessionDate)
+    .eq('start_time', input.startTime)
+    .neq('status', 'cancelled')
+    .limit(1)
+  if (dupRows && dupRows.length > 0) {
+    return { bookingId: dupRows[0].id, customerId }
+  }
+
+  // 2. Insert the confirmed, card-less booking.
+  const bookingId = generateBookingId()
+  const { error: bookingError } = await supabase.from('bookings').insert({
+    id: bookingId,
+    customer_id: customerId,
+    session_date: input.sessionDate,
+    start_time: input.startTime,
+    end_time: endTime,
+    duration_hours: input.durationHours,
+    racer_count: input.racerCount,
+    session_price_cents: sessionPriceCents,
+    // No card on file → no no-show fee can be charged.
+    no_show_fee_cents: 0,
+    status: 'confirmed',
+    source: 'admin',
+    consent_text:
+      'Admin-invited booking — no card on file; no no-show fee applies.',
+    consent_fee_cents: 0,
+    created_by_user_id: input.createdByUserId ?? null,
+    notes: input.notes?.trim() || null,
+  })
+
+  if (bookingError) {
+    throw new Error(`Booking insert failed: ${bookingError.message}`)
+  }
+
+  // 3. Slot-1 racer.
+  const { error: racersError } = await supabase.from('booking_racers').insert({
+    booking_id: bookingId,
+    slot: 1,
+    name: fullName,
+    email: emailLower,
+    phone: input.phone?.trim() || null,
+  })
+  if (racersError) {
+    await supabase.from('bookings').delete().eq('id', bookingId)
+    throw new Error(`Racer insert failed: ${racersError.message}`)
+  }
+
+  // 4. Calendar event (graceful no-op if creds missing).
+  try {
+    const eventId = await createBookingCalendarEvent({
+      bookingId,
+      customerName: fullName,
+      customerEmail: emailLower,
+      customerPhone: input.phone?.trim() || null,
+      sessionDate: input.sessionDate,
+      startTime: input.startTime,
+      durationHours: input.durationHours,
+      racerCount: input.racerCount,
+      sessionPriceCents,
+      noShowFeeCents: 0,
+      source: 'admin',
+    })
+    if (eventId) {
+      await supabase
+        .from('bookings')
+        .update({ google_calendar_event_id: eventId })
+        .eq('id', bookingId)
+    }
+  } catch (err) {
+    console.error(`Invite calendar event failed for ${bookingId}:`, err)
+  }
+
+  // 5. Emails — invite to the customer + owner alert. Best-effort (never throws).
+  const invite = inviteBookingEmail({
+    customerFirstName: firstName || 'racer',
+    bookingId,
+    sessionDate: input.sessionDate,
+    startTime: input.startTime,
+    durationHours: input.durationHours,
+    racerCount: input.racerCount,
+    sessionPriceCents,
+  })
+  await sendEmail({
+    to: emailLower,
+    subject: invite.subject,
+    html: invite.html,
+    template: 'invite_booking',
+    relatedBookingId: bookingId,
+    relatedCustomerId: customerId,
+  })
+
+  const owner = ownerNewBookingEmail({
+    bookingId,
+    customerName: fullName,
+    customerEmail: emailLower,
+    customerPhone: input.phone?.trim() || '',
+    sessionDate: input.sessionDate,
+    startTime: input.startTime,
+    durationHours: input.durationHours,
+    racerCount: input.racerCount,
+    sessionPriceCents,
+    source: 'admin',
+  })
+  await sendEmail({
+    to: getOwnerNotificationEmail(),
+    subject: owner.subject,
+    html: owner.html,
+    template: 'owner_new_booking',
+    relatedBookingId: bookingId,
+    relatedCustomerId: customerId,
+  })
+
+  return { bookingId, customerId }
 }

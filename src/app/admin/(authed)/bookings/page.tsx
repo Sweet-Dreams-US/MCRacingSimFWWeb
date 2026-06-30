@@ -105,11 +105,19 @@ export default async function BookingsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="racing-headline text-3xl text-grid-white">Bookings</h1>
-        <p className="telemetry-text text-sm text-pit-gray mt-1">
-          {rows.length} upcoming session{rows.length === 1 ? '' : 's'}
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="racing-headline text-3xl text-grid-white">Bookings</h1>
+          <p className="telemetry-text text-sm text-pit-gray mt-1">
+            {rows.length} upcoming session{rows.length === 1 ? '' : 's'}
+          </p>
+        </div>
+        <Link
+          href="/admin/bookings/new"
+          className="racing-headline text-sm uppercase tracking-wider bg-apex-red hover:bg-apex-red-dark text-grid-white px-5 py-3 transition-colors"
+        >
+          + Invite to Booking
+        </Link>
       </div>
 
       {/* Today */}
