@@ -27,24 +27,31 @@ export async function GET(request: NextRequest) {
   const intent = await stripe.paymentIntents.retrieve(paymentIntentId)
 
   // Map Stripe's PI status to a simple POS state for the UI.
-  //   succeeded                          → paid
-  //   requires_payment_method / canceled → failed (card declined / cancelled)
-  //   processing                         → processing (captured, settling)
-  //   anything else (requires_action…)   → waiting (customer hasn't tapped yet)
+  //
+  // IMPORTANT subtlety for Terminal/card_present: while the reader is still
+  // collecting the card, the PaymentIntent sits in 'requires_payment_method'
+  // (and briefly 'requires_confirmation') with NO last_payment_error. That is
+  // NOT a failure — it just means the customer hasn't tapped yet, or the tap
+  // is mid-flight. We must only treat it as failed when there's an actual
+  // last_payment_error (a real decline) or the intent was canceled. (The
+  // earlier version mapped 'requires_payment_method' straight to failed, which
+  // flashed "declined" the instant polling started even though the charge then
+  // succeeded.)
   let state: 'paid' | 'failed' | 'processing' | 'waiting'
-  switch (intent.status) {
-    case 'succeeded':
-      state = 'paid'
-      break
-    case 'canceled':
-    case 'requires_payment_method':
-      state = 'failed'
-      break
-    case 'processing':
-      state = 'processing'
-      break
-    default:
-      state = 'waiting'
+  if (intent.status === 'succeeded') {
+    state = 'paid'
+  } else if (intent.status === 'canceled') {
+    state = 'failed'
+  } else if (intent.last_payment_error) {
+    // A genuine decline: Stripe records the error and parks the PI back in
+    // requires_payment_method.
+    state = 'failed'
+  } else if (intent.status === 'processing') {
+    state = 'processing'
+  } else {
+    // requires_payment_method / requires_confirmation / requires_action with
+    // no error → still collecting the card.
+    state = 'waiting'
   }
 
   return NextResponse.json({
