@@ -14,9 +14,23 @@ val localProps = Properties().apply {
 fun localProp(key: String, default: String) =
     (localProps.getProperty(key) ?: System.getenv(key) ?: default)
 
+// Release signing — keystore + passwords come from local.properties (gitignored).
+val keystoreFile = rootProject.file(localProp("KEYSTORE_FILE", "release.keystore"))
+
 android {
     namespace = "com.mcracing.pos"
     compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = localProp("KEYSTORE_PASSWORD", "")
+                keyAlias = localProp("KEY_ALIAS", "mcracing")
+                keyPassword = localProp("KEY_PASSWORD", "")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.mcracing.pos"
@@ -46,6 +60,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

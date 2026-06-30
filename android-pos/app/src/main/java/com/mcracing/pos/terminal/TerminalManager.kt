@@ -8,15 +8,18 @@ import com.stripe.stripeterminal.Terminal
 import com.stripe.stripeterminal.external.callable.AppsOnDevicesListener
 import com.stripe.stripeterminal.external.callable.ConnectionTokenCallback
 import com.stripe.stripeterminal.external.callable.ConnectionTokenProvider
+import com.stripe.stripeterminal.external.callable.PaymentIntentCallback
 import com.stripe.stripeterminal.external.callable.ReaderCallback
 import com.stripe.stripeterminal.external.callable.TerminalListener
 import com.stripe.stripeterminal.external.models.CollectPaymentIntentConfiguration
+import com.stripe.stripeterminal.external.models.ConfirmPaymentIntentConfiguration
 import com.stripe.stripeterminal.external.models.ConnectionConfiguration
 import com.stripe.stripeterminal.external.models.ConnectionStatus
 import com.stripe.stripeterminal.external.models.ConnectionTokenException
 import com.stripe.stripeterminal.external.models.DisconnectReason
 import com.stripe.stripeterminal.external.models.DiscoveryConfiguration
 import com.stripe.stripeterminal.external.models.EasyConnectConfiguration
+import com.stripe.stripeterminal.external.models.PaymentIntent
 import com.stripe.stripeterminal.external.models.PaymentIntentStatus
 import com.stripe.stripeterminal.external.models.PaymentStatus
 import com.stripe.stripeterminal.external.models.Reader
@@ -28,6 +31,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Owns the Stripe Terminal lifecycle for Apps on Devices: init, connect (to the
@@ -73,10 +79,11 @@ object TerminalManager {
     fun init(context: Context) {
         if (!Terminal.isInitialized()) {
             Terminal.init(
-                context = context.applicationContext,
-                logLevel = LogLevel.VERBOSE,
-                tokenProvider = tokenProvider,
-                listener = terminalListener,
+                context.applicationContext,
+                LogLevel.VERBOSE,
+                tokenProvider,
+                terminalListener,
+                null, // offlineListener (required arg, nullable)
             )
         }
     }
@@ -143,16 +150,11 @@ object TerminalManager {
             )
 
             // 2. Pull it into the SDK by client secret.
-            val intent = Terminal.getInstance().retrievePaymentIntent(created.secret)
+            val intent = retrievePaymentIntent(created.secret)
 
-            // 3. Collect + confirm ON the device (shows tip screen). skipTipping
-            //    = false → the on-reader tip prompt is shown.
-            val processed = Terminal.getInstance().processPaymentIntent(
-                collectConfig = CollectPaymentIntentConfiguration.Builder()
-                    .skipTipping(false)
-                    .build(),
-                intent = intent,
-            )
+            // 3. Collect + confirm ON the device — the Stripe Reader app shows the
+            //    on-reader tip screen here (skipTipping = false).
+            val processed = collectAndConfirm(intent)
 
             if (processed.status != PaymentIntentStatus.REQUIRES_CAPTURE) {
                 return SaleResult.Failure("Payment not ready to capture (${processed.status}).")
@@ -169,4 +171,29 @@ object TerminalManager {
             SaleResult.Failure(e.message ?: "Sale failed")
         }
     }
+
+    // The SDK's payment methods are callback-based; wrap them as suspend funcs.
+    private suspend fun retrievePaymentIntent(secret: String): PaymentIntent =
+        suspendCancellableCoroutine { cont ->
+            Terminal.getInstance().retrievePaymentIntent(
+                secret,
+                object : PaymentIntentCallback {
+                    override fun onSuccess(paymentIntent: PaymentIntent) = cont.resume(paymentIntent)
+                    override fun onFailure(e: TerminalException) = cont.resumeWithException(e)
+                },
+            )
+        }
+
+    private suspend fun collectAndConfirm(intent: PaymentIntent): PaymentIntent =
+        suspendCancellableCoroutine { cont ->
+            Terminal.getInstance().processPaymentIntent(
+                intent,
+                CollectPaymentIntentConfiguration.Builder().skipTipping(false).build(),
+                ConfirmPaymentIntentConfiguration.Builder().build(),
+                object : PaymentIntentCallback {
+                    override fun onSuccess(paymentIntent: PaymentIntent) = cont.resume(paymentIntent)
+                    override fun onFailure(e: TerminalException) = cont.resumeWithException(e)
+                },
+            )
+        }
 }
