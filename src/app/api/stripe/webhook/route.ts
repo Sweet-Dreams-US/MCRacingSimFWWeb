@@ -143,6 +143,9 @@ async function processEvent(event: Stripe.Event, supabase: Supa) {
     case 'charge.dispute.created':
       return handleDisputeCreated(event, supabase)
 
+    case 'charge.refunded':
+      return handleChargeRefunded(event, supabase)
+
     default:
       // Lots of events fire that we don't act on (customer.updated, etc.).
       // We've already logged them in stripe_webhook_events; that's enough.
@@ -266,6 +269,68 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
 
   // No-show charges are recorded by the admin action that created them, so we
   // don't double-insert here for those.
+}
+
+async function handleChargeRefunded(event: Stripe.Event, supabase: Supa) {
+  const charge = event.data.object as Stripe.Charge
+  const piId =
+    typeof charge.payment_intent === 'string'
+      ? charge.payment_intent
+      : charge.payment_intent?.id
+  if (!piId) return
+
+  // Find our charge row for this payment.
+  const { data: ourCharge } = await supabase
+    .from('stripe_charges')
+    .select('id, booking_id, customer_id, amount_cents, payment_method_type, reason')
+    .eq('stripe_payment_intent_id', piId)
+    .maybeSingle()
+  if (!ourCharge) return
+
+  // How much have we already recorded as refunds for this charge? (Stripe's
+  // charge.amount_refunded is cumulative, so we record only the delta — this
+  // makes partial + repeated refunds idempotent.)
+  const { data: priorRefunds } = await supabase
+    .from('transactions')
+    .select('amount_cents')
+    .eq('stripe_charge_id', ourCharge.id)
+    .eq('type', 'refund')
+    .is('soft_deleted_at', null)
+
+  const alreadyRecorded = (priorRefunds ?? []).reduce(
+    (sum, t) => sum + Math.abs(t.amount_cents),
+    0
+  )
+  const newRefundCents = charge.amount_refunded - alreadyRecorded
+  if (newRefundCents <= 0) return
+
+  const todayEastern = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+
+  // Record the refund as a NEGATIVE transaction so SUM(amount_cents) nets it
+  // out of revenue automatically.
+  await supabase.from('transactions').insert({
+    type: 'refund',
+    amount_cents: -newRefundCents,
+    occurred_on: todayEastern,
+    description: `Refund — ${ourCharge.reason || 'payment'}`,
+    booking_id: ourCharge.booking_id,
+    customer_id: ourCharge.customer_id,
+    stripe_charge_id: ourCharge.id,
+    payment_method: ourCharge.payment_method_type,
+  })
+
+  // Mark the charge refunded once fully returned.
+  if (charge.amount_refunded >= ourCharge.amount_cents) {
+    await supabase
+      .from('stripe_charges')
+      .update({ status: 'refunded' })
+      .eq('id', ourCharge.id)
+  }
 }
 
 async function handlePaymentIntentFailed(event: Stripe.Event, supabase: Supa) {
