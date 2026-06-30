@@ -1,0 +1,12 @@
+# Copy to local.properties (gitignored) and fill in. Android Studio also writes
+# sdk.dir here automatically.
+
+# Base URL of the Next.js Terminal backend (note the trailing slash).
+BACKEND_URL=https://www.mcracingfortwayne.com/api/terminal/
+
+# Must match POS_DEVICE_KEY in the Vercel project env. Generate a long random
+# string, e.g.  openssl rand -hex 32
+DEVICE_KEY=REPLACE_WITH_LONG_RANDOM_DEVICE_KEY
+
+# sdk.dir is added automatically by Android Studio, e.g.:
+# sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window theme only (Compose draws the actual UI). Framework Material
+         theme so we need no AppCompat/Material XML dependency. -->
+    <style name="Theme.MCRacingPOS" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#0D0D0D</item>
+        <item name="android:navigationBarColor">#0D0D0D</item>
+        <item name="android:windowBackground">#0D0D0D</item>
+    </style>
+</resources>
