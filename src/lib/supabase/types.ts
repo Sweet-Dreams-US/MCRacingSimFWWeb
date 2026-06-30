@@ -214,6 +214,8 @@ export type Database = {
           birthday: string | null
           created_at: string
           email: string | null
+          email_bounced_at: string | null
+          email_complained_at: string | null
           first_name: string
           how_heard: string | null
           id: string
@@ -225,6 +227,8 @@ export type Database = {
           stripe_customer_id: string | null
           total_bookings: number
           total_spent_cents: number
+          unsubscribe_token: string
+          unsubscribed_at: string | null
           updated_at: string
           waiver_form_data: Json | null
           waiver_signed_at: string | null
@@ -233,6 +237,8 @@ export type Database = {
           birthday?: string | null
           created_at?: string
           email?: string | null
+          email_bounced_at?: string | null
+          email_complained_at?: string | null
           first_name: string
           how_heard?: string | null
           id?: string
@@ -244,6 +250,8 @@ export type Database = {
           stripe_customer_id?: string | null
           total_bookings?: number
           total_spent_cents?: number
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
           updated_at?: string
           waiver_form_data?: Json | null
           waiver_signed_at?: string | null
@@ -252,6 +260,8 @@ export type Database = {
           birthday?: string | null
           created_at?: string
           email?: string | null
+          email_bounced_at?: string | null
+          email_complained_at?: string | null
           first_name?: string
           how_heard?: string | null
           id?: string
@@ -263,6 +273,8 @@ export type Database = {
           stripe_customer_id?: string | null
           total_bookings?: number
           total_spent_cents?: number
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
           updated_at?: string
           waiver_form_data?: Json | null
           waiver_signed_at?: string | null
@@ -340,6 +352,146 @@ export type Database = {
           sort_order?: number
         }
         Relationships: []
+      }
+      marketing_campaigns: {
+        Row: {
+          audience_note: string | null
+          body_html: string
+          body_text: string | null
+          bounced_count: number
+          complained_count: number
+          created_at: string
+          created_by_user_id: string | null
+          cta_label: string | null
+          cta_url: string | null
+          delivered_count: number
+          from_name: string
+          id: string
+          name: string
+          opened_count: number
+          preheader: string | null
+          recipient_count: number
+          sent_at: string | null
+          sent_count: number
+          status: Database["public"]["Enums"]["campaign_status"]
+          subject: string
+          unsubscribed_count: number
+          updated_at: string
+        }
+        Insert: {
+          audience_note?: string | null
+          body_html: string
+          body_text?: string | null
+          bounced_count?: number
+          complained_count?: number
+          created_at?: string
+          created_by_user_id?: string | null
+          cta_label?: string | null
+          cta_url?: string | null
+          delivered_count?: number
+          from_name?: string
+          id?: string
+          name: string
+          opened_count?: number
+          preheader?: string | null
+          recipient_count?: number
+          sent_at?: string | null
+          sent_count?: number
+          status?: Database["public"]["Enums"]["campaign_status"]
+          subject: string
+          unsubscribed_count?: number
+          updated_at?: string
+        }
+        Update: {
+          audience_note?: string | null
+          body_html?: string
+          body_text?: string | null
+          bounced_count?: number
+          complained_count?: number
+          created_at?: string
+          created_by_user_id?: string | null
+          cta_label?: string | null
+          cta_url?: string | null
+          delivered_count?: number
+          from_name?: string
+          id?: string
+          name?: string
+          opened_count?: number
+          preheader?: string | null
+          recipient_count?: number
+          sent_at?: string | null
+          sent_count?: number
+          status?: Database["public"]["Enums"]["campaign_status"]
+          subject?: string
+          unsubscribed_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_campaigns_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketing_sends: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          customer_id: string | null
+          error: string | null
+          id: string
+          is_individual: boolean
+          resend_message_id: string | null
+          sent_at: string | null
+          status: Database["public"]["Enums"]["send_status"]
+          to_email: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          error?: string | null
+          id?: string
+          is_individual?: boolean
+          resend_message_id?: string | null
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["send_status"]
+          to_email: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          error?: string | null
+          id?: string
+          is_individual?: boolean
+          resend_message_id?: string | null
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["send_status"]
+          to_email?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_sends_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "marketing_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_sends_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       marketing_payout_calculations: {
         Row: {
@@ -592,6 +744,7 @@ export type Database = {
         | "partial_noshow"
         | "noshow"
         | "cancelled"
+      campaign_status: "draft" | "sending" | "sent" | "failed"
       charge_status:
         | "pending"
         | "succeeded"
@@ -604,6 +757,16 @@ export type Database = {
         | "cash"
         | "other"
         | "internal"
+      send_status:
+        | "queued"
+        | "sent"
+        | "delivered"
+        | "opened"
+        | "clicked"
+        | "bounced"
+        | "complained"
+        | "failed"
+        | "skipped"
       transaction_type:
         | "booking_income"
         | "no_show_fee"

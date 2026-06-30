@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { BookingStatusBadge } from '../../../StatusBadge'
+import SendEmailToCustomer from './SendEmailToCustomer'
 
 function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -84,6 +85,24 @@ export default async function CustomerDetailPage({
     0
   )
 
+  // Can we email this customer? Mirrors the suppression rules in the send
+  // engine so the owner sees the same answer the system would enforce.
+  let emailable = true
+  let suppressionReason: string | null = null
+  if (!customer.email) {
+    emailable = false
+    suppressionReason = 'No email address on file.'
+  } else if (customer.email_complained_at) {
+    emailable = false
+    suppressionReason = 'Marked a previous email as spam — permanently suppressed.'
+  } else if (customer.unsubscribed_at) {
+    emailable = false
+    suppressionReason = 'Unsubscribed from marketing.'
+  } else if (customer.email_bounced_at) {
+    emailable = false
+    suppressionReason = 'Email address bounced — suppressed.'
+  }
+
   return (
     <div className="space-y-8 max-w-5xl">
       {/* Header */}
@@ -135,14 +154,21 @@ export default async function CustomerDetailPage({
               />
               <Field label="How heard" value={customer.how_heard ?? '—'} />
               <Field
-                label="Marketing opt-in"
-                value={customer.marketing_opt_in ? '✓ Yes' : 'No'}
+                label="Email marketing"
+                value={emailable ? '✓ Can email' : suppressionReason ?? 'Suppressed'}
               />
               {customer.stripe_customer_id && (
                 <Field label="Stripe ID" value={customer.stripe_customer_id} mono />
               )}
             </div>
           </div>
+
+          <SendEmailToCustomer
+            customerId={customer.id}
+            firstName={customer.first_name}
+            emailable={emailable}
+            suppressionReason={suppressionReason}
+          />
         </div>
 
         {/* Right: Bookings + transactions */}
