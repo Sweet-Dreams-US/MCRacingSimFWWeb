@@ -9,9 +9,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcracing.pos.net.ApiClient
+import com.mcracing.pos.net.BookingActionRequest
 import com.mcracing.pos.net.BookingDto
+import com.mcracing.pos.net.CashPaymentRequest
+import com.mcracing.pos.net.CustomerHit
 import com.mcracing.pos.terminal.TerminalManager
 import com.stripe.stripeterminal.external.models.ConnectionStatus
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
@@ -47,8 +51,19 @@ fun PosApp() {
     var loading by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(SaleDraft()) }
     var resultSuccess by remember { mutableStateOf(false) }
+    var resultTitle by remember { mutableStateOf("") }
     var resultAmount by remember { mutableStateOf(0L) }
     var resultMessage by remember { mutableStateOf("") }
+    var customerQuery by remember { mutableStateOf("") }
+    var customerHits by remember { mutableStateOf<List<CustomerHit>>(emptyList()) }
+
+    fun showResult(success: Boolean, title: String, amountCents: Long = 0L, message: String = "") {
+        resultSuccess = success
+        resultTitle = title
+        resultAmount = amountCents
+        resultMessage = message
+        stage = Stage.Result
+    }
 
     fun loadBookings() {
         loading = true
@@ -66,6 +81,55 @@ fun PosApp() {
     }
 
     LaunchedEffect(Unit) { loadBookings() }
+
+    // Debounced customer search for the walk-in flow.
+    LaunchedEffect(customerQuery, draft.customerId) {
+        if (draft.customerId != null || customerQuery.trim().length < 2) {
+            customerHits = emptyList()
+            return@LaunchedEffect
+        }
+        delay(250)
+        customerHits = try {
+            ApiClient.service.customersSearch(customerQuery.trim()).customers
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun recordCash() {
+        stage = Stage.Processing
+        scope.launch {
+            val ok = try {
+                ApiClient.service.cashPayment(
+                    CashPaymentRequest(
+                        bookingId = draft.bookingId,
+                        customerId = draft.customerId,
+                        amountCents = draft.amountCents(),
+                        description = draft.description.ifBlank { "Cash payment" },
+                        receiptEmail = draft.receiptEmail,
+                        saleType = draft.saleType,
+                    )
+                ).success
+            } catch (_: Exception) {
+                false
+            }
+            if (ok) showResult(true, "Cash recorded", draft.amountCents())
+            else showResult(false, "Couldn't record cash")
+        }
+    }
+
+    fun doBookingAction(action: String, doneTitle: String) {
+        val id = draft.bookingId ?: return
+        stage = Stage.Processing
+        scope.launch {
+            val ok = try {
+                ApiClient.service.bookingAction(BookingActionRequest(id, action)).success
+            } catch (_: Exception) {
+                false
+            }
+            if (ok) showResult(true, doneTitle) else showResult(false, "Action failed")
+        }
+    }
 
     when (stage) {
         Stage.Bookings -> BookingsScreen(
@@ -93,6 +157,8 @@ fun PosApp() {
             },
             onWalkIn = {
                 draft = SaleDraft()
+                customerQuery = ""
+                customerHits = emptyList()
                 stage = Stage.Sale
             },
         )
@@ -100,6 +166,22 @@ fun PosApp() {
         Stage.Sale -> SaleScreen(
             draft = draft,
             connected = connected,
+            customerQuery = customerQuery,
+            customerHits = customerHits,
+            onCustomerQueryChange = { customerQuery = it },
+            onCustomerPick = { hit ->
+                draft = draft.copy(
+                    customerId = hit.id,
+                    customerName = hit.name,
+                    receiptEmail = hit.email ?: draft.receiptEmail,
+                )
+                customerQuery = ""
+                customerHits = emptyList()
+            },
+            onClearCustomer = {
+                draft = draft.copy(customerId = null, customerName = null)
+                customerQuery = ""
+            },
             onAmountChange = { draft = draft.copy(amountText = it) },
             onDescriptionChange = { draft = draft.copy(description = it) },
             onEmailChange = { draft = draft.copy(receiptEmail = it) },
@@ -115,20 +197,17 @@ fun PosApp() {
                         receiptEmail = draft.receiptEmail,
                     )
                     when (result) {
-                        is TerminalManager.SaleResult.Success -> {
-                            resultSuccess = true
-                            resultAmount = result.amountCents
-                            resultMessage = ""
-                        }
-                        is TerminalManager.SaleResult.Failure -> {
-                            resultSuccess = false
-                            resultAmount = 0L
-                            resultMessage = result.message
-                        }
+                        is TerminalManager.SaleResult.Success ->
+                            showResult(true, "Payment approved", result.amountCents)
+                        is TerminalManager.SaleResult.Failure ->
+                            showResult(false, "Payment failed", 0L, result.message)
                     }
-                    stage = Stage.Result
                 }
             },
+            onRecordCash = { recordCash() },
+            onMarkComplete = { doBookingAction("complete", "Booking completed") },
+            onNoShow = { doBookingAction("noshow", "Marked no-show") },
+            onCancelBooking = { doBookingAction("cancel", "Booking cancelled") },
             onBack = { stage = Stage.Bookings },
         )
 
@@ -136,10 +215,13 @@ fun PosApp() {
 
         Stage.Result -> ResultScreen(
             success = resultSuccess,
+            title = resultTitle,
             amountCents = resultAmount,
             message = resultMessage,
             onDone = {
                 draft = SaleDraft()
+                customerQuery = ""
+                customerHits = emptyList()
                 loadBookings()
                 stage = Stage.Bookings
             },

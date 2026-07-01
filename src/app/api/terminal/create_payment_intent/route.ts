@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
 import { isDeviceAuthorized } from '@/lib/device-auth'
+import { findOrCreateCustomerIdByEmail } from '@/lib/customers'
 
 export const runtime = 'nodejs'
 
@@ -48,15 +49,21 @@ export async function POST(request: NextRequest) {
   const supabase = createAdminClient()
   const stripe = getStripe()
 
-  // Resolve the Stripe customer + receipt email (same as the web POS route).
-  let stripeCustomerId: string | undefined
+  // Resolve the customer + Stripe customer + receipt email. A walk-in who gives
+  // an email but no customerId gets linked (find-or-create) so they receive a
+  // receipt + build long-term history — same as the web POS.
   let receiptEmail = body.receiptEmail?.trim() || undefined
+  let customerId = body.customerId?.trim() || null
+  if (!customerId && receiptEmail) {
+    customerId = await findOrCreateCustomerIdByEmail(supabase, receiptEmail)
+  }
 
-  if (body.customerId) {
+  let stripeCustomerId: string | undefined
+  if (customerId) {
     const { data: customer } = await supabase
       .from('customers')
       .select('id, email, first_name, last_name, stripe_customer_id')
-      .eq('id', body.customerId)
+      .eq('id', customerId)
       .maybeSingle()
     if (customer) {
       receiptEmail = receiptEmail ?? customer.email ?? undefined
@@ -100,7 +107,7 @@ export async function POST(request: NextRequest) {
         source: 'pos',
         sale_type: saleType,
         booking_id: (saleType === 'booking_income' ? body.bookingId : null) ?? '',
-        supabase_customer_id: body.customerId ?? '',
+        supabase_customer_id: customerId ?? '',
         admin_user_id: '', // device charge — webhook coerces '' → null
         device: 'reader',
       },
@@ -111,7 +118,7 @@ export async function POST(request: NextRequest) {
   await supabase.from('stripe_charges').insert({
     stripe_payment_intent_id: intent.id,
     booking_id: (saleType === 'booking_income' ? body.bookingId : null) || null,
-    customer_id: body.customerId || null,
+    customer_id: customerId,
     amount_cents: amountCents as number,
     currency: 'usd',
     status: 'pending',

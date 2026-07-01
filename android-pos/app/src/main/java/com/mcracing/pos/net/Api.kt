@@ -8,6 +8,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Query
 
 // ---- DTOs (match the Next.js /api/terminal/* JSON exactly) ------------------
 
@@ -52,6 +53,36 @@ data class CaptureResponse(
     val status: String?,
 )
 
+data class CustomerHit(
+    val id: String,
+    val name: String,
+    val email: String?,
+    val phone: String?,
+)
+
+data class CustomersResponse(val customers: List<CustomerHit>)
+
+data class BookingActionRequest(
+    val bookingId: String,
+    val action: String, // "complete" | "noshow" | "cancel" | "note"
+    val note: String? = null,
+)
+
+data class CashPaymentRequest(
+    val bookingId: String?,
+    val customerId: String?,
+    val amountCents: Long,
+    val description: String,
+    val receiptEmail: String?,
+    val saleType: String?,
+)
+
+data class ActionResponse(
+    val success: Boolean = false,
+    val error: String? = null,
+    val transactionId: String? = null,
+)
+
 // ---- Retrofit service -------------------------------------------------------
 
 interface BackendService {
@@ -72,6 +103,15 @@ interface BackendService {
 
     @POST("capture_payment_intent/")
     suspend fun capturePaymentIntent(@Body body: CapturePaymentRequest): CaptureResponse
+
+    @GET("customers/search/")
+    suspend fun customersSearch(@Query("q") q: String): CustomersResponse
+
+    @POST("booking_action/")
+    suspend fun bookingAction(@Body body: BookingActionRequest): ActionResponse
+
+    @POST("cash_payment/")
+    suspend fun cashPayment(@Body body: CashPaymentRequest): ActionResponse
 }
 
 // ---- Client -----------------------------------------------------------------
