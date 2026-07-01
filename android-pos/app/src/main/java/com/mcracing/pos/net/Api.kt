@@ -20,6 +20,7 @@ data class BookingDto(
     val durationHours: Int,
     val racerCount: Int,
     val sessionPriceCents: Long,
+    val paidCents: Long = 0,
     val status: String,
     val customerId: String?,
     val customerName: String?,

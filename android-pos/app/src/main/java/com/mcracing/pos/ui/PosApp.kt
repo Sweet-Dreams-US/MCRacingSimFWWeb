@@ -24,6 +24,8 @@ data class SaleDraft(
     val customerName: String? = null,
     val bookingId: String? = null,
     val receiptEmail: String? = null,
+    val sessionPriceCents: Long = 0,
+    val paidCents: Long = 0,
 ) {
     fun amountCents(): Long {
         val v = amountText.toDoubleOrNull() ?: return 0L
@@ -72,14 +74,20 @@ fun PosApp() {
             today = today,
             onRefresh = { loadBookings() },
             onPick = { b ->
+                // Prefill the REMAINING balance so a partly-paid booking is one
+                // tap to finish; full price if nothing's been paid yet.
+                val remaining = (b.sessionPriceCents - b.paidCents).coerceAtLeast(0)
+                val prefill = if (remaining > 0) remaining else b.sessionPriceCents
                 draft = SaleDraft(
-                    amountText = "%.2f".format(b.sessionPriceCents / 100.0),
+                    amountText = "%.2f".format(prefill / 100.0),
                     description = "${if (b.sessionDate == today) "Today" else b.sessionDate} ${prettyTime(b.startTime)} — ${b.racerCount} racer(s), ${b.durationHours}h",
                     saleType = "booking_income",
                     customerId = b.customerId,
                     customerName = b.customerName,
                     bookingId = b.id,
                     receiptEmail = b.customerEmail,
+                    sessionPriceCents = b.sessionPriceCents,
+                    paidCents = b.paidCents,
                 )
                 stage = Stage.Sale
             },
@@ -94,6 +102,7 @@ fun PosApp() {
             connected = connected,
             onAmountChange = { draft = draft.copy(amountText = it) },
             onDescriptionChange = { draft = draft.copy(description = it) },
+            onEmailChange = { draft = draft.copy(receiptEmail = it) },
             onCharge = {
                 stage = Stage.Processing
                 scope.launch {

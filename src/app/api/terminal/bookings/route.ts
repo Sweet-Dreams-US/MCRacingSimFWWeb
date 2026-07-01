@@ -44,6 +44,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // How much has already been paid toward each booking (base amount, excluding
+  // tips; refunds net out via signed amounts). Lets the app show a remaining
+  // balance so staff can split a booking across multiple charges.
+  const ids = (data ?? []).map((b) => b.id)
+  const paidByBooking: Record<string, number> = {}
+  if (ids.length > 0) {
+    const { data: txns } = await supabase
+      .from('transactions')
+      .select('booking_id, amount_cents, tip_cents')
+      .in('booking_id', ids)
+      .is('soft_deleted_at', null)
+    for (const t of txns ?? []) {
+      if (t.booking_id) {
+        paidByBooking[t.booking_id] =
+          (paidByBooking[t.booking_id] ?? 0) + (t.amount_cents - (t.tip_cents ?? 0))
+      }
+    }
+  }
+
   const bookings = (data ?? []).map((b) => {
     const c = Array.isArray(b.customer) ? b.customer[0] ?? null : b.customer
     return {
@@ -53,6 +72,7 @@ export async function GET(request: NextRequest) {
       durationHours: b.duration_hours,
       racerCount: b.racer_count,
       sessionPriceCents: b.session_price_cents,
+      paidCents: paidByBooking[b.id] ?? 0,
       status: b.status,
       customerId: c?.id ?? null,
       customerName: c ? `${c.first_name} ${c.last_name}`.trim() : null,

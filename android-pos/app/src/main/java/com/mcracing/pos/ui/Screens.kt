@@ -122,6 +122,16 @@ fun BookingsScreen(
                                 color = PitGray,
                                 fontSize = 12.sp,
                             )
+                            if (b.paidCents > 0) {
+                                val left = (b.sessionPriceCents - b.paidCents).coerceAtLeast(0)
+                                Text(
+                                    if (left > 0)
+                                        "Paid ${centsToDollars(b.paidCents)} · ${centsToDollars(left)} left"
+                                    else "Paid in full",
+                                    color = TelemetryCyan,
+                                    fontSize = 10.sp,
+                                )
+                            }
                         }
                     }
                 }
@@ -136,6 +146,7 @@ fun SaleScreen(
     connected: Boolean,
     onAmountChange: (String) -> Unit,
     onDescriptionChange: (String) -> Unit,
+    onEmailChange: (String) -> Unit,
     onCharge: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -149,6 +160,15 @@ fun SaleScreen(
         }
         draft.customerName?.let {
             Text("Customer: $it", color = PitGray)
+            Spacer(Modifier.height(8.dp))
+        }
+        if (draft.paidCents > 0) {
+            val left = (draft.sessionPriceCents - draft.paidCents).coerceAtLeast(0)
+            Text(
+                "Paid ${centsToDollars(draft.paidCents)} of ${centsToDollars(draft.sessionPriceCents)} · ${centsToDollars(left)} left",
+                color = TelemetryCyan,
+                fontSize = 12.sp,
+            )
             Spacer(Modifier.height(8.dp))
         }
 
@@ -166,6 +186,17 @@ fun SaleScreen(
             value = draft.description,
             onValueChange = onDescriptionChange,
             label = { Text("Description") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = draft.receiptEmail ?: "",
+            onValueChange = onEmailChange,
+            label = { Text("Receipt email (optional)") },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = KeyboardType.Email
+            ),
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(20.dp))
