@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
        customer:customers(id, first_name, last_name, email, phone)`
     )
     .gte('session_date', today)
-    .in('status', ['confirmed', 'completed', 'partial_noshow'])
+    // Open (confirmed) + closed-out (completed/no-show) so the app can group
+    // them into Upcoming vs Past. Cancelled bookings are excluded entirely.
+    .in('status', ['confirmed', 'completed', 'partial_noshow', 'noshow'])
     .order('session_date', { ascending: true })
     .order('start_time', { ascending: true })
     .limit(100)

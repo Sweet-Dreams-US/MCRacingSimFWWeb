@@ -67,6 +67,16 @@ fun ConnectingScreen(statusText: String) {
     }
 }
 
+fun isBookingDone(status: String): Boolean =
+    status == "completed" || status == "noshow" || status == "partial_noshow"
+
+fun bookingStatusLabel(status: String): String = when (status) {
+    "completed" -> "✓ Completed"
+    "noshow" -> "No-show"
+    "partial_noshow" -> "Partial no-show"
+    else -> status
+}
+
 @Composable
 fun BookingsScreen(
     bookings: List<BookingDto>,
@@ -76,6 +86,9 @@ fun BookingsScreen(
     onPick: (BookingDto) -> Unit,
     onWalkIn: () -> Unit,
 ) {
+    val open = bookings.filter { !isBookingDone(it.status) }
+    val done = bookings.filter { isBookingDone(it.status) }
+
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -95,55 +108,77 @@ fun BookingsScreen(
 
         if (loading) {
             ConnectingScreen("Loading bookings…")
-        } else if (bookings.isEmpty()) {
-            Text("No upcoming bookings.", color = PitGray)
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
-                items(bookings) { b ->
-                    Card(
-                        onClick = { onPick(b) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(),
-                    ) {
-                        Column(Modifier.padding(14.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(
-                                    "${if (b.sessionDate == today) "Today" else b.sessionDate} · ${prettyTime(b.startTime)}",
-                                    color = TelemetryCyan,
-                                )
-                                Text(centsToDollars(b.sessionPriceCents), fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                b.customerName ?: "No customer",
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                "${b.racerCount} racer${if (b.racerCount > 1) "s" else ""} · ${b.durationHours}h · ${b.id}",
-                                color = PitGray,
-                                fontSize = 12.sp,
-                            )
-                            if (b.paidCents > 0) {
-                                val left = (b.sessionPriceCents - b.paidCents).coerceAtLeast(0)
-                                Text(
-                                    if (left > 0)
-                                        "Paid ${centsToDollars(b.paidCents)} · ${centsToDollars(left)} left"
-                                    else "Paid in full",
-                                    color = TelemetryCyan,
-                                    fontSize = 10.sp,
-                                )
-                            }
-                        }
-                    }
+                item { SectionHeader("Upcoming (${open.size})") }
+                if (open.isEmpty()) {
+                    item { Text("No upcoming bookings.", color = PitGray) }
                 }
+                items(open, key = { it.id }) { b -> BookingCard(b, today, onPick) }
+
+                if (done.isNotEmpty()) {
+                    item { Spacer(Modifier.height(8.dp)) }
+                    item { SectionHeader("Completed today (${done.size})") }
+                    items(done, key = { it.id }) { b -> BookingCard(b, today, onPick) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text.uppercase(),
+        color = PitGray,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun BookingCard(b: BookingDto, today: String, onPick: (BookingDto) -> Unit) {
+    val done = isBookingDone(b.status)
+    Card(
+        onClick = { onPick(b) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    "${if (b.sessionDate == today) "Today" else b.sessionDate} · ${prettyTime(b.startTime)}",
+                    color = if (done) PitGray else TelemetryCyan,
+                )
+                Text(centsToDollars(b.sessionPriceCents), fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                b.customerName ?: "No customer",
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${b.racerCount} racer${if (b.racerCount > 1) "s" else ""} · ${b.durationHours}h · ${b.id}",
+                color = PitGray,
+                fontSize = 12.sp,
+            )
+            if (done) {
+                Text(bookingStatusLabel(b.status), color = TelemetryCyan, fontSize = 10.sp)
+            } else if (b.paidCents > 0) {
+                val left = (b.sessionPriceCents - b.paidCents).coerceAtLeast(0)
+                Text(
+                    if (left > 0)
+                        "Paid ${centsToDollars(b.paidCents)} · ${centsToDollars(left)} left"
+                    else "Paid in full",
+                    color = TelemetryCyan,
+                    fontSize = 10.sp,
+                )
             }
         }
     }
@@ -218,7 +253,11 @@ fun SaleScreen(
             Spacer(Modifier.height(8.dp))
         }
 
-        if (draft.paidCents > 0) {
+        val bookingDone = draft.bookingStatus?.let { isBookingDone(it) } == true
+        if (bookingDone) {
+            Text(bookingStatusLabel(draft.bookingStatus!!), color = TelemetryCyan, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+        } else if (draft.paidCents > 0) {
             val left = (draft.sessionPriceCents - draft.paidCents).coerceAtLeast(0)
             Text(
                 "Paid ${centsToDollars(draft.paidCents)} of ${centsToDollars(draft.sessionPriceCents)} · ${centsToDollars(left)} left",

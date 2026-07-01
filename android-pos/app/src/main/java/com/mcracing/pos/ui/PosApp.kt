@@ -30,6 +30,7 @@ data class SaleDraft(
     val receiptEmail: String? = null,
     val sessionPriceCents: Long = 0,
     val paidCents: Long = 0,
+    val bookingStatus: String? = null,
 ) {
     fun amountCents(): Long {
         val v = amountText.toDoubleOrNull() ?: return 0L
@@ -152,6 +153,7 @@ fun PosApp() {
                     receiptEmail = b.customerEmail,
                     sessionPriceCents = b.sessionPriceCents,
                     paidCents = b.paidCents,
+                    bookingStatus = b.status,
                 )
                 stage = Stage.Sale
             },
