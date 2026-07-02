@@ -560,11 +560,11 @@ export function inviteBookingEmail(
       ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
       ['Duration', `${durationHours} ${hourWord}`],
       ['Racers', `${racerCount} ${racerWord}`],
-      ['Price (due at venue)', `<span style="color:${COLOR.telemetryCyan};">${formatCents(sessionPriceCents)}</span>`],
+      ['Session Price', `<span style="color:${COLOR.telemetryCyan};">${formatCents(sessionPriceCents)}</span>`],
     ])}
 
     ${h2('Day of Race')}
-    ${p(`Arrive <strong style="color:${COLOR.gridWhite};">15 minutes before your start time</strong>. You'll sign a quick waiver, get a sim walkthrough, and we'll get you on track. Pay when you arrive.`)}
+    ${p(`Arrive <strong style="color:${COLOR.gridWhite};">15 minutes before your start time</strong>. You'll sign a quick waiver, get a sim walkthrough, and we'll get you on track.`)}
 
     ${noticeBox(
       'Need to change it?',
