@@ -62,8 +62,8 @@ export default function PitLaneClient() {
             More time = more rotations = more race time per kid.
           </p>
           <div className="flex flex-wrap gap-4">
-            <Button href="#birthday-pricing" size="lg">Birthday Parties</Button>
-            <Button href="#corporate" variant="secondary" size="lg">Corporate Events</Button>
+            <Button href="/contact" size="lg">Plan Your Event</Button>
+            <Button href="tel:+18082202600" variant="secondary" size="lg">Call (808) 220-2600</Button>
           </div>
         </div>
       </section>
@@ -78,103 +78,34 @@ export default function PitLaneClient() {
               // Birthday Parties
             </span>
             <h2 className="racing-headline text-4xl md:text-5xl text-grid-white mb-4">
-              Party <span className="text-apex-red">Pricing</span>
+              Built Around <span className="text-apex-red">Your Party</span>
             </h2>
             <p className="telemetry-text text-pit-gray max-w-xl mx-auto">
-              With 3 sims, kids rotate through in groups of 3. More time = more rotations = more race time per kid.
+              With 3 sims, kids rotate through in groups of 3 — more time means more rotations and more race time per
+              kid. Every party is tailored to your group size and how long you want to run, so tell us what you have in
+              mind and we&apos;ll put together the perfect package.
             </p>
           </div>
 
-          {/* Main Pricing Table */}
-          <div className="overflow-x-auto bg-asphalt border border-white/10 mb-8">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-white/20">
-                  <th className="text-left telemetry-text text-pit-gray uppercase tracking-wider py-4 px-4">Duration</th>
-                  <th className="text-center telemetry-text text-telemetry-cyan uppercase tracking-wider py-4 px-4">Up to 6 Kids</th>
-                  <th className="text-center telemetry-text text-apex-red uppercase tracking-wider py-4 px-4">7-9 Kids</th>
-                  <th className="text-center telemetry-text text-telemetry-cyan uppercase tracking-wider py-4 px-4">10-12 Kids</th>
-                </tr>
-              </thead>
-              <tbody className="telemetry-text">
-                <tr className="border-b border-white/10">
-                  <td className="text-grid-white py-4 px-4 font-bold">1.5 Hours</td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$300</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$375</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$450</span></td>
-                </tr>
-                <tr className="border-b border-white/10">
-                  <td className="text-grid-white py-4 px-4 font-bold">2 Hours</td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$400</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$475</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$550</span></td>
-                </tr>
-                <tr className="border-b border-white/10">
-                  <td className="text-grid-white py-4 px-4 font-bold">2.5 Hours</td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$475</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$550</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$650</span></td>
-                </tr>
-                <tr>
-                  <td className="text-grid-white py-4 px-4 font-bold">3 Hours</td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$550</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$650</span></td>
-                  <td className="text-center text-grid-white py-4 px-4"><span className="racing-headline text-xl">$750</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Per-Kid Breakdown */}
-          <div className="overflow-x-auto bg-asphalt-dark border border-white/10 mb-8">
-            <div className="p-4 border-b border-white/10">
-              <h3 className="racing-headline text-lg text-grid-white text-center">
-                <span className="text-telemetry-cyan">// </span>Per-Kid Breakdown
-              </h3>
-            </div>
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-white/20">
-                  <th className="text-left telemetry-text text-pit-gray uppercase tracking-wider py-4 px-4">Duration</th>
-                  <th className="text-center telemetry-text text-telemetry-cyan uppercase tracking-wider py-4 px-4">6 Kids</th>
-                  <th className="text-center telemetry-text text-apex-red uppercase tracking-wider py-4 px-4">9 Kids</th>
-                  <th className="text-center telemetry-text text-telemetry-cyan uppercase tracking-wider py-4 px-4">12 Kids</th>
-                </tr>
-              </thead>
-              <tbody className="telemetry-text">
-                <tr className="border-b border-white/10">
-                  <td className="text-grid-white py-4 px-4">1.5 Hours</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$50/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$42/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$38/kid</td>
-                </tr>
-                <tr className="border-b border-white/10">
-                  <td className="text-grid-white py-4 px-4">2 Hours</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$67/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$53/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$46/kid</td>
-                </tr>
-                <tr className="border-b border-white/10">
-                  <td className="text-grid-white py-4 px-4">2.5 Hours</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$79/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$61/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$54/kid</td>
-                </tr>
-                <tr>
-                  <td className="text-grid-white py-4 px-4">3 Hours</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$92/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$72/kid</td>
-                  <td className="text-center text-telemetry-cyan py-4 px-4">$63/kid</td>
-                </tr>
-              </tbody>
-            </table>
+          {/* What's included */}
+          <div className="grid sm:grid-cols-3 gap-4 mb-10">
+            {[
+              { t: 'Your own race director', d: 'Full briefing, standings, and a podium finish for the birthday racer.' },
+              { t: 'Dedicated party space', d: 'Tables and chairs for cake, food, and hanging out between rotations.' },
+              { t: 'Bring your own treats', d: 'Cake, snacks, and decorations are all welcome — the space is yours.' },
+            ].map((item, i) => (
+              <div key={i} className="bg-asphalt border border-white/10 p-6">
+                <h3 className="racing-headline text-lg text-grid-white mb-2">{item.t}</h3>
+                <p className="telemetry-text text-sm text-pit-gray">{item.d}</p>
+              </div>
+            ))}
           </div>
 
           <div className="text-center mt-12">
-            <Button href="tel:+18082202600" size="lg">Book a Birthday Party</Button>
+            <Button href="/contact" size="lg">Plan Your Party</Button>
             <p className="telemetry-text text-sm text-pit-gray mt-4">
-              Call us at <a href="tel:+18082202600" className="text-telemetry-cyan hover:underline">(808) 220-2600</a> or
-              email <a href="mailto:mcsimracingfw@gmail.com" className="text-telemetry-cyan hover:underline">mcsimracingfw@gmail.com</a>
+              Send us the details and we&apos;ll build a quote — or call{' '}
+              <a href="tel:+18082202600" className="text-telemetry-cyan hover:underline">(808) 220-2600</a>.
             </p>
           </div>
         </div>
@@ -202,7 +133,7 @@ export default function PitLaneClient() {
                 ))}
               </ul>
               <div className="flex flex-wrap gap-4">
-                <Button href="mailto:mcsimracingfw@gmail.com">Request Quote</Button>
+                <Button href="/contact">Request a Quote</Button>
                 <Button variant="secondary" href="tel:+18082202600">Call (808) 220-2600</Button>
               </div>
             </div>
@@ -244,7 +175,7 @@ export default function PitLaneClient() {
               { q: 'Can we bring our own food and cake?', a: 'Yes! You are welcome to bring food, cake, and decorations. We have a dedicated party space with tables and chairs.' },
               { q: 'What if someone has never raced before?', a: 'No experience needed! Our Race Director will provide a full briefing and our simulators have adjustable difficulty settings.' },
               { q: 'How far in advance should we book?', a: 'We recommend booking at least 2 weeks in advance, especially for weekend parties. Popular dates fill up fast.' },
-              { q: 'Is there a deposit required?', a: 'Yes, a 50% deposit is required to secure your booking. The remaining balance is due on the day of the event.' },
+              { q: 'How do I lock in a date?', a: 'Reach out through the contact form or give us a call — we’ll walk you through the details and secure your date with a deposit.' },
             ].map((faq, i) => (
               <details key={i} className="faq-item group bg-asphalt border border-white/10 hover:border-white/20 transition-colors">
                 <summary className="flex items-center justify-between p-6 cursor-pointer list-none">

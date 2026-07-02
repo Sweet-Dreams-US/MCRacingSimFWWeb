@@ -645,6 +645,56 @@ export function bookingReminderEmail(
 }
 
 // ===========================================================================
+// TEMPLATE 10: ownerNewInquiryEmail
+// Internal alert when a customer submits the public contact / "call to book"
+// form. Links the owner to the admin inbox to follow up.
+// ===========================================================================
+
+export interface OwnerNewInquiryEmailParams {
+  reasonLabel: string
+  name: string
+  email: string
+  phone: string | null
+  message: string
+  preferredDate: string | null
+  groupSize: number | null
+}
+
+export function ownerNewInquiryEmail(
+  params: OwnerNewInquiryEmailParams
+): { subject: string; html: string } {
+  const { reasonLabel, name, email, phone, message, preferredDate, groupSize } = params
+  const baseUrl = process.env.NEXT_PUBLIC_URL || 'https://mcracingfortwayne.com'
+
+  const subject = `[New Inquiry] ${reasonLabel} — ${name}`
+
+  const rows: Array<[string, string]> = [
+    ['Reason', escapeHtml(reasonLabel)],
+    ['Name', escapeHtml(name)],
+    ['Email', `<a href="mailto:${escapeHtml(email)}" style="color:${COLOR.telemetryCyan};text-decoration:none;">${escapeHtml(email)}</a>`],
+    ['Phone', phone ? `<a href="tel:${escapeHtml(phone)}" style="color:${COLOR.telemetryCyan};text-decoration:none;">${escapeHtml(phone)}</a>` : '&mdash;'],
+  ]
+  if (preferredDate) rows.push(['Preferred date', escapeHtml(formatDateLong(preferredDate))])
+  if (groupSize) rows.push(['Group size', String(groupSize)])
+
+  const inner = `
+    ${h1('New inquiry')}
+    ${p(`A customer just reached out through the contact form.`)}
+    ${detailsCard(rows)}
+    ${h2('Message')}
+    ${p(`<span style="color:${COLOR.gridWhite};">${escapeHtml(message).replace(/\n/g, '<br />')}</span>`)}
+    ${noticeBox(
+      'Follow up',
+      `Reply to this customer directly, or open the <a href="${baseUrl}/admin/contact" style="color:${COLOR.telemetryCyan};text-decoration:none;">admin inbox</a> to mark it handled.`
+    )}
+    ${divider()}
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">Automated alert from the MC Racing Sim contact form.</span>`)}
+  `
+
+  return { subject, html: layout(inner, `${reasonLabel} inquiry from ${name}.`) }
+}
+
+// ===========================================================================
 // TEMPLATE 8: sessionThankYouEmail
 // Sent after a completed session to a RETURNING racer (plain thank-you + CTA).
 // ===========================================================================

@@ -50,6 +50,7 @@ export default function Footer() {
                 { href: '/', label: 'Start Line' },
                 { href: '/pricing', label: 'The Garage' },
                 { href: '/pit-lane', label: 'Parties' },
+                { href: '/contact', label: 'Contact' },
                 { href: '/location', label: 'The Paddock' },
                 { href: '/blog', label: 'Pit Wall (Blog)' },
                 { href: '/booking-lookup', label: 'Find My Booking' },

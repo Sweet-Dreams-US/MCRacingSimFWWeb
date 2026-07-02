@@ -224,6 +224,57 @@ export type Database = {
         }
         Relationships: []
       }
+      contact_inquiries: {
+        Row: {
+          id: string
+          reason: string
+          name: string
+          email: string
+          phone: string | null
+          message: string
+          preferred_date: string | null
+          group_size: number | null
+          status: string
+          handled_at: string | null
+          handled_by_user_id: string | null
+          source_ip: string | null
+          user_agent: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          reason: string
+          name: string
+          email: string
+          phone?: string | null
+          message: string
+          preferred_date?: string | null
+          group_size?: number | null
+          status?: string
+          handled_at?: string | null
+          handled_by_user_id?: string | null
+          source_ip?: string | null
+          user_agent?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          reason?: string
+          name?: string
+          email?: string
+          phone?: string | null
+          message?: string
+          preferred_date?: string | null
+          group_size?: number | null
+          status?: string
+          handled_at?: string | null
+          handled_by_user_id?: string | null
+          source_ip?: string | null
+          user_agent?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           birthday: string | null

@@ -1,0 +1,119 @@
+// POST /api/contact
+// Public endpoint for the "call to book / contact us" form. Stores an inquiry
+// for the admin inbox and emails the owner. No auth (public), so it validates
+// strictly, caps field lengths, and uses a honeypot to shed obvious bots.
+import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isContactReason, contactReasonLabel } from '@/lib/contact'
+import { sendEmail, getOwnerNotificationEmail } from '@/lib/email'
+import { ownerNewInquiryEmail } from '@/lib/emails/templates'
+
+export const runtime = 'nodejs'
+
+interface Body {
+  reason?: string
+  name?: string
+  email?: string
+  phone?: string
+  message?: string
+  preferredDate?: string
+  groupSize?: string | number
+  // Honeypot — a hidden field real users never see/fill. Bots that fill every
+  // field trip this and get a fake-success without touching the DB or email.
+  company?: string
+}
+
+const MAX = { name: 120, email: 200, phone: 40, message: 4000 }
+
+function clean(v: unknown, max: number): string {
+  return typeof v === 'string' ? v.trim().slice(0, max) : ''
+}
+
+export async function POST(request: NextRequest) {
+  let body: Body
+  try {
+    body = (await request.json()) as Body
+  } catch {
+    return NextResponse.json({ success: false, error: 'Invalid request' }, { status: 400 })
+  }
+
+  // Honeypot: pretend success, do nothing. Don't tell the bot it was caught.
+  if (body.company && body.company.trim() !== '') {
+    return NextResponse.json({ success: true })
+  }
+
+  const reason = clean(body.reason, 40)
+  const name = clean(body.name, MAX.name)
+  const email = clean(body.email, MAX.email).toLowerCase()
+  const phone = clean(body.phone, MAX.phone)
+  const message = clean(body.message, MAX.message)
+
+  if (!isContactReason(reason)) {
+    return NextResponse.json({ success: false, error: 'Please choose a reason.' }, { status: 400 })
+  }
+  if (!name) return NextResponse.json({ success: false, error: 'Please enter your name.' }, { status: 400 })
+  if (!email || !email.includes('@')) {
+    return NextResponse.json({ success: false, error: 'Please enter a valid email.' }, { status: 400 })
+  }
+  if (!message) return NextResponse.json({ success: false, error: 'Please add a short message.' }, { status: 400 })
+
+  // Optional event fields.
+  const preferredDate =
+    typeof body.preferredDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.preferredDate)
+      ? body.preferredDate
+      : null
+  let groupSize: number | null = null
+  if (body.groupSize !== undefined && body.groupSize !== '') {
+    const n = Math.round(Number(body.groupSize))
+    if (Number.isFinite(n) && n > 0 && n < 1000) groupSize = n
+  }
+
+  const supabase = createAdminClient()
+
+  const { data: inquiry, error } = await supabase
+    .from('contact_inquiries')
+    .insert({
+      reason,
+      name,
+      email,
+      phone: phone || null,
+      message,
+      preferred_date: preferredDate,
+      group_size: groupSize,
+      source_ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      user_agent: request.headers.get('user-agent') ?? null,
+    })
+    .select('id')
+    .single()
+
+  if (error || !inquiry) {
+    console.error('Contact inquiry insert failed:', error?.message)
+    return NextResponse.json(
+      { success: false, error: 'Something went wrong. Please call us at (808) 220-2600.' },
+      { status: 500 }
+    )
+  }
+
+  // Owner alert — best-effort, never fails the submission.
+  try {
+    const { subject, html } = ownerNewInquiryEmail({
+      reasonLabel: contactReasonLabel(reason),
+      name,
+      email,
+      phone: phone || null,
+      message,
+      preferredDate,
+      groupSize,
+    })
+    await sendEmail({
+      to: getOwnerNotificationEmail(),
+      subject,
+      html,
+      template: 'owner_new_inquiry',
+    })
+  } catch (err) {
+    console.error('Contact owner-alert email failed:', err)
+  }
+
+  return NextResponse.json({ success: true })
+}

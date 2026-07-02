@@ -13,6 +13,7 @@ const navLinks = [
   { href: '/pit-lane', label: 'Parties', shortLabel: 'Parties' },
   { href: '/location', label: 'The Paddock', shortLabel: 'Location' },
   { href: '/blog', label: 'Pit Wall', shortLabel: 'Blog' },
+  { href: '/contact', label: 'Contact', shortLabel: 'Contact' },
 ]
 
 export default function Navigation() {
