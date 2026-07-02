@@ -6,13 +6,12 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 
 const navLinks = [
-  { href: '/', label: 'Start Line', shortLabel: 'Home' },
+  { href: '/', label: 'Home', shortLabel: 'Home' },
   { href: '/pricing', label: 'Pricing', shortLabel: 'Pricing' },
   { href: '/memberships', label: 'Memberships', shortLabel: 'Members' },
   { href: '/leagues', label: 'Leagues', shortLabel: 'Leagues' },
   { href: '/pit-lane', label: 'Parties', shortLabel: 'Parties' },
-  { href: '/location', label: 'The Paddock', shortLabel: 'Location' },
-  { href: '/blog', label: 'Pit Wall', shortLabel: 'Blog' },
+  { href: '/location', label: 'About Us', shortLabel: 'About' },
   { href: '/contact', label: 'Contact', shortLabel: 'Contact' },
 ]
 
@@ -71,9 +70,9 @@ export default function Navigation() {
               )}
             </Link>
           ))}
-          <a href="tel:+18082202600" className="btn-primary text-sm">
-            Call to Book
-          </a>
+          <Link href="/book" className="btn-primary text-sm">
+            Book Here
+          </Link>
         </div>
 
         {/* Mobile Menu Button */}
@@ -121,12 +120,19 @@ export default function Navigation() {
               {link.label}
             </Link>
           ))}
-          <a
-            href="tel:+18082202600"
+          <Link
+            href="/book"
             onClick={() => setIsMobileMenuOpen(false)}
             className="btn-primary text-center mt-4"
           >
-            Call to Book: (808) 220-2600
+            Book Here
+          </Link>
+          <a
+            href="tel:+18082202600"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="telemetry-text text-sm text-pit-gray text-center"
+          >
+            or call (808) 220-2600
           </a>
         </div>
       </div>

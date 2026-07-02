@@ -185,13 +185,17 @@ export default function Home() {
           </p>
 
           <div className="hero-cta flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button href="tel:+18082202600" size="lg">
-              Call to Book: (808) 220-2600
+            <Button href="/book" size="lg">
+              Book Online
             </Button>
             <Button href="/pricing" variant="secondary" size="lg">
               View Pricing
             </Button>
           </div>
+          <p className="hero-cta telemetry-text text-sm text-pit-gray mt-4 text-center">
+            Prefer to book by phone?{' '}
+            <a href="tel:+18082202600" className="text-telemetry-cyan hover:underline">Call (808) 220-2600</a>
+          </p>
 
         </div>
 
@@ -445,13 +449,17 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button href="tel:+18082202600" size="lg">
-              Call to Book: (808) 220-2600
+            <Button href="/book" size="lg">
+              Book Online
             </Button>
             <Button href="/pit-lane" variant="secondary" size="lg">
               Plan a Party
             </Button>
           </div>
+          <p className="telemetry-text text-sm text-pit-gray mt-4">
+            Or call to book:{' '}
+            <a href="tel:+18082202600" className="text-telemetry-cyan hover:underline">(808) 220-2600</a>
+          </p>
 
           {/* Urgency indicator */}
         </div>
