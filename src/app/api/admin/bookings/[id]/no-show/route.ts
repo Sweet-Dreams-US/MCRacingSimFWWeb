@@ -24,6 +24,7 @@ import Stripe from 'stripe'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
+import { onBookingCompleted } from '@/lib/booking'
 import { NO_SHOW_FEE_CENTS_PER_SEAT } from '@/lib/pricing'
 
 export const runtime = 'nodejs'
@@ -138,8 +139,10 @@ export async function POST(
 
   await supabase.from('bookings').update({ status: newStatus }).eq('id', bookingId)
 
-  // If nobody no-showed, we're done — no charge to make.
+  // If nobody no-showed, the session completed cleanly — fire the thank-you
+  // email + first-timer referral (idempotent, best-effort) and we're done.
   if (noShowCount === 0) {
+    await onBookingCompleted(bookingId)
     return NextResponse.json({
       success: true,
       noShowCount: 0,

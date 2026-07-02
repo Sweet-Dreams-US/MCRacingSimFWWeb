@@ -18,10 +18,20 @@ import {
   calculateNoShowFeeCents,
 } from './pricing'
 import { createBookingCalendarEvent } from './calendar'
-import { validateDiscount, recordRedemption, DiscountError } from './discounts'
+import {
+  validateDiscount,
+  recordRedemption,
+  createFirstTimerReferralCode,
+  DiscountError,
+} from './discounts'
 import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
-import { inviteBookingEmail, ownerNewBookingEmail } from './emails/templates'
+import {
+  inviteBookingEmail,
+  ownerNewBookingEmail,
+  sessionThankYouEmail,
+  firstTimerThankYouEmail,
+} from './emails/templates'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -460,6 +470,98 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
     await sendBookingEmails(bookingId)
   } catch (err) {
     console.error(`Email send failed for ${bookingId}:`, err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Session completion side-effects: thank-you email + first-timer referral code.
+// ---------------------------------------------------------------------------
+
+const THANKYOU_TEMPLATES = ['session_thankyou', 'session_thankyou_firsttimer']
+
+/**
+ * Fire the post-session side effects when a booking is marked completed:
+ *   - Returning racer  → a plain thank-you email.
+ *   - First completion → a thank-you email carrying their personal
+ *     "First-Time Racer 50% off" referral code (created here).
+ *
+ * Safe to call from any completion path (reader close-out, admin no-show flow
+ * where everyone showed). Idempotent + never throws: it no-ops if a thank-you
+ * was already logged for this booking, and only ever mints one referral per
+ * customer (enforced in createFirstTimerReferralCode).
+ */
+export async function onBookingCompleted(bookingId: string): Promise<void> {
+  try {
+    const supabase = createAdminClient()
+
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('id, status, customer_id, customer:customers(id, first_name, email)')
+      .eq('id', bookingId)
+      .maybeSingle()
+    if (!booking) return
+
+    const customer = Array.isArray(booking.customer)
+      ? booking.customer[0]
+      : booking.customer
+    if (!customer || !customer.email) return // can't thank someone with no email
+
+    // Idempotency: if we've already logged a thank-you for this booking, stop —
+    // staff re-tapping "close out" shouldn't send duplicates or re-mint codes.
+    const { data: priorLog } = await supabase
+      .from('email_log')
+      .select('id')
+      .eq('related_booking_id', bookingId)
+      .in('template', THANKYOU_TEMPLATES)
+      .limit(1)
+    if (priorLog && priorLog.length > 0) return
+
+    // First-timer = this is their only completed/partially-completed session.
+    // (This runs after the status flip, so the current booking is counted.)
+    const { count: completedCount } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', customer.id)
+      .in('status', ['completed', 'partial_noshow'])
+    const isFirstTimer = (completedCount ?? 0) <= 1
+
+    if (isFirstTimer) {
+      const referral = await createFirstTimerReferralCode(supabase, {
+        ownerCustomerId: customer.id,
+        ownerFirstName: customer.first_name,
+      })
+      if (referral) {
+        const { subject, html } = firstTimerThankYouEmail({
+          customerFirstName: customer.first_name,
+          referralCode: referral.code,
+        })
+        await sendEmail({
+          to: customer.email,
+          subject,
+          html,
+          template: 'session_thankyou_firsttimer',
+          relatedBookingId: bookingId,
+          relatedCustomerId: customer.id,
+        })
+        return
+      }
+      // Referral creation failed — fall through to a plain thank-you so the
+      // customer still hears from us (better than silence).
+    }
+
+    const { subject, html } = sessionThankYouEmail({
+      customerFirstName: customer.first_name,
+    })
+    await sendEmail({
+      to: customer.email,
+      subject,
+      html,
+      template: 'session_thankyou',
+      relatedBookingId: bookingId,
+      relatedCustomerId: customer.id,
+    })
+  } catch (err) {
+    console.error(`onBookingCompleted failed for ${bookingId}:`, err)
   }
 }
 

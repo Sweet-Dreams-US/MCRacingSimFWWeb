@@ -78,6 +78,15 @@ export async function validateDiscount(
       discountCents: 0,
     }
   }
+  // Per-booking hour cap (e.g. a referral good for "up to 2 hours"): a longer
+  // session can't use it. Simpler + honest vs. partially discounting some hours.
+  if (dc.max_hours_per_booking != null && ctx.hours > dc.max_hours_per_booking) {
+    return {
+      ok: false,
+      reason: `This code covers sessions up to ${dc.max_hours_per_booking} hour${dc.max_hours_per_booking === 1 ? '' : 's'}.`,
+      discountCents: 0,
+    }
+  }
   // Referral codes: the earner can't redeem their own code.
   if (dc.owner_customer_id && ctx.customerId && dc.owner_customer_id === ctx.customerId) {
     return { ok: false, reason: 'You can’t use your own referral code.', discountCents: 0 }
@@ -108,6 +117,86 @@ export async function validateDiscount(
   }
 
   return { ok: true, discountCodeId: dc.id, code: dc.code_upper ?? code, discountCents }
+}
+
+// Ambiguity-free alphabet (no O/0, I/1) so codes are easy to read/share aloud.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+function randomSuffix(len: number): string {
+  let out = ''
+  for (let i = 0; i < len; i++) {
+    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+  }
+  return out
+}
+
+export interface ReferralCodeResult {
+  code: string
+  discountCodeId: string
+}
+
+/**
+ * Generate + persist a first-timer referral code owned by `ownerCustomerId`.
+ * 50% off a session, usable by up to 3 distinct friends, 6 discounted hours
+ * total, max 2 hours per booking. The owner can't redeem their own code (that
+ * rule lives in validateDiscount via owner_customer_id).
+ *
+ * Returns null if a referral code already exists for this owner (idempotent —
+ * a customer only ever earns one), so callers can safely retry.
+ */
+export async function createFirstTimerReferralCode(
+  supabase: SupabaseAdmin,
+  opts: { ownerCustomerId: string; ownerFirstName?: string | null }
+): Promise<ReferralCodeResult | null> {
+  // One referral per customer — if they already have one, hand it back.
+  const { data: existing } = await supabase
+    .from('discount_codes')
+    .select('id, code')
+    .eq('owner_customer_id', opts.ownerCustomerId)
+    .eq('source', 'first_timer_referral')
+    .maybeSingle()
+  if (existing) {
+    return { code: existing.code, discountCodeId: existing.id }
+  }
+
+  // Build a readable code with a name-ish prefix, retrying on the rare collision.
+  const prefix = (opts.ownerFirstName ?? 'RACER')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+    .slice(0, 6) || 'RACER'
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const code = `${prefix}-${randomSuffix(4)}`
+    const { data: inserted, error } = await supabase
+      .from('discount_codes')
+      .insert({
+        code,
+        kind: 'percent',
+        percent_off: 50,
+        applies_to: 'session',
+        active: true,
+        owner_customer_id: opts.ownerCustomerId,
+        max_distinct_customers: 3,
+        max_total_hours: 6,
+        max_hours_per_booking: 2,
+        source: 'first_timer_referral',
+        notes: `First-timer referral for ${opts.ownerFirstName ?? 'racer'}`,
+      })
+      .select('id, code')
+      .single()
+
+    if (!error && inserted) {
+      return { code: inserted.code, discountCodeId: inserted.id }
+    }
+    // 23505 = unique_violation on code_upper — try a new suffix. Any other
+    // error is unexpected; stop and report failure to the caller.
+    if (error && error.code !== '23505') {
+      console.error('createFirstTimerReferralCode insert failed:', error.message)
+      return null
+    }
+  }
+  console.error('createFirstTimerReferralCode: exhausted code attempts')
+  return null
 }
 
 /**

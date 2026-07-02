@@ -643,3 +643,90 @@ export function bookingReminderEmail(
     html: layout(inner, `Your session is tomorrow at ${formatTimeDisplay(startTime)} — arrive 15 min early.`),
   }
 }
+
+// ===========================================================================
+// TEMPLATE 8: sessionThankYouEmail
+// Sent after a completed session to a RETURNING racer (plain thank-you + CTA).
+// ===========================================================================
+
+export interface SessionThankYouEmailParams {
+  customerFirstName: string
+}
+
+export function sessionThankYouEmail(
+  params: SessionThankYouEmailParams
+): { subject: string; html: string } {
+  const { customerFirstName } = params
+
+  const subject = `Thanks for racing with us 🏁`
+
+  const inner = `
+    ${h1(`Great runs today, ${escapeHtml(customerFirstName)}.`)}
+    ${p(`Thanks for racing at <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong>. We hope you had a blast on track.`)}
+
+    ${noticeBox(
+      'Come back and beat your time',
+      `Book your next session anytime at <a href="https://www.mcracingfortwayne.com/booking" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a> or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a>.`
+    )}
+
+    ${divider()}
+
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">See you trackside.</span>`)}
+  `
+
+  return {
+    subject,
+    html: layout(inner, `Thanks for racing with us — book your next session anytime.`),
+  }
+}
+
+// ===========================================================================
+// TEMPLATE 9: firstTimerThankYouEmail
+// Sent after a racer's FIRST completed session. Includes their personal
+// "First-Time Racer 50% off" referral code to share with friends.
+// ===========================================================================
+
+export interface FirstTimerThankYouEmailParams {
+  customerFirstName: string
+  referralCode: string
+}
+
+export function firstTimerThankYouEmail(
+  params: FirstTimerThankYouEmailParams
+): { subject: string; html: string } {
+  const { customerFirstName, referralCode } = params
+
+  const subject = `Your first race is on the board — here's 50% off for your crew 🏁`
+
+  // Big, tappable-looking code block. Kept table-based for email-client safety.
+  const codeBlock = `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0 20px 0;">
+      <tr><td align="center" style="background-color:${COLOR.asphaltDark};border:2px dashed ${COLOR.telemetryCyan};padding:20px;">
+        <div style="font-family:${FONT_MONO};font-size:11px;color:${COLOR.mutedGray};text-transform:uppercase;letter-spacing:0.2em;margin-bottom:8px;">Your referral code</div>
+        <div style="font-family:${FONT_HEADLINE};font-weight:700;font-size:30px;letter-spacing:0.12em;color:${COLOR.telemetryCyan};">${escapeHtml(referralCode)}</div>
+      </td></tr>
+    </table>`
+
+  const inner = `
+    ${h1(`You made your first laps, ${escapeHtml(customerFirstName)}.`)}
+    ${p(`Thanks for racing at <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong> — and welcome to the grid. To say thanks, here's a code to bring your friends in at <strong style="color:${COLOR.gridWhite};">half price</strong>.`)}
+
+    ${codeBlock}
+
+    ${noticeBox(
+      'How it works',
+      `Share <strong style="color:${COLOR.gridWhite};">${escapeHtml(referralCode)}</strong> with your crew. Each friend gets <strong style="color:${COLOR.gridWhite};">50% off</strong> a session (up to 2 hours). Good for up to <strong style="color:${COLOR.gridWhite};">3 friends</strong> / 6 discounted hours total. They just enter it at checkout when they book online.`
+    )}
+
+    ${p(`Want to come back yourself? Book anytime at <a href="https://www.mcracingfortwayne.com/booking" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a>.`)}
+
+    ${divider()}
+
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">See you trackside.</span>`)}
+  `
+
+  return {
+    subject,
+    html: layout(inner, `Thanks for your first race — here's 50% off for up to 3 friends.`),
+  }
+}

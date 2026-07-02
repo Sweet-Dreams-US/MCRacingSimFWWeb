@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isDeviceAuthorized } from '@/lib/device-auth'
+import { onBookingCompleted } from '@/lib/booking'
 import type { Database } from '@/lib/supabase/types'
 
 export const runtime = 'nodejs'
@@ -79,5 +80,13 @@ export async function POST(request: NextRequest) {
   if (error) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
+
+  // Closing out a session fires the thank-you email + (on a first-ever
+  // completion) the customer's referral code. Idempotent + best-effort, so a
+  // re-tap won't double-send and a mail hiccup won't fail the close-out.
+  if (status === 'completed') {
+    await onBookingCompleted(bookingId)
+  }
+
   return NextResponse.json({ success: true, status })
 }
