@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     ? booking.customer[0]
     : booking.customer
 
-  if (!customer || customer.email.toLowerCase() !== email) {
+  if (!customer || customer.email?.toLowerCase() !== email) {
     return NextResponse.json({ found: false })
   }
 

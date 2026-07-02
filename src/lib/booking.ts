@@ -370,7 +370,7 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
       const eventId = await createBookingCalendarEvent({
         bookingId,
         customerName: `${customer.first_name} ${customer.last_name}`.trim(),
-        customerEmail: customer.email,
+        customerEmail: customer.email ?? '',
         customerPhone: customer.phone,
         sessionDate: booking.session_date,
         startTime: booking.start_time,

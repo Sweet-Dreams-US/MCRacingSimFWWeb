@@ -19,7 +19,7 @@ interface BookingRow {
   status: 'pending' | 'confirmed' | 'completed' | 'partial_noshow' | 'noshow' | 'cancelled'
   source: 'online' | 'admin' | 'imported'
   stripe_payment_method_id: string | null
-  customer: { first_name: string; last_name: string; email: string; phone: string | null } | null
+  customer: { first_name: string; last_name: string; email: string | null; phone: string | null } | null
 }
 
 function formatDollars(cents: number): string {

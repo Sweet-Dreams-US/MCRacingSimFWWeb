@@ -54,6 +54,16 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/admin/discounts',
+    label: 'Discount Codes',
+    icon: ({ className }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M9 9h.01M15 15h.01M16 8l-8 8" />
+        <path d="M3 8.5V5a2 2 0 0 1 2-2h3.5a2 2 0 0 1 1.4.6l9.5 9.5a2 2 0 0 1 0 2.8l-4.6 4.6a2 2 0 0 1-2.8 0L3.6 10a2 2 0 0 1-.6-1.5z" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/marketing',
     label: 'Email Marketing',
     icon: ({ className }) => (

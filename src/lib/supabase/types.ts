@@ -111,6 +111,8 @@ export type Database = {
           created_at: string
           created_by_user_id: string | null
           customer_id: string
+          discount_amount_cents: number
+          discount_code: string | null
           duration_hours: number
           end_time: string
           google_calendar_event_id: string | null
@@ -137,6 +139,8 @@ export type Database = {
           created_at?: string
           created_by_user_id?: string | null
           customer_id: string
+          discount_amount_cents?: number
+          discount_code?: string | null
           duration_hours: number
           end_time: string
           google_calendar_event_id?: string | null
@@ -163,6 +167,8 @@ export type Database = {
           created_at?: string
           created_by_user_id?: string | null
           customer_id?: string
+          discount_amount_cents?: number
+          discount_code?: string | null
           duration_hours?: number
           end_time?: string
           google_calendar_event_id?: string | null
@@ -283,6 +289,146 @@ export type Database = {
           waiver_signed_at?: string | null
         }
         Relationships: []
+      }
+      discount_codes: {
+        Row: {
+          active: boolean
+          amount_off_cents: number | null
+          applies_to: string
+          code: string
+          code_upper: string | null
+          created_at: string
+          created_by_user_id: string | null
+          distinct_customer_count: number
+          expires_at: string | null
+          hours_redeemed: number
+          id: string
+          kind: string
+          max_distinct_customers: number | null
+          max_hours_per_booking: number | null
+          max_redemptions: number | null
+          max_total_hours: number | null
+          notes: string | null
+          owner_customer_id: string | null
+          percent_off: number | null
+          redemption_count: number
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          amount_off_cents?: number | null
+          applies_to?: string
+          code: string
+          created_at?: string
+          created_by_user_id?: string | null
+          distinct_customer_count?: number
+          expires_at?: string | null
+          hours_redeemed?: number
+          id?: string
+          kind?: string
+          max_distinct_customers?: number | null
+          max_hours_per_booking?: number | null
+          max_redemptions?: number | null
+          max_total_hours?: number | null
+          notes?: string | null
+          owner_customer_id?: string | null
+          percent_off?: number | null
+          redemption_count?: number
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          amount_off_cents?: number | null
+          applies_to?: string
+          code?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          distinct_customer_count?: number
+          expires_at?: string | null
+          hours_redeemed?: number
+          id?: string
+          kind?: string
+          max_distinct_customers?: number | null
+          max_hours_per_booking?: number | null
+          max_redemptions?: number | null
+          max_total_hours?: number | null
+          notes?: string | null
+          owner_customer_id?: string | null
+          percent_off?: number | null
+          redemption_count?: number
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discount_codes_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_codes_owner_customer_id_fkey"
+            columns: ["owner_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      discount_redemptions: {
+        Row: {
+          amount_off_cents: number
+          booking_id: string | null
+          customer_id: string | null
+          discount_code_id: string
+          hours: number
+          id: string
+          redeemed_at: string
+        }
+        Insert: {
+          amount_off_cents?: number
+          booking_id?: string | null
+          customer_id?: string | null
+          discount_code_id: string
+          hours?: number
+          id?: string
+          redeemed_at?: string
+        }
+        Update: {
+          amount_off_cents?: number
+          booking_id?: string | null
+          customer_id?: string | null
+          discount_code_id?: string
+          hours?: number
+          id?: string
+          redeemed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discount_redemptions_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_discount_code_id_fkey"
+            columns: ["discount_code_id"]
+            isOneToOne: false
+            referencedRelation: "discount_codes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       email_log: {
         Row: {
