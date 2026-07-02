@@ -18,6 +18,7 @@ import {
   calculateNoShowFeeCents,
 } from './pricing'
 import { createBookingCalendarEvent } from './calendar'
+import { validateDiscount, recordRedemption, DiscountError } from './discounts'
 import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
 import { inviteBookingEmail, ownerNewBookingEmail } from './emails/templates'
@@ -60,6 +61,10 @@ export interface CreateBookingInput {
 
   // Where this booking came from
   source?: 'online' | 'admin' | 'imported'
+
+  // Optional discount code the customer entered at checkout. Re-validated
+  // server-side here (source of truth) before it's stored on the booking.
+  discountCode?: string | null
 }
 
 export interface CreateBookingResult {
@@ -69,6 +74,9 @@ export interface CreateBookingResult {
   setupIntentClientSecret: string
   noShowFeeCents: number
   sessionPriceCents: number
+  // What the customer will actually owe at the venue after any discount.
+  discountAmountCents: number
+  amountDueCents: number
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +215,28 @@ export async function createBooking(
     }
   }
 
+  // 2b. Re-validate the discount code server-side (source of truth). The client
+  // already priced it live, but a code can expire or hit its cap between then
+  // and now — and the browser-supplied amount can never be trusted. If a code
+  // was entered but is no longer valid, we fail loudly rather than silently
+  // charging full price at the venue (which the customer wouldn't expect).
+  let discountCode: string | null = null
+  let discountAmountCents = 0
+  if (input.discountCode && input.discountCode.trim()) {
+    const result = await validateDiscount(supabase, input.discountCode, {
+      priceCents: sessionPriceCents,
+      hours: input.durationHours,
+      appliesTo: 'session',
+      customerId,
+    })
+    if (!result.ok) {
+      throw new DiscountError(result.reason ?? 'That discount code is not valid.')
+    }
+    discountCode = result.code ?? null
+    discountAmountCents = result.discountCents
+  }
+  const amountDueCents = Math.max(0, sessionPriceCents - discountAmountCents)
+
   // 3. Generate the booking ID and insert the booking row WITH the consent snapshot
   const bookingId = generateBookingId()
 
@@ -220,6 +250,8 @@ export async function createBooking(
     racer_count: input.racerCount,
     session_price_cents: sessionPriceCents,
     no_show_fee_cents: noShowFeeCents,
+    discount_code: discountCode,
+    discount_amount_cents: discountAmountCents,
     // Starts 'pending' — the booking only becomes 'confirmed' once the card is
     // saved (the setup_intent.succeeded webhook). Confirmation emails + the
     // calendar event fire at THAT point, not here — otherwise the customer
@@ -311,6 +343,8 @@ export async function createBooking(
     setupIntentClientSecret: setupIntent.client_secret,
     noShowFeeCents,
     sessionPriceCents,
+    discountAmountCents,
+    amountDueCents,
   }
 }
 
@@ -336,6 +370,7 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
     .select(
       `id, status, session_date, start_time, duration_hours, racer_count,
        session_price_cents, no_show_fee_cents, source, google_calendar_event_id,
+       customer_id, discount_code, discount_amount_cents,
        customer:customers(first_name, last_name, email, phone)`
     )
     .eq('id', bookingId)
@@ -353,12 +388,41 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
   }
 
   // Flip to confirmed first so a retry can't double-fire even if the work below
-  // partially fails.
-  await supabase
+  // partially fails. The conditional update + returned row tells us whether THIS
+  // call won the pending→confirmed race — only the winner records the discount
+  // redemption, so a re-fired webhook can never double-count a code's usage.
+  const { data: flipped } = await supabase
     .from('bookings')
     .update({ status: 'confirmed' })
     .eq('id', bookingId)
     .eq('status', 'pending')
+    .select('id')
+  const wonConfirmRace = Array.isArray(flipped) && flipped.length > 0
+
+  // Record the discount redemption now that the booking is real (card on file).
+  // Deferred to here (not createBooking) so an abandoned pending booking never
+  // burns a one-time code.
+  if (wonConfirmRace && booking.discount_code && (booking.discount_amount_cents ?? 0) > 0) {
+    try {
+      const { data: dc } = await supabase
+        .from('discount_codes')
+        .select('id')
+        .eq('code_upper', booking.discount_code)
+        .maybeSingle()
+      if (dc) {
+        await recordRedemption(supabase, dc.id, {
+          bookingId: booking.id,
+          customerId: booking.customer_id,
+          amountOffCents: booking.discount_amount_cents ?? 0,
+          hours: booking.duration_hours,
+        })
+      }
+    } catch (err) {
+      // Non-fatal: the discount is already stored on the booking, so the POS
+      // still charges the right amount. Only the usage counters would be off.
+      console.error(`Discount redemption record failed for ${bookingId}:`, err)
+    }
+  }
 
   const customer = Array.isArray(booking.customer)
     ? booking.customer[0]

@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     .from('bookings')
     .select(
       `id, session_date, start_time, duration_hours, racer_count,
-       session_price_cents, status,
+       session_price_cents, discount_code, discount_amount_cents, status,
        customer:customers(id, first_name, last_name, email, phone)`
     )
     .gte('session_date', today)
@@ -67,6 +67,11 @@ export async function GET(request: NextRequest) {
 
   const bookings = (data ?? []).map((b) => {
     const c = Array.isArray(b.customer) ? b.customer[0] ?? null : b.customer
+    const discountCents = b.discount_amount_cents ?? 0
+    // What staff should actually collect: session price minus any discount the
+    // customer applied online. The reader charges against netPriceCents so a
+    // 50%-off code is honored at the counter without manual math.
+    const netPriceCents = Math.max(0, b.session_price_cents - discountCents)
     return {
       id: b.id,
       sessionDate: b.session_date,
@@ -74,6 +79,9 @@ export async function GET(request: NextRequest) {
       durationHours: b.duration_hours,
       racerCount: b.racer_count,
       sessionPriceCents: b.session_price_cents,
+      discountCode: b.discount_code ?? null,
+      discountAmountCents: discountCents,
+      netPriceCents,
       paidCents: paidByBooking[b.id] ?? 0,
       status: b.status,
       customerId: c?.id ?? null,

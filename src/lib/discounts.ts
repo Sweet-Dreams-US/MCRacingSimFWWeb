@@ -10,6 +10,18 @@ export function normalizeCode(code: string): string {
   return code.trim().toUpperCase()
 }
 
+/**
+ * Thrown when a customer-supplied discount code fails validation at booking
+ * time. Callers (API routes) map this to a 400 with the user-facing `message`
+ * instead of a generic 500, so the checkout can show "code expired" inline.
+ */
+export class DiscountError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DiscountError'
+  }
+}
+
 export interface DiscountContext {
   priceCents: number
   hours: number

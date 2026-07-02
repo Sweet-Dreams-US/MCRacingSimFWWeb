@@ -32,6 +32,13 @@ function getStripePromise(): Promise<StripeJs | null> {
   return stripePromise
 }
 
+// Format cents as dollars, dropping ".00" for whole-dollar amounts so a $45
+// session still reads "$45" but a discounted one reads "$22.50".
+function formatDollarsCompact(cents: number): string {
+  const dollars = cents / 100
+  return Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2)
+}
+
 interface CardSetupSession {
   bookingId: string
   setupIntentClientSecret: string
@@ -84,6 +91,13 @@ export default function BookingFlow() {
   const [waiverAccepted, setWaiverAccepted] = useState(false)
   const [noShowConsentAccepted, setNoShowConsentAccepted] = useState(false)
   const [marketingOptIn, setMarketingOptIn] = useState(false)
+
+  // Discount code (entered on the review step, validated server-side before it
+  // sticks). `appliedDiscount` holds the accepted code + the cents it takes off.
+  const [discountInput, setDiscountInput] = useState('')
+  const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; discountCents: number } | null>(null)
+  const [discountError, setDiscountError] = useState<string | null>(null)
+  const [discountChecking, setDiscountChecking] = useState(false)
 
   // Validation errors
   const [customerErrors, setCustomerErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
@@ -227,6 +241,43 @@ export default function BookingFlow() {
     return slotMinutes - easternMinutes < 90
   }
 
+  // Validate + price a discount code against the current session. The server
+  // is the source of truth; this just previews the savings before submit. The
+  // same code is re-checked in /api/booking/create, so a stale price here can
+  // never let a bad discount through.
+  const applyDiscount = async () => {
+    const code = discountInput.trim()
+    if (!code || !selectedDate) return
+    setDiscountChecking(true)
+    setDiscountError(null)
+    try {
+      const { price } = calculatePrice(selectedDate, duration, racerCount)
+      const res = await fetch('/api/booking/validate-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, priceCents: price * 100, hours: duration }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        setAppliedDiscount(null)
+        setDiscountError(data.reason || "That code isn't valid.")
+      } else {
+        setAppliedDiscount({ code: data.code || code.toUpperCase(), discountCents: data.discountCents })
+        setDiscountError(null)
+      }
+    } catch {
+      setDiscountError('Could not check that code. Try again.')
+    } finally {
+      setDiscountChecking(false)
+    }
+  }
+
+  const removeDiscount = () => {
+    setAppliedDiscount(null)
+    setDiscountInput('')
+    setDiscountError(null)
+  }
+
   const handleSubmit = async () => {
     setSubmitting(true)
     setError(null)
@@ -275,6 +326,8 @@ export default function BookingFlow() {
         noShowFeeCents,
         consentText,
         consentTimestamp: new Date().toISOString(),
+        // Discount code the customer applied on the review step (may be null).
+        discountCode: appliedDiscount?.code ?? null,
         // Additional racers — phone/email are now optional
         racer2: racerCount >= 2 ? {
           firstName: additionalRacers[0].name.split(' ')[0] || '',
@@ -487,11 +540,81 @@ export default function BookingFlow() {
                   </div>
                 )}
 
+                {/* Discount code */}
+                <div className="border-t border-white/10 pt-4">
+                  {appliedDiscount ? (
+                    <div className="flex items-center justify-between bg-green-500/10 border border-green-500/30 px-3 py-2">
+                      <p className="telemetry-text text-sm text-green-400">
+                        Code <span className="font-bold">{appliedDiscount.code}</span> applied
+                        {' '}(&minus;${(appliedDiscount.discountCents / 100).toFixed(2)})
+                      </p>
+                      <button
+                        type="button"
+                        onClick={removeDiscount}
+                        className="telemetry-text text-xs text-pit-gray hover:text-apex-red uppercase tracking-wider"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">
+                        Discount code <span className="text-pit-gray/60">(optional)</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={discountInput}
+                          onChange={(e) => setDiscountInput(e.target.value.toUpperCase())}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              applyDiscount()
+                            }
+                          }}
+                          placeholder="ENTER CODE"
+                          className="flex-1 bg-asphalt-dark border border-white/20 text-grid-white telemetry-text uppercase px-3 py-2 focus:border-telemetry-cyan focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={applyDiscount}
+                          disabled={discountChecking || !discountInput.trim()}
+                          className="px-5 py-2 border border-telemetry-cyan/50 text-telemetry-cyan telemetry-text uppercase tracking-wider hover:bg-telemetry-cyan/10 transition-colors disabled:opacity-40"
+                        >
+                          {discountChecking ? '…' : 'Apply'}
+                        </button>
+                      </div>
+                      {discountError && (
+                        <p className="telemetry-text text-xs text-apex-red mt-1.5">{discountError}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="border-t border-white/10 pt-4 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <p className="telemetry-text text-pit-gray">Session Price</p>
-                    <p className="racing-headline text-4xl text-apex-red">${price}</p>
-                  </div>
+                  {appliedDiscount ? (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <p className="telemetry-text text-sm text-pit-gray">Session Price</p>
+                        <p className="telemetry-text text-lg text-pit-gray line-through">${price}</p>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="telemetry-text text-sm text-green-400">Discount</p>
+                        <p className="telemetry-text text-lg text-green-400">
+                          &minus;${(appliedDiscount.discountCents / 100).toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="telemetry-text text-pit-gray">You Pay</p>
+                        <p className="racing-headline text-4xl text-apex-red">${formatDollarsCompact(Math.max(0, price * 100 - appliedDiscount.discountCents))}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between items-center">
+                      <p className="telemetry-text text-pit-gray">Session Price</p>
+                      <p className="racing-headline text-4xl text-apex-red">${price}</p>
+                    </div>
+                  )}
                   <p className="telemetry-text text-xs text-pit-gray">
                     Paid in person at your session — cash or card.
                   </p>
@@ -514,7 +637,12 @@ export default function BookingFlow() {
                 <div className="flex gap-4">
                   <button
                     type="button"
-                    onClick={() => setShowConfirmation(false)}
+                    onClick={() => {
+                      // Editing can change racers/hours/date → the session price,
+                      // so drop any applied code; they can re-apply after.
+                      removeDiscount()
+                      setShowConfirmation(false)
+                    }}
                     className="px-6 py-3 border border-white/20 text-grid-white telemetry-text hover:border-white/40 transition-colors"
                   >
                     Edit Booking

@@ -8,6 +8,7 @@
 // the Elements iframe.
 import { NextRequest, NextResponse } from 'next/server'
 import { createBooking, type CreateBookingInput } from '@/lib/booking'
+import { DiscountError } from '@/lib/discounts'
 
 interface IncomingPayload {
   sessionDate?: string
@@ -23,6 +24,7 @@ interface IncomingPayload {
   marketingOptIn?: boolean
   consentText?: string
   consentTimestamp?: string
+  discountCode?: string | null
   racer2?: { firstName: string; lastName: string; phone: string; email: string } | null
   racer3?: { firstName: string; lastName: string; phone: string; email: string } | null
 }
@@ -100,6 +102,7 @@ export async function POST(request: NextRequest) {
       consentIp,
       consentUserAgent,
       source: 'online',
+      discountCode: body.discountCode ?? null,
     })
 
     return NextResponse.json({
@@ -108,9 +111,17 @@ export async function POST(request: NextRequest) {
       setupIntentClientSecret: result.setupIntentClientSecret,
       noShowFeeCents: result.noShowFeeCents,
       sessionPriceCents: result.sessionPriceCents,
+      discountAmountCents: result.discountAmountCents,
+      amountDueCents: result.amountDueCents,
       stripePublishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     })
   } catch (error) {
+    // An invalid/expired discount code is a client-side problem — surface the
+    // friendly reason with a 400 so the checkout can show it inline, rather
+    // than a generic 500.
+    if (error instanceof DiscountError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 })
+    }
     console.error('Booking API error:', error)
     return NextResponse.json(
       {
