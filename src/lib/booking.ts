@@ -97,14 +97,18 @@ export interface CreateBookingResult {
 
 /**
  * Generate a human-shareable MC-XXXXXXX booking ID.
- * Format: MC + 7 base36 chars (5 random + 2 derived from ms-since-epoch %1296).
- * Collision probability at our scale (hundreds of bookings per year): negligible.
- * The PRIMARY KEY constraint on bookings.id ensures any collision fails fast.
+ * Human-friendly confirmation code tied to the racer's name + session date:
+ * "MC-JAKE0704" (first name + MMDD). Easy for a customer to recognize and read
+ * back over the phone. `attempt` (0-based) appends a numeric suffix on the rare
+ * collision (-2, -3, …); callers retry against the PRIMARY KEY constraint so
+ * the id stays unique.
  */
-function generateBookingId(): string {
-  const random = Math.random().toString(36).substring(2, 7).toUpperCase()
-  const ts = (Date.now() % 1296).toString(36).toUpperCase().padStart(2, '0')
-  return `MC-${random}${ts}`
+function generateBookingId(firstName: string, sessionDate: string, attempt = 0): string {
+  const name = (firstName || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8) || 'RACER'
+  const [, mm = '', dd = ''] = sessionDate.split('-') // "YYYY-MM-DD"
+  const mmdd = mm && dd ? `${mm}${dd}` : '0000'
+  const base = `MC-${name}${mmdd}`
+  return attempt === 0 ? base : `${base}-${attempt + 1}`
 }
 
 /**
@@ -277,11 +281,10 @@ export async function createBooking(
   }
   const amountDueCents = Math.max(0, sessionPriceCents - discountAmountCents)
 
-  // 3. Generate the booking ID and insert the booking row WITH the consent snapshot
-  const bookingId = generateBookingId()
-
-  const { error: bookingError } = await supabase.from('bookings').insert({
-    id: bookingId,
+  // 3. Insert the booking row WITH the consent snapshot, under a human-friendly
+  // MC-<NAME><MMDD> id. On the rare collision (same first name + session date),
+  // retry with a numeric suffix until the PRIMARY KEY accepts it.
+  const bookingRow = {
     customer_id: customerId,
     session_date: input.sessionDate,
     start_time: input.startTime,
@@ -296,7 +299,7 @@ export async function createBooking(
     // saved (the setup_intent.succeeded webhook). Confirmation emails + the
     // calendar event fire at THAT point, not here — otherwise the customer
     // would get a confirmation before they've actually submitted a card.
-    status: 'pending',
+    status: 'pending' as const,
     source: input.source ?? 'online',
     // Consent snapshot — exactly what the user agreed to + when + from where
     consent_text: input.consentText,
@@ -304,10 +307,26 @@ export async function createBooking(
     consent_timestamp: input.consentTimestamp,
     consent_ip: input.consentIp ?? null,
     consent_user_agent: input.consentUserAgent ?? null,
-  })
+  }
 
-  if (bookingError) {
-    throw new Error(`Booking insert failed: ${bookingError.message}`)
+  let bookingId = ''
+  let inserted = false
+  for (let attempt = 0; attempt < 25 && !inserted; attempt++) {
+    bookingId = generateBookingId(input.customer.firstName, input.sessionDate, attempt)
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .insert({ id: bookingId, ...bookingRow })
+    if (!bookingError) {
+      inserted = true
+      break
+    }
+    // 23505 = unique_violation on the PK → try the next suffix; anything else is fatal.
+    if (bookingError.code !== '23505') {
+      throw new Error(`Booking insert failed: ${bookingError.message}`)
+    }
+  }
+  if (!inserted) {
+    throw new Error('Could not generate a unique booking ID — please try again.')
   }
 
   // 4. Insert one row per racer (slot 1 = primary, slots 2+ = friends).
@@ -729,10 +748,9 @@ export async function createInviteBooking(
     return { bookingId: dupRows[0].id, customerId }
   }
 
-  // 2. Insert the confirmed, card-less booking.
-  const bookingId = generateBookingId()
-  const { error: bookingError } = await supabase.from('bookings').insert({
-    id: bookingId,
+  // 2. Insert the confirmed, card-less booking under a human-friendly
+  // MC-<NAME><MMDD> id, retrying with a numeric suffix on PK collision.
+  const inviteRow = {
     customer_id: customerId,
     session_date: input.sessionDate,
     start_time: input.startTime,
@@ -742,17 +760,32 @@ export async function createInviteBooking(
     session_price_cents: sessionPriceCents,
     // No card on file → no no-show fee can be charged.
     no_show_fee_cents: 0,
-    status: 'confirmed',
-    source: 'admin',
+    status: 'confirmed' as const,
+    source: 'admin' as const,
     consent_text:
       'Admin-invited booking — no card on file; no no-show fee applies.',
     consent_fee_cents: 0,
     created_by_user_id: input.createdByUserId ?? null,
     notes: input.notes?.trim() || null,
-  })
+  }
 
-  if (bookingError) {
-    throw new Error(`Booking insert failed: ${bookingError.message}`)
+  let bookingId = ''
+  let inserted = false
+  for (let attempt = 0; attempt < 25 && !inserted; attempt++) {
+    bookingId = generateBookingId(firstName, input.sessionDate, attempt)
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .insert({ id: bookingId, ...inviteRow })
+    if (!bookingError) {
+      inserted = true
+      break
+    }
+    if (bookingError.code !== '23505') {
+      throw new Error(`Booking insert failed: ${bookingError.message}`)
+    }
+  }
+  if (!inserted) {
+    throw new Error('Could not generate a unique booking ID — please try again.')
   }
 
   // 3. Slot-1 racer.

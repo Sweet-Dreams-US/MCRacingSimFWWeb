@@ -39,7 +39,7 @@ export default async function CustomersPage({ searchParams }: PageProps) {
   let queryBuilder = supabase
     .from('customers')
     .select(
-      'id, first_name, last_name, email, phone, marketing_opt_in, total_bookings, total_spent_cents, last_visit_at, created_at, stripe_customer_id'
+      'id, first_name, last_name, email, phone, how_heard, marketing_opt_in, total_bookings, total_spent_cents, last_visit_at, created_at, stripe_customer_id'
     )
     .order('last_visit_at', { ascending: false, nullsFirst: false })
     .limit(200)
@@ -95,6 +95,9 @@ export default async function CustomersPage({ searchParams }: PageProps) {
                 <th className="p-4 telemetry-text text-xs text-pit-gray uppercase tracking-wider">
                   Contact
                 </th>
+                <th className="p-4 telemetry-text text-xs text-pit-gray uppercase tracking-wider">
+                  How They Heard
+                </th>
                 <th className="p-4 telemetry-text text-xs text-pit-gray uppercase tracking-wider text-right">
                   Bookings
                 </th>
@@ -133,6 +136,15 @@ export default async function CustomersPage({ searchParams }: PageProps) {
                     <p className="telemetry-text text-sm text-grid-white">{c.email}</p>
                     {c.phone && (
                       <p className="telemetry-text text-xs text-pit-gray">{c.phone}</p>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    {c.how_heard ? (
+                      <span className="telemetry-text text-xs px-2 py-1 bg-white/5 text-grid-white border border-white/10">
+                        {c.how_heard}
+                      </span>
+                    ) : (
+                      <span className="telemetry-text text-sm text-pit-gray">—</span>
                     )}
                   </td>
                   <td className="p-4 text-right">

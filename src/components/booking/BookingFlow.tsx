@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Elements } from '@stripe/react-stripe-js'
 import { loadStripe, type Stripe as StripeJs } from '@stripe/stripe-js'
@@ -98,6 +98,25 @@ export default function BookingFlow() {
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; discountCents: number } | null>(null)
   const [discountError, setDiscountError] = useState<string | null>(null)
   const [discountChecking, setDiscountChecking] = useState(false)
+
+  // Warn before leaving mid-booking (native "Leave site?" prompt) once the
+  // customer has started but before the booking is submitted — so an accidental
+  // tab close or back-nav doesn't silently drop a half-filled reservation.
+  useEffect(() => {
+    const hasProgress =
+      selectedDate !== null ||
+      customerInfo.firstName.trim() !== '' ||
+      customerInfo.email.trim() !== ''
+    const alreadySubmitted = cardSetup !== null
+    if (!hasProgress || alreadySubmitted) return
+
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = '' // Chrome requires returnValue to be set.
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [selectedDate, customerInfo.firstName, customerInfo.email, cardSetup])
 
   // Validation errors
   const [customerErrors, setCustomerErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})

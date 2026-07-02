@@ -71,7 +71,6 @@ export async function POST(request: NextRequest) {
       sessionPriceCents: booking.session_price_cents,
       noShowFeeCents: booking.no_show_fee_cents,
       status: booking.status,
-      cardOnFile: Boolean(booking.stripe_payment_method_id),
       customerFirstName: customer.first_name,
       racers: racers
         .sort((a, b) => a.slot - b.slot)

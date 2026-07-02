@@ -18,6 +18,19 @@ export default function BookPage() {
           <p className="telemetry-text text-pit-gray max-w-xl mx-auto">
             Reserve your spot on the grid. Choose your racers, duration, and preferred time slot.
           </p>
+
+          {/* Book online below, or call to book. */}
+          <div className="mt-6 inline-flex flex-col sm:flex-row items-center gap-3 bg-asphalt-dark border border-telemetry-cyan/20 px-5 py-3">
+            <span className="telemetry-text text-sm text-pit-gray">
+              Prefer to book by phone?
+            </span>
+            <a
+              href="tel:+18082202600"
+              className="telemetry-text text-sm text-telemetry-cyan hover:text-telemetry-cyan-glow font-bold tracking-wide"
+            >
+              Call (808) 220-2600
+            </a>
+          </div>
         </div>
 
         {/* Booking Flow */}

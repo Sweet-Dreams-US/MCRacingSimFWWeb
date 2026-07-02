@@ -13,7 +13,6 @@ interface LookupResult {
   sessionPriceCents: number
   noShowFeeCents: number
   status: string
-  cardOnFile: boolean
   customerFirstName: string
   racers: { slot: number; name: string }[]
 }
@@ -134,18 +133,9 @@ export default function BookingLookupForm() {
             <span className="text-pit-gray">Session price (paid in person)</span>
             <span className="text-grid-white">{formatDollars(result.sessionPriceCents)}</span>
           </div>
-          <div className="flex justify-between telemetry-text text-sm">
-            <span className="text-pit-gray">Card on file</span>
-            <span className={result.cardOnFile ? 'text-green-400' : 'text-amber-400'}>
-              {result.cardOnFile ? '✓ Yes' : 'No'}
-            </span>
-          </div>
-          {result.cardOnFile && (
-            <p className="telemetry-text text-xs text-pit-gray pt-1">
-              No-show fee if you don&apos;t show: {formatDollars(result.noShowFeeCents)} ($20/seat).
-              Cancel 24+ hours ahead to avoid it.
-            </p>
-          )}
+          <p className="telemetry-text text-xs text-pit-gray pt-1">
+            Need to cancel? Call us at least 24 hours ahead to avoid a no-show fee.
+          </p>
         </div>
 
         <div className="bg-telemetry-cyan/5 border border-telemetry-cyan/20 p-3">
