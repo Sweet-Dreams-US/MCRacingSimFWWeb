@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
     .select(
       `id, session_date, start_time, duration_hours, racer_count,
        session_price_cents, discount_code, discount_amount_cents, status,
-       customer:customers(id, first_name, last_name, email, phone)`
+       customer:customers(id, first_name, last_name, email, phone),
+       racers:booking_racers(slot, name, email)`
     )
     .gte('session_date', today)
     // Open (confirmed) + closed-out (completed/no-show) so the app can group
@@ -84,6 +85,11 @@ export async function GET(request: NextRequest) {
       netPriceCents,
       paidCents: paidByBooking[b.id] ?? 0,
       status: b.status,
+      // For split-by-person on the reader: each signed-up racer + their email.
+      racers: (Array.isArray(b.racers) ? b.racers : [])
+        .slice()
+        .sort((a, z) => a.slot - z.slot)
+        .map((r) => ({ name: r.name, email: r.email ?? null })),
       customerId: c?.id ?? null,
       customerName: c ? `${c.first_name} ${c.last_name}`.trim() : null,
       customerEmail: c?.email ?? null,

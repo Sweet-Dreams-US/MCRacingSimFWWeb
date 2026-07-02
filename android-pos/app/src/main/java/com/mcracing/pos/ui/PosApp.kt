@@ -13,6 +13,7 @@ import com.mcracing.pos.net.BookingActionRequest
 import com.mcracing.pos.net.BookingDto
 import com.mcracing.pos.net.CashPaymentRequest
 import com.mcracing.pos.net.CustomerHit
+import com.mcracing.pos.net.RacerDto
 import com.mcracing.pos.terminal.TerminalManager
 import com.stripe.stripeterminal.external.models.ConnectionStatus
 import kotlinx.coroutines.delay
@@ -29,9 +30,16 @@ data class SaleDraft(
     val bookingId: String? = null,
     val receiptEmail: String? = null,
     val sessionPriceCents: Long = 0,
+    val netPriceCents: Long = 0,
+    val discountAmountCents: Long = 0,
+    val discountCode: String? = null,
     val paidCents: Long = 0,
     val bookingStatus: String? = null,
+    val racers: List<RacerDto> = emptyList(),
+    val today: String = "",
 ) {
+    /** Discounted total to collect (falls back to session price when no discount). */
+    fun effectiveNetCents(): Long = if (netPriceCents > 0) netPriceCents else sessionPriceCents
     fun amountCents(): Long {
         val v = amountText.toDoubleOrNull() ?: return 0L
         return (v * 100).roundToLong()
@@ -139,10 +147,11 @@ fun PosApp() {
             today = today,
             onRefresh = { loadBookings() },
             onPick = { b ->
-                // Prefill the REMAINING balance so a partly-paid booking is one
-                // tap to finish; full price if nothing's been paid yet.
-                val remaining = (b.sessionPriceCents - b.paidCents).coerceAtLeast(0)
-                val prefill = if (remaining > 0) remaining else b.sessionPriceCents
+                // Prefill the REMAINING balance (net of any online discount) so a
+                // partly-paid booking is one tap to finish; the discounted total
+                // if nothing's been paid yet.
+                val remaining = b.remainingCents()
+                val prefill = if (remaining > 0) remaining else b.effectiveNetCents()
                 draft = SaleDraft(
                     amountText = "%.2f".format(prefill / 100.0),
                     description = "${if (b.sessionDate == today) "Today" else b.sessionDate} ${prettyTime(b.startTime)} — ${b.racerCount} racer(s), ${b.durationHours}h",
@@ -152,13 +161,18 @@ fun PosApp() {
                     bookingId = b.id,
                     receiptEmail = b.customerEmail,
                     sessionPriceCents = b.sessionPriceCents,
+                    netPriceCents = b.netPriceCents,
+                    discountAmountCents = b.discountAmountCents,
+                    discountCode = b.discountCode,
                     paidCents = b.paidCents,
                     bookingStatus = b.status,
+                    racers = b.racers,
+                    today = today,
                 )
                 stage = Stage.Sale
             },
             onWalkIn = {
-                draft = SaleDraft()
+                draft = SaleDraft(today = today)
                 customerQuery = ""
                 customerHits = emptyList()
                 stage = Stage.Sale

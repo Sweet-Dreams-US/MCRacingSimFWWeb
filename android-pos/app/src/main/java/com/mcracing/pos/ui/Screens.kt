@@ -33,6 +33,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,6 +48,9 @@ import com.mcracing.pos.ui.theme.PitGray
 import com.mcracing.pos.ui.theme.TelemetryCyan
 
 fun centsToDollars(cents: Long): String = "$%.2f".format(cents / 100.0)
+
+val CompletedGreen = Color(0xFF4ADE80)
+private val DoneCardBg = Color(0xFF141414)
 
 fun prettyTime(t: String): String {
     // "14:30:00" -> "2:30 PM"
@@ -143,10 +149,13 @@ private fun SectionHeader(text: String) {
 @Composable
 private fun BookingCard(b: BookingDto, today: String, onPick: (BookingDto) -> Unit) {
     val done = isBookingDone(b.status)
+    val net = b.effectiveNetCents()
+    val left = b.remainingCents()
     Card(
         onClick = { onPick(b) },
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(),
+        // Completed/closed-out bookings are greyed so open work stands out.
+        colors = if (done) CardDefaults.cardColors(containerColor = DoneCardBg) else CardDefaults.cardColors(),
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -154,12 +163,24 @@ private fun BookingCard(b: BookingDto, today: String, onPick: (BookingDto) -> Un
                     "${if (b.sessionDate == today) "Today" else b.sessionDate} · ${prettyTime(b.startTime)}",
                     color = if (done) PitGray else TelemetryCyan,
                 )
-                Text(centsToDollars(b.sessionPriceCents), fontWeight = FontWeight.Bold)
+                Text(
+                    centsToDollars(net),
+                    fontWeight = FontWeight.Bold,
+                    color = if (done) PitGray else Color.White,
+                )
+            }
+            if (b.discountAmountCents > 0) {
+                Text(
+                    "Discount ${b.discountCode ?: ""} −${centsToDollars(b.discountAmountCents)}",
+                    color = if (done) PitGray else CompletedGreen,
+                    fontSize = 10.sp,
+                )
             }
             Spacer(Modifier.height(4.dp))
             Text(
                 b.customerName ?: "No customer",
                 fontWeight = FontWeight.Medium,
+                color = if (done) PitGray else Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -169,16 +190,24 @@ private fun BookingCard(b: BookingDto, today: String, onPick: (BookingDto) -> Un
                 fontSize = 12.sp,
             )
             if (done) {
-                Text(bookingStatusLabel(b.status), color = TelemetryCyan, fontSize = 10.sp)
-            } else if (b.paidCents > 0) {
-                val left = (b.sessionPriceCents - b.paidCents).coerceAtLeast(0)
+                // Green for a clean completion, muted for a no-show.
                 Text(
-                    if (left > 0)
-                        "Paid ${centsToDollars(b.paidCents)} · ${centsToDollars(left)} left"
-                    else "Paid in full",
-                    color = TelemetryCyan,
-                    fontSize = 10.sp,
+                    bookingStatusLabel(b.status),
+                    color = if (b.status == "completed") CompletedGreen else PitGray,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
                 )
+            } else if (left > 0) {
+                // Unfinished → red so the balance owed is obvious.
+                Text(
+                    if (b.paidCents > 0) "Paid ${centsToDollars(b.paidCents)} · ${centsToDollars(left)} left"
+                    else "${centsToDollars(left)} due",
+                    color = ApexRed,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            } else {
+                Text("Paid in full", color = CompletedGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -205,6 +234,17 @@ fun SaleScreen(
 ) {
     val isBooking = draft.bookingId != null
     var confirm by remember { mutableStateOf<ConfirmAction?>(null) }
+    var bRacers by remember { mutableStateOf(1) }
+    var bHours by remember { mutableStateOf(1) }
+
+    // Recompute the walk-in session price from the racers/hours selection.
+    fun applyBuilder(r: Int, h: Int) {
+        val cents = sessionPriceCents(draft.today, r, h)
+        if (cents > 0) {
+            onAmountChange("%.2f".format(cents / 100.0))
+            onDescriptionChange("$r racer${if (r > 1) "s" else ""} · ${h}h session")
+        }
+    }
 
     Column(
         Modifier
@@ -255,16 +295,81 @@ fun SaleScreen(
 
         val bookingDone = draft.bookingStatus?.let { isBookingDone(it) } == true
         if (bookingDone) {
-            Text(bookingStatusLabel(draft.bookingStatus!!), color = TelemetryCyan, fontSize = 12.sp)
+            Text(
+                bookingStatusLabel(draft.bookingStatus!!),
+                color = if (draft.bookingStatus == "completed") CompletedGreen else PitGray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
             Spacer(Modifier.height(8.dp))
         } else if (draft.paidCents > 0) {
-            val left = (draft.sessionPriceCents - draft.paidCents).coerceAtLeast(0)
+            val left = (draft.effectiveNetCents() - draft.paidCents).coerceAtLeast(0)
             Text(
-                "Paid ${centsToDollars(draft.paidCents)} of ${centsToDollars(draft.sessionPriceCents)} · ${centsToDollars(left)} left",
-                color = TelemetryCyan,
+                "Paid ${centsToDollars(draft.paidCents)} of ${centsToDollars(draft.effectiveNetCents())} · ${centsToDollars(left)} left",
+                color = if (left > 0) ApexRed else CompletedGreen,
                 fontSize = 12.sp,
             )
             Spacer(Modifier.height(8.dp))
+        }
+        if (draft.discountAmountCents > 0) {
+            Text(
+                "Discount ${draft.discountCode ?: ""} applied — −${centsToDollars(draft.discountAmountCents)}",
+                color = CompletedGreen,
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // New-booking builder (walk-in only): pick racers + hours → auto price.
+        if (!isBooking) {
+            Text("Build a session", color = PitGray, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                (1..3).forEach { r ->
+                    OutlinedButton(
+                        onClick = { bRacers = r; applyBuilder(r, bHours) },
+                        modifier = Modifier.weight(1f),
+                        colors = if (bRacers == r) ButtonDefaults.outlinedButtonColors(contentColor = ApexRed) else ButtonDefaults.outlinedButtonColors(),
+                    ) { Text("$r racer${if (r > 1) "s" else ""}", fontSize = 12.sp) }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                (1..3).forEach { h ->
+                    OutlinedButton(
+                        onClick = { bHours = h; applyBuilder(bRacers, h) },
+                        modifier = Modifier.weight(1f),
+                        colors = if (bHours == h) ButtonDefaults.outlinedButtonColors(contentColor = ApexRed) else ButtonDefaults.outlinedButtonColors(),
+                    ) { Text("${h}h", fontSize = 12.sp) }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // Split by person (booking with signed-up racers, still open): charge each
+        // their even share with their own email on the receipt.
+        if (isBooking && !bookingDone && draft.racers.size > 1) {
+            val share = draft.effectiveNetCents() / draft.racers.size
+            Text("Split by person (${centsToDollars(share)} each)", color = PitGray, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
+            draft.racers.forEach { r ->
+                OutlinedButton(
+                    onClick = {
+                        onAmountChange("%.2f".format(share / 100.0))
+                        if (!r.email.isNullOrBlank()) onEmailChange(r.email)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        "${r.name}${if (!r.email.isNullOrBlank()) " · ${r.email}" else ""}",
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            Spacer(Modifier.height(12.dp))
         }
 
         OutlinedTextField(
@@ -323,7 +428,9 @@ fun SaleScreen(
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Record ${centsToDollars(draft.amountCents())} cash") }
 
-        if (isBooking) {
+        // Booking actions only for OPEN bookings. Once closed out, the reader
+        // can't cancel/delete it — that's owner-only from the admin site.
+        if (isBooking && !bookingDone) {
             Spacer(Modifier.height(16.dp))
             Text("Booking actions", color = PitGray, fontSize = 11.sp)
             Spacer(Modifier.height(6.dp))
@@ -342,6 +449,13 @@ fun SaleScreen(
                     modifier = Modifier.weight(1f),
                 ) { Text("Cancel") }
             }
+        } else if (isBooking && bookingDone) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "This booking is closed out. To change or delete it, use the admin site.",
+                color = PitGray,
+                fontSize = 11.sp,
+            )
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -392,9 +506,17 @@ fun ResultScreen(
     message: String,
     onDone: () -> Unit,
 ) {
+    // On success, auto-return to the bookings list after a few seconds so staff
+    // don't have to tap "New Sale" between customers. Failures wait for a tap.
+    if (success) {
+        LaunchedEffect(Unit) {
+            delay(3000)
+            onDone()
+        }
+    }
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(if (success) "✓" else "✕", fontSize = 64.sp, color = if (success) TelemetryCyan else ApexRed)
+            Text(if (success) "✓" else "✕", fontSize = 64.sp, color = if (success) CompletedGreen else ApexRed)
             Spacer(Modifier.height(12.dp))
             Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             if (success && amountCents > 0) {
@@ -409,7 +531,7 @@ fun ResultScreen(
             Button(
                 onClick = onDone,
                 colors = ButtonDefaults.buttonColors(containerColor = ApexRed),
-            ) { Text("New Sale") }
+            ) { Text(if (success) "Done" else "New Sale") }
         }
     }
 }

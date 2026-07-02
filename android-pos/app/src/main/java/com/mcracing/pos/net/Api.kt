@@ -14,6 +14,11 @@ import retrofit2.http.Query
 
 data class ConnectionTokenResponse(val secret: String)
 
+data class RacerDto(
+    val name: String,
+    val email: String?,
+)
+
 data class BookingDto(
     val id: String,
     val sessionDate: String,
@@ -21,13 +26,25 @@ data class BookingDto(
     val durationHours: Int,
     val racerCount: Int,
     val sessionPriceCents: Long,
+    // What staff should actually collect: session price minus any online discount.
+    val netPriceCents: Long = 0,
+    val discountAmountCents: Long = 0,
+    val discountCode: String? = null,
     val paidCents: Long = 0,
     val status: String,
     val customerId: String?,
     val customerName: String?,
     val customerEmail: String?,
     val customerPhone: String?,
-)
+    val racers: List<RacerDto> = emptyList(),
+) {
+    /** Amount owed = discounted price minus anything already paid (never below 0). */
+    fun remainingCents(): Long {
+        val net = if (netPriceCents > 0) netPriceCents else sessionPriceCents
+        return (net - paidCents).coerceAtLeast(0)
+    }
+    fun effectiveNetCents(): Long = if (netPriceCents > 0) netPriceCents else sessionPriceCents
+}
 
 data class BookingsResponse(val bookings: List<BookingDto>, val today: String)
 
