@@ -62,9 +62,17 @@ export async function POST(
     .eq('id', id)
 
   // Run the actual blast in the background; the function stays alive via waitUntil.
+  // If sendCampaign throws before its own finalize (e.g. audience query fails),
+  // the row would be stuck in 'sending' forever and the UI polls indefinitely.
+  // Flip it to 'failed' on error so the owner can see it stopped and retry.
   waitUntil(
-    sendCampaign(id).catch((err) => {
+    sendCampaign(id).catch(async (err) => {
       console.error(`[marketing] sendCampaign ${id} failed:`, err)
+      try {
+        await supabase.from('marketing_campaigns').update({ status: 'failed' }).eq('id', id)
+      } catch (e) {
+        console.error(`[marketing] could not mark campaign ${id} failed:`, e)
+      }
     })
   )
 

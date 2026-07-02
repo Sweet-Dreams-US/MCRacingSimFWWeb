@@ -22,7 +22,9 @@ export default async function UnsubscribePage({
     'use server'
     const t = String(formData.get('token') || '')
     await resubscribeByToken(t)
-    redirect(`/unsubscribe?token=${encodeURIComponent(t)}&resubscribed=1`)
+    // Trailing slash BEFORE the query — trailingSlash:true would otherwise
+    // 308-redirect a slashless path and cost an extra hop.
+    redirect(`/unsubscribe/?token=${encodeURIComponent(t)}&resubscribed=1`)
   }
 
   let heading = ''
