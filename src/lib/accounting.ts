@@ -25,6 +25,17 @@ export const INCOME_TYPES: ReadonlySet<TransactionType> = new Set<TransactionTyp
   'cash_deposit',
 ])
 
+// GROSS revenue = real sales only. Deliberately EXCLUDES cash_deposit /
+// cash_withdrawal (cash-drawer moves, not P&L) and refunds. This is the same
+// definition the Reports page's "Gross Revenue" headline uses — keep them in
+// sync so dashboard and reports numbers reconcile.
+export const GROSS_INCOME_TYPES: readonly TransactionType[] = [
+  'booking_income',
+  'no_show_fee',
+  'in_person_sale',
+  'other_income',
+]
+
 export function isOutflow(type: TransactionType): boolean {
   return OUTFLOW_TYPES.has(type)
 }
