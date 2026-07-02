@@ -738,6 +738,78 @@ export type Database = {
         }
         Relationships: []
       }
+      party_bookings: {
+        Row: {
+          id: string
+          customer_id: string | null
+          contact_name: string
+          contact_email: string
+          contact_phone: string | null
+          party_type: string
+          session_date: string
+          start_time: string
+          headcount: number
+          total_price_cents: number
+          deposit_cents: number
+          deposit_status: string
+          status: string
+          public_token: string
+          stripe_payment_intent_id: string | null
+          stripe_customer_id: string | null
+          notes: string | null
+          created_by_user_id: string | null
+          paid_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          customer_id?: string | null
+          contact_name: string
+          contact_email: string
+          contact_phone?: string | null
+          party_type: string
+          session_date: string
+          start_time: string
+          headcount: number
+          total_price_cents: number
+          deposit_cents: number
+          deposit_status?: string
+          status?: string
+          public_token?: string
+          stripe_payment_intent_id?: string | null
+          stripe_customer_id?: string | null
+          notes?: string | null
+          created_by_user_id?: string | null
+          paid_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          customer_id?: string | null
+          contact_name?: string
+          contact_email?: string
+          contact_phone?: string | null
+          party_type?: string
+          session_date?: string
+          start_time?: string
+          headcount?: number
+          total_price_cents?: number
+          deposit_cents?: number
+          deposit_status?: string
+          status?: string
+          public_token?: string
+          stripe_payment_intent_id?: string | null
+          stripe_customer_id?: string | null
+          notes?: string | null
+          created_by_user_id?: string | null
+          paid_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       stripe_charges: {
         Row: {
           amount_cents: number
@@ -986,6 +1058,7 @@ export type Database = {
         | "cash_withdrawal"
         | "refund"
         | "adjustment"
+        | "party_deposit"
     }
     CompositeTypes: {
       [_ in never]: never

@@ -584,6 +584,146 @@ export function inviteBookingEmail(
 }
 
 // ===========================================================================
+// Party / group-event templates (deposit invite, owner alert, confirmed)
+// ===========================================================================
+
+function partyLabel(t: string): string {
+  if (t === 'birthday') return 'Birthday Party'
+  if (t === 'corporate') return 'Corporate Event'
+  return 'Group Event'
+}
+
+function ctaButton(href: string, label: string): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px 0;">
+    <tr><td style="background-color:${COLOR.apexRed};">
+      <a href="${href}" style="display:inline-block;padding:16px 32px;font-family:${FONT_HEADLINE};font-weight:700;font-style:italic;text-transform:uppercase;letter-spacing:0.05em;font-size:16px;color:#ffffff;text-decoration:none;">${escapeHtml(label)}</a>
+    </td></tr>
+  </table>`
+}
+
+export interface PartyDepositInviteEmailParams {
+  contactName: string
+  partyType: string
+  sessionDate: string
+  startTime: string
+  headcount: number
+  totalPriceCents: number
+  depositCents: number
+  payUrl: string
+}
+
+export function partyDepositInviteEmail(
+  params: PartyDepositInviteEmailParams
+): { subject: string; html: string } {
+  const { contactName, partyType, sessionDate, startTime, headcount, totalPriceCents, depositCents, payUrl } = params
+  const first = contactName.trim().split(' ')[0] || 'there'
+  const subject = `Confirm your ${partyLabel(partyType).toLowerCase()} at MC Racing Sim`
+
+  const inner = `
+    ${h1(`You're almost on the grid, ${escapeHtml(first)}.`)}
+    ${p(`Here are the details for your event at <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong>. To lock in your date, pay the 50% deposit below — the rest is settled in person on the day.`)}
+
+    ${h2('Your Event')}
+    ${detailsCard([
+      ['Type', escapeHtml(partyLabel(partyType))],
+      ['Date', escapeHtml(formatDateLong(sessionDate))],
+      ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
+      ['Guests', String(headcount)],
+      ['Total', formatCents(totalPriceCents)],
+      ['Deposit due now (50%)', `<span style="color:${COLOR.telemetryCyan};">${formatCents(depositCents)}</span>`],
+    ])}
+
+    ${ctaButton(payUrl, `Pay ${formatCents(depositCents)} Deposit`)}
+
+    ${noticeBox(
+      'What happens next',
+      `Once your deposit is in, your date is confirmed and we'll be in touch to finalize the details. The remaining <strong style="color:${COLOR.gridWhite};">${formatCents(totalPriceCents - depositCents)}</strong> is collected at the venue.`
+    )}
+
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">Questions? Reply here or call Mark at (808) 220-2600.</span>`)}
+  `
+
+  return { subject, html: layout(inner, `Pay your ${formatCents(depositCents)} deposit to confirm your event.`) }
+}
+
+export interface OwnerNewPartyEmailParams {
+  partyId: string
+  contactName: string
+  contactEmail: string
+  contactPhone: string | null
+  partyType: string
+  sessionDate: string
+  startTime: string
+  headcount: number
+  totalPriceCents: number
+  depositCents: number
+}
+
+export function ownerNewPartyEmail(
+  params: OwnerNewPartyEmailParams
+): { subject: string; html: string } {
+  const {
+    partyId, contactName, contactEmail, contactPhone, partyType,
+    sessionDate, startTime, headcount, totalPriceCents, depositCents,
+  } = params
+  const subject = `[New Party] ${partyLabel(partyType)} — ${contactName} (${partyId})`
+
+  const inner = `
+    ${bookingIdBadge(partyId)}
+    ${h1('New party invite sent')}
+    ${p(`A ${escapeHtml(partyLabel(partyType).toLowerCase())} invite was created and the deposit link was emailed to the customer. It confirms once they pay the deposit.`)}
+    ${detailsCard([
+      ['Type', escapeHtml(partyLabel(partyType))],
+      ['Date', escapeHtml(formatDateLong(sessionDate))],
+      ['Start', escapeHtml(formatTimeDisplay(startTime))],
+      ['Guests', String(headcount)],
+      ['Total', formatCents(totalPriceCents)],
+      ['Deposit (50%)', formatCents(depositCents)],
+    ])}
+    ${detailsCard([
+      ['Name', escapeHtml(contactName)],
+      ['Email', `<a href="mailto:${escapeHtml(contactEmail)}" style="color:${COLOR.telemetryCyan};text-decoration:none;">${escapeHtml(contactEmail)}</a>`],
+      ['Phone', contactPhone ? escapeHtml(contactPhone) : '&mdash;'],
+    ])}
+    ${divider()}
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">You'll get another alert when the deposit is paid.</span>`)}
+  `
+  return { subject, html: layout(inner, `${contactName} was invited to a ${partyLabel(partyType).toLowerCase()}.`) }
+}
+
+export interface PartyConfirmedEmailParams {
+  contactName: string
+  partyType: string
+  sessionDate: string
+  startTime: string
+  depositCents: number
+  totalPriceCents: number
+}
+
+export function partyConfirmedEmail(
+  params: PartyConfirmedEmailParams
+): { subject: string; html: string } {
+  const { contactName, partyType, sessionDate, startTime, depositCents, totalPriceCents } = params
+  const first = contactName.trim().split(' ')[0] || 'there'
+  const subject = `You're confirmed! Your ${partyLabel(partyType).toLowerCase()} is booked 🏁`
+
+  const inner = `
+    ${h1(`It's official, ${escapeHtml(first)}.`)}
+    ${p(`We got your deposit — your ${escapeHtml(partyLabel(partyType).toLowerCase())} at <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong> is locked in.`)}
+    ${detailsCard([
+      ['Date', escapeHtml(formatDateLong(sessionDate))],
+      ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
+      ['Deposit paid', formatCents(depositCents)],
+      ['Balance due at venue', `<span style="color:${COLOR.telemetryCyan};">${formatCents(totalPriceCents - depositCents)}</span>`],
+    ])}
+    ${noticeBox('See you soon', `We'll reach out to finalize the details. Can't wait to get your crew on track!`)}
+    ${divider()}
+    ${p(`<strong style="color:${COLOR.gridWhite};">Location:</strong> 1205 W Main St, Fort Wayne, IN`)}
+  `
+  return { subject, html: layout(inner, `Deposit received — your event is confirmed.`) }
+}
+
+// ===========================================================================
 // TEMPLATE 7: bookingReminderEmail
 // Day-before reminder. Sent by the reminder cron for any confirmed booking.
 // ===========================================================================

@@ -267,6 +267,17 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
     }
   }
 
+  // Party deposit paid online → confirm the party + record the deposit revenue.
+  // finalizePartyDeposit is idempotent; safe even if the event is redelivered.
+  if (intent.metadata?.source === 'party_deposit' && charge && intent.metadata.party_id) {
+    const { finalizePartyDeposit } = await import('@/lib/parties')
+    await finalizePartyDeposit({
+      partyId: intent.metadata.party_id,
+      chargeRowId: charge.id,
+      capturedAmountCents: finalAmount,
+    })
+  }
+
   // No-show charges are recorded by the admin action that created them, so we
   // don't double-insert here for those.
 }

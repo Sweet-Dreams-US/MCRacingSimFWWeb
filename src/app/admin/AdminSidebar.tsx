@@ -44,6 +44,16 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/admin/parties',
+    label: 'Parties',
+    icon: ({ className }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3l1.5 3 3.5.5-2.5 2.4.6 3.5L12 14.3 8.4 15.9l.6-3.5L6.5 6.5 10 6z" />
+        <path d="M12 14v7M8 21h8" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/customers',
     label: 'Customers',
     icon: ({ className }) => (

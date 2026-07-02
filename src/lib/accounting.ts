@@ -22,18 +22,19 @@ export const INCOME_TYPES: ReadonlySet<TransactionType> = new Set<TransactionTyp
   'no_show_fee',
   'in_person_sale',
   'other_income',
+  'party_deposit',
   'cash_deposit',
 ])
 
-// GROSS revenue = real sales only. Deliberately EXCLUDES cash_deposit /
-// cash_withdrawal (cash-drawer moves, not P&L) and refunds. This is the same
-// definition the Reports page's "Gross Revenue" headline uses — keep them in
-// sync so dashboard and reports numbers reconcile.
+// GROSS revenue = real money collected from customers. EXCLUDES cash_deposit /
+// cash_withdrawal (cash-drawer moves, not P&L) and refunds. Party deposits ARE
+// real cash collected (this app is cash-basis), so they count as money-in.
 export const GROSS_INCOME_TYPES: readonly TransactionType[] = [
   'booking_income',
   'no_show_fee',
   'in_person_sale',
   'other_income',
+  'party_deposit',
 ]
 
 export function isOutflow(type: TransactionType): boolean {
@@ -55,6 +56,7 @@ export function formatTransactionType(t: TransactionType): string {
     cash_withdrawal: 'Cash Withdrawal',
     refund: 'Refund',
     adjustment: 'Adjustment',
+    party_deposit: 'Party Deposit',
   }
   return map[t]
 }
