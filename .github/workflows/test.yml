@@ -1,0 +1,20 @@
+name: Test
+
+# Runs the unit suite (money/pricing/discount/deposit/date logic) on every push
+# and PR so a regression can't slip into main unnoticed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test

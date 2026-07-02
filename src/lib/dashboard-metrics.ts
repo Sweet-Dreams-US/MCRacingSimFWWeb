@@ -56,7 +56,7 @@ export interface UpcomingBooking {
 // ---- Eastern date string math (noon-anchored to dodge UTC rolls) ----------
 
 /** "YYYY-MM-DD" n days before the given Eastern date. Pure string math. */
-function addDaysEastern(ymd: string, delta: number): string {
+export function addDaysEastern(ymd: string, delta: number): string {
   const [y, m, d] = ymd.split('-').map(Number)
   const dt = new Date(Date.UTC(y, m - 1, d, 12))
   dt.setUTCDate(dt.getUTCDate() + delta)
@@ -67,7 +67,7 @@ function addDaysEastern(ymd: string, delta: number): string {
 }
 
 /** Monday of the Eastern week containing `ymd` (venue week is Mon–Sun). */
-function startOfWeekEastern(ymd: string): string {
+export function startOfWeekEastern(ymd: string): string {
   const [y, m, d] = ymd.split('-').map(Number)
   const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay() // 0=Sun … 6=Sat
   const daysFromMonday = (dow + 6) % 7
