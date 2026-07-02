@@ -103,6 +103,7 @@ export type Database = {
       }
       bookings: {
         Row: {
+          card_link_token: string | null
           consent_fee_cents: number
           consent_ip: string | null
           consent_text: string
@@ -133,6 +134,7 @@ export type Database = {
           updated_by_user_id: string | null
         }
         Insert: {
+          card_link_token?: string | null
           consent_fee_cents: number
           consent_ip?: string | null
           consent_text: string
@@ -163,6 +165,7 @@ export type Database = {
           updated_by_user_id?: string | null
         }
         Update: {
+          card_link_token?: string | null
           consent_fee_cents?: number
           consent_ip?: string | null
           consent_text?: string

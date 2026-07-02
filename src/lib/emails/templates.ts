@@ -584,6 +584,61 @@ export function inviteBookingEmail(
 }
 
 // ===========================================================================
+// inviteHoldCardEmail — admin invite that REQUIRES a no-show card. Sends a
+// "save your card" link; the booking confirms once the card is on file.
+// ===========================================================================
+
+export interface InviteHoldCardEmailParams {
+  customerFirstName: string
+  bookingId: string
+  sessionDate: string
+  startTime: string
+  durationHours: number
+  racerCount: number
+  sessionPriceCents: number
+  noShowFeeCents: number
+  holdCardUrl: string
+}
+
+export function inviteHoldCardEmail(
+  params: InviteHoldCardEmailParams
+): { subject: string; html: string } {
+  const {
+    customerFirstName, bookingId, sessionDate, startTime, durationHours,
+    racerCount, sessionPriceCents, noShowFeeCents, holdCardUrl,
+  } = params
+  const hourWord = durationHours === 1 ? 'Hour' : 'Hours'
+  const racerWord = racerCount === 1 ? 'Racer' : 'Racers'
+  const subject = `One step left — save a card to confirm your MC Racing Sim session`
+
+  const inner = `
+    ${bookingIdBadge(bookingId)}
+    ${h1(`Almost there, ${escapeHtml(customerFirstName)}.`)}
+    ${p(`We saved you a spot at <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong>. To lock it in, add a card on file — it&apos;s <strong style="color:${COLOR.gridWhite};">not charged today</strong>, only if you no-show.`)}
+
+    ${h2('Your Session')}
+    ${detailsCard([
+      ['Date', escapeHtml(formatDateLong(sessionDate))],
+      ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
+      ['Duration', `${durationHours} ${hourWord}`],
+      ['Racers', `${racerCount} ${racerWord}`],
+      ['Session Price', `<span style="color:${COLOR.telemetryCyan};">${formatCents(sessionPriceCents)}</span>`],
+    ])}
+
+    ${ctaButton(holdCardUrl, 'Save My Card & Confirm')}
+
+    ${noticeBox(
+      'No-Show Policy',
+      `Your card is held securely by Stripe and only charged a <strong style="color:${COLOR.gridWhite};">${formatCents(noShowFeeCents)}</strong> no-show fee ($20 per seat) if you don&apos;t show and don&apos;t cancel at least 24 hours ahead.`,
+      'warn'
+    )}
+
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">Questions? Reply here or call (808) 220-2600.</span>`)}
+  `
+  return { subject, html: layout(inner, `Save a card to confirm your session on ${formatDateLong(sessionDate)}.`) }
+}
+
+// ===========================================================================
 // Party / group-event templates (deposit invite, owner alert, confirmed)
 // ===========================================================================
 

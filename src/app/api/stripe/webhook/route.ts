@@ -168,10 +168,14 @@ async function handleSetupIntentSucceeded(event: Stripe.Event, supabase: Supa) {
     )
   }
 
+  // Only attach to a still-pending booking. Defense-in-depth: a card must never
+  // land on a cancelled/settled booking even if a stale hold-card link slipped
+  // through (online + require-card bookings are both 'pending' at this point).
   const { error } = await supabase
     .from('bookings')
     .update({ stripe_payment_method_id: paymentMethodId })
     .eq('id', bookingId)
+    .eq('status', 'pending')
 
   if (error) {
     throw new Error(

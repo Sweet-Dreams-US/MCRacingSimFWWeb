@@ -18,6 +18,7 @@ interface InviteBody {
   durationHours?: number | string
   racerCount?: number | string
   notes?: string
+  requireCard?: boolean
 }
 
 function asUnit(v: unknown, fallback: 1 | 2 | 3): 1 | 2 | 3 {
@@ -95,8 +96,14 @@ export async function POST(request: NextRequest) {
       racerCount,
       notes: body.notes?.trim() || undefined,
       createdByUserId: adminCtx.admin.id,
+      requireCard: body.requireCard === true,
     })
-    return NextResponse.json({ success: true, bookingId: result.bookingId })
+    return NextResponse.json({
+      success: true,
+      bookingId: result.bookingId,
+      requireCard: body.requireCard === true,
+      holdCardUrl: result.holdCardUrl ?? null,
+    })
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Invite failed' },

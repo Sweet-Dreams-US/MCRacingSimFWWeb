@@ -11,6 +11,7 @@
 // IDEMPOTENCY: callers should pass a unique idempotency_key when retrying.
 // Stripe's idempotency layer ensures we don't create duplicate SetupIntents.
 
+import { randomUUID } from 'crypto'
 import { createAdminClient } from './supabase/admin'
 import type { Database } from './supabase/types'
 import { getStripe } from './stripe'
@@ -30,6 +31,7 @@ import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
 import {
   inviteBookingEmail,
+  inviteHoldCardEmail,
   ownerNewBookingEmail,
   sessionThankYouEmail,
   firstTimerThankYouEmail,
@@ -630,11 +632,19 @@ export interface InviteBookingInput {
   racerCount: 1 | 2 | 3
   notes?: string
   createdByUserId?: string | null
+  // When true, the invite requires the customer to save a no-show card before
+  // it confirms: the booking is created 'pending' and the customer gets a
+  // "save your card" link. When false (default) it's a card-less confirmed
+  // booking with no no-show fee (the original behavior).
+  requireCard?: boolean
 }
 
 export interface InviteBookingResult {
   bookingId: string
   customerId: string
+  // Set only for require-card invites: the unguessable "save your card" link.
+  cardLinkToken?: string | null
+  holdCardUrl?: string | null
 }
 
 /**
@@ -667,6 +677,12 @@ export async function createInviteBooking(
   )
   const sessionPriceCents = sessionPriceDollars * 100
   const endTime = computeEndTime(input.startTime, input.durationHours)
+
+  // Require-card invites become 'pending' until the customer saves a no-show
+  // card via an emailed link; card-less invites confirm immediately.
+  const requireCard = input.requireCard ?? false
+  const noShowFeeCents = requireCard ? calculateNoShowFeeCents(input.racerCount) : 0
+  const cardLinkToken = requireCard ? randomUUID() : null
 
   // 1. Find-or-create the customer by email (don't overwrite a returning
   //    customer's real name with a synthesized one).
@@ -758,13 +774,16 @@ export async function createInviteBooking(
     duration_hours: input.durationHours,
     racer_count: input.racerCount,
     session_price_cents: sessionPriceCents,
-    // No card on file → no no-show fee can be charged.
-    no_show_fee_cents: 0,
-    status: 'confirmed' as const,
+    no_show_fee_cents: noShowFeeCents,
+    // Require-card invites start 'pending' (confirmed by the setup_intent
+    // webhook once the card is saved); card-less invites confirm now.
+    status: (requireCard ? 'pending' : 'confirmed') as 'pending' | 'confirmed',
     source: 'admin' as const,
-    consent_text:
-      'Admin-invited booking — no card on file; no no-show fee applies.',
-    consent_fee_cents: 0,
+    consent_text: requireCard
+      ? `I authorize MC Racing Sim Fort Wayne to charge the card I provide a no-show fee of $${(noShowFeeCents / 100).toFixed(0)} ($20 per seat) if I fail to show up for my session. Cancellations made at least 24 hours before the session are free.`
+      : 'Admin-invited booking — no card on file; no no-show fee applies.',
+    consent_fee_cents: noShowFeeCents,
+    card_link_token: cardLinkToken,
     created_by_user_id: input.createdByUserId ?? null,
     notes: input.notes?.trim() || null,
   }
@@ -801,49 +820,81 @@ export async function createInviteBooking(
     throw new Error(`Racer insert failed: ${racersError.message}`)
   }
 
-  // 4. Calendar event (graceful no-op if creds missing).
-  try {
-    const eventId = await createBookingCalendarEvent({
+  // 4. Calendar event — only for card-less invites (confirmed now). Require-card
+  // invites are still 'pending'; finalizeConfirmedBooking creates the event when
+  // the card is saved, so we don't create it here.
+  if (!requireCard) {
+    try {
+      const eventId = await createBookingCalendarEvent({
+        bookingId,
+        customerName: fullName,
+        customerEmail: emailLower,
+        customerPhone: input.phone?.trim() || null,
+        sessionDate: input.sessionDate,
+        startTime: input.startTime,
+        durationHours: input.durationHours,
+        racerCount: input.racerCount,
+        sessionPriceCents,
+        noShowFeeCents: 0,
+        source: 'admin',
+      })
+      if (eventId) {
+        await supabase
+          .from('bookings')
+          .update({ google_calendar_event_id: eventId })
+          .eq('id', bookingId)
+      }
+    } catch (err) {
+      console.error(`Invite calendar event failed for ${bookingId}:`, err)
+    }
+  }
+
+  // 5. Customer email + owner alert. Best-effort (never throws).
+  // Require-card → a "save your card" link (confirmation email fires later, on
+  // finalizeConfirmedBooking). Card-less → the normal invite confirmation.
+  const holdCardUrl = cardLinkToken
+    ? `${process.env.NEXT_PUBLIC_URL || 'https://mcracingfortwayne.com'}/hold-card/${cardLinkToken}`
+    : null
+
+  if (requireCard && holdCardUrl) {
+    const hold = inviteHoldCardEmail({
+      customerFirstName: firstName || 'racer',
       bookingId,
-      customerName: fullName,
-      customerEmail: emailLower,
-      customerPhone: input.phone?.trim() || null,
       sessionDate: input.sessionDate,
       startTime: input.startTime,
       durationHours: input.durationHours,
       racerCount: input.racerCount,
       sessionPriceCents,
-      noShowFeeCents: 0,
-      source: 'admin',
+      noShowFeeCents,
+      holdCardUrl,
     })
-    if (eventId) {
-      await supabase
-        .from('bookings')
-        .update({ google_calendar_event_id: eventId })
-        .eq('id', bookingId)
-    }
-  } catch (err) {
-    console.error(`Invite calendar event failed for ${bookingId}:`, err)
+    await sendEmail({
+      to: emailLower,
+      subject: hold.subject,
+      html: hold.html,
+      template: 'invite_hold_card',
+      relatedBookingId: bookingId,
+      relatedCustomerId: customerId,
+    })
+  } else {
+    const invite = inviteBookingEmail({
+      customerFirstName: firstName || 'racer',
+      bookingId,
+      sessionDate: input.sessionDate,
+      startTime: input.startTime,
+      durationHours: input.durationHours,
+      racerCount: input.racerCount,
+      sessionPriceCents,
+    })
+    await sendEmail({
+      to: emailLower,
+      subject: invite.subject,
+      html: invite.html,
+      template: 'invite_booking',
+      relatedBookingId: bookingId,
+      relatedCustomerId: customerId,
+    })
   }
-
-  // 5. Emails — invite to the customer + owner alert. Best-effort (never throws).
-  const invite = inviteBookingEmail({
-    customerFirstName: firstName || 'racer',
-    bookingId,
-    sessionDate: input.sessionDate,
-    startTime: input.startTime,
-    durationHours: input.durationHours,
-    racerCount: input.racerCount,
-    sessionPriceCents,
-  })
-  await sendEmail({
-    to: emailLower,
-    subject: invite.subject,
-    html: invite.html,
-    template: 'invite_booking',
-    relatedBookingId: bookingId,
-    relatedCustomerId: customerId,
-  })
 
   const owner = ownerNewBookingEmail({
     bookingId,
@@ -866,7 +917,7 @@ export async function createInviteBooking(
     relatedCustomerId: customerId,
   })
 
-  return { bookingId, customerId }
+  return { bookingId, customerId, cardLinkToken, holdCardUrl }
 }
 
 // ---------------------------------------------------------------------------

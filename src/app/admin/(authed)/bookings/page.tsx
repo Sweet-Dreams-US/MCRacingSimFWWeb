@@ -19,6 +19,7 @@ interface BookingRow {
   status: 'pending' | 'confirmed' | 'completed' | 'partial_noshow' | 'noshow' | 'cancelled'
   source: 'online' | 'admin' | 'imported'
   stripe_payment_method_id: string | null
+  card_link_token: string | null
   customer: { first_name: string; last_name: string; email: string | null; phone: string | null } | null
 }
 
@@ -73,15 +74,15 @@ export default async function BookingsPage() {
       `
       id, session_date, start_time, duration_hours, racer_count,
       session_price_cents, no_show_fee_cents, status, source,
-      stripe_payment_method_id,
+      stripe_payment_method_id, card_link_token,
       customer:customers(first_name, last_name, email, phone)
     `
     )
     .gte('session_date', today)
-    // Exclude 'pending' bookings — those are incomplete (customer started a
-    // booking but never saved a card). They become 'confirmed' only once the
-    // card is on file, so the list shows real bookings only.
-    .neq('status', 'pending')
+    // Hide 'pending' bookings — those are incomplete (customer started online
+    // but never saved a card). EXCEPT require-card admin invites (they carry a
+    // card_link_token), which are intentional and should show as "awaiting card".
+    .or('status.neq.pending,card_link_token.not.is.null')
     .order('session_date', { ascending: true })
     .order('start_time', { ascending: true })
     .limit(100)
@@ -204,7 +205,12 @@ function BookingRowCard({ b }: { b: BookingRow }) {
         {/* Status badges */}
         <div className="col-span-6 sm:col-span-3 flex flex-wrap gap-1">
           <BookingStatusBadge status={b.status} />
-          {!cardOnFile && b.source === 'online' && (
+          {b.status === 'pending' && b.card_link_token && (
+            <span className="telemetry-text text-xs px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+              Awaiting card
+            </span>
+          )}
+          {!cardOnFile && b.source === 'online' && b.status !== 'pending' && (
             <span className="telemetry-text text-xs px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
               No card on file
             </span>

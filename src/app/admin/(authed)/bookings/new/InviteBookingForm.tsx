@@ -40,10 +40,11 @@ export default function InviteBookingForm() {
   const [durationHours, setDurationHours] = useState<Unit>(1)
   const [racerCount, setRacerCount] = useState<Unit>(1)
   const [notes, setNotes] = useState('')
+  const [requireCard, setRequireCard] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ bookingId: string } | null>(null)
+  const [result, setResult] = useState<{ bookingId: string; requireCard: boolean; holdCardUrl: string | null } | null>(null)
 
   const dayType = sessionDate ? getDayType(sessionDate) : null
   const pricePreview =
@@ -76,11 +77,12 @@ export default function InviteBookingForm() {
           durationHours,
           racerCount,
           notes: notes.trim() || undefined,
+          requireCard,
         }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || 'Invite failed')
-      setResult({ bookingId: data.bookingId })
+      setResult({ bookingId: data.bookingId, requireCard: !!data.requireCard, holdCardUrl: data.holdCardUrl ?? null })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invite failed')
     } finally {
@@ -95,17 +97,42 @@ export default function InviteBookingForm() {
     setLastName('')
     setPhone('')
     setNotes('')
+    setRequireCard(false)
   }
 
   if (result) {
     return (
       <div className="bg-green-500/10 border border-green-500/30 p-8 text-center space-y-4 max-w-xl">
         <div className="text-5xl">✓</div>
-        <h2 className="racing-headline text-2xl text-grid-white">Booking created &amp; sent</h2>
+        <h2 className="racing-headline text-2xl text-grid-white">
+          {result.requireCard ? 'Invite sent' : 'Booking created & sent'}
+        </h2>
         <p className="telemetry-text text-sm text-pit-gray">
-          Booking <span className="text-grid-white">{result.bookingId}</span> is on the calendar.
-          We emailed {email} and notified MC Racing.
+          {result.requireCard ? (
+            <>
+              Invite <span className="text-grid-white">{result.bookingId}</span> emailed to {email}. It confirms once
+              they save a card. It shows here on the schedule after that.
+            </>
+          ) : (
+            <>
+              Booking <span className="text-grid-white">{result.bookingId}</span> is on the calendar. We emailed {email}{' '}
+              and notified MC Racing.
+            </>
+          )}
         </p>
+        {result.requireCard && result.holdCardUrl && (
+          <div className="text-left">
+            <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">
+              Save-card link (to share directly)
+            </label>
+            <input
+              readOnly
+              value={result.holdCardUrl}
+              onFocus={(e) => e.target.select()}
+              className="composer-input"
+            />
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3">
           <Link
             href={`/admin/bookings/${result.bookingId}`}
@@ -224,6 +251,19 @@ export default function InviteBookingForm() {
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="composer-input resize-y" />
         </div>
 
+        {/* No-show card toggle */}
+        <label className="flex items-start gap-3 bg-asphalt border border-white/10 p-4 cursor-pointer">
+          <input type="checkbox" checked={requireCard} onChange={(e) => setRequireCard(e.target.checked)} className="mt-1" />
+          <span className="telemetry-text text-sm text-grid-white">
+            Require a no-show card
+            <span className="block text-xs text-pit-gray mt-1">
+              {requireCard
+                ? 'The customer must save a card (link emailed) before this confirms — a $20/seat no-show fee applies.'
+                : 'Off: card-less, confirms immediately, no no-show fee (the default for invites).'}
+            </span>
+          </span>
+        </label>
+
         {/* Price preview */}
         {pricePreview !== null && (
           <div className="flex items-center justify-between bg-asphalt border border-white/10 px-4 py-3">
@@ -252,11 +292,12 @@ export default function InviteBookingForm() {
         disabled={submitting}
         className="racing-headline text-sm uppercase tracking-wider bg-apex-red hover:bg-apex-red-dark disabled:opacity-50 text-grid-white px-6 py-3 transition-colors"
       >
-        {submitting ? 'Creating…' : 'Create booking & send invite →'}
+        {submitting ? 'Creating…' : requireCard ? 'Send invite & card link →' : 'Create booking & send invite →'}
       </button>
       <p className="telemetry-text text-xs text-pit-gray">
-        No card is collected. The customer gets an email, MC Racing gets notified,
-        it&apos;s added to the Gmail calendar, and they&apos;ll get a reminder the day before.
+        {requireCard
+          ? 'The customer gets a link to save a no-show card. The booking confirms (calendar + reminder) once the card is on file.'
+          : 'No card is collected. The customer gets an email, MC Racing gets notified, it’s added to the Gmail calendar, and they’ll get a reminder the day before.'}
       </p>
     </div>
   )
