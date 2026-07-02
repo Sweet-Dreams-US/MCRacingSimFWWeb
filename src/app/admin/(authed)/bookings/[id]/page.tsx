@@ -13,6 +13,7 @@ import {
 } from '../../../StatusBadge'
 import NoShowDialog from './NoShowDialog'
 import ChargeRetryButton from './ChargeRetryButton'
+import EditBookingPanel from './EditBookingPanel'
 
 function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -120,6 +121,22 @@ export default async function BookingDetailPage({
           <BookingStatusBadge status={booking.status} />
         </div>
       </div>
+
+      {/* Edit details — only while the booking is still open (money/schedule
+          are settled once completed/cancelled/no-showed). */}
+      {(booking.status === 'pending' || booking.status === 'confirmed') && (
+        <EditBookingPanel
+          bookingId={booking.id}
+          sessionDate={booking.session_date}
+          startTime={booking.start_time}
+          durationHours={booking.duration_hours}
+          racerCount={booking.racer_count}
+          sessionPriceCents={booking.session_price_cents}
+          priceOverridden={booking.price_overridden}
+          notes={booking.notes}
+          discountCode={booking.discount_code}
+        />
+      )}
 
       {/* No-show action — only show for confirmed bookings */}
       {booking.status === 'confirmed' && (

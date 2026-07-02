@@ -313,6 +313,41 @@ export async function updateBookingCalendarEvent(
 }
 
 /**
+ * Fully re-sync an event to match an edited booking. Unlike
+ * updateBookingCalendarEvent (PATCH of individual fields), this rebuilds the
+ * summary, description, start, end, and color from the complete booking input
+ * — the same builders used at creation — so a rescheduled/re-priced/re-sized
+ * booking never leaves stale text or times on the calendar.
+ *
+ * Returns true on success, false if calendar isn't configured. THROWS on real
+ * API errors (callers wrap best-effort).
+ */
+export async function resyncBookingCalendarEvent(
+  eventId: string,
+  input: CreateBookingCalendarEventInput
+): Promise<boolean> {
+  const calendar = getCalendarClient()
+  if (!calendar) return false
+
+  const endTime = addHours(input.startTime, input.durationHours)
+  const source = input.source ?? 'online'
+
+  await calendar.events.patch({
+    calendarId: getCalendarId(),
+    eventId,
+    requestBody: {
+      summary: buildSummary(input),
+      description: buildDescription(input),
+      start: toCalendarDateTime(input.sessionDate, input.startTime),
+      end: toCalendarDateTime(input.sessionDate, endTime),
+      colorId: COLOR_BY_SOURCE[source] ?? DEFAULT_COLOR,
+    },
+  })
+
+  return true
+}
+
+/**
  * Delete a calendar event — for cancellations.
  * Returns true on success, false if calendar isn't configured.
  *

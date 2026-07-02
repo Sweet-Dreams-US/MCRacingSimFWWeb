@@ -119,6 +119,7 @@ export type Database = {
           id: string
           no_show_fee_cents: number
           notes: string | null
+          price_overridden: boolean
           racer_count: number
           reminder_email_sent_at: string | null
           session_date: string
@@ -129,6 +130,7 @@ export type Database = {
           stripe_payment_method_id: string | null
           stripe_setup_intent_id: string | null
           updated_at: string
+          updated_by_user_id: string | null
         }
         Insert: {
           consent_fee_cents: number
@@ -147,6 +149,7 @@ export type Database = {
           id: string
           no_show_fee_cents: number
           notes?: string | null
+          price_overridden?: boolean
           racer_count: number
           reminder_email_sent_at?: string | null
           session_date: string
@@ -157,6 +160,7 @@ export type Database = {
           stripe_payment_method_id?: string | null
           stripe_setup_intent_id?: string | null
           updated_at?: string
+          updated_by_user_id?: string | null
         }
         Update: {
           consent_fee_cents?: number
@@ -175,6 +179,7 @@ export type Database = {
           id?: string
           no_show_fee_cents?: number
           notes?: string | null
+          price_overridden?: boolean
           racer_count?: number
           reminder_email_sent_at?: string | null
           session_date?: string
@@ -185,6 +190,7 @@ export type Database = {
           stripe_payment_method_id?: string | null
           stripe_setup_intent_id?: string | null
           updated_at?: string
+          updated_by_user_id?: string | null
         }
         Relationships: []
       }

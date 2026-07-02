@@ -12,12 +12,14 @@
 // Stripe's idempotency layer ensures we don't create duplicate SetupIntents.
 
 import { createAdminClient } from './supabase/admin'
+import type { Database } from './supabase/types'
 import { getStripe } from './stripe'
 import {
   calculatePrice,
   calculateNoShowFeeCents,
+  isMonday,
 } from './pricing'
-import { createBookingCalendarEvent } from './calendar'
+import { createBookingCalendarEvent, resyncBookingCalendarEvent } from './calendar'
 import {
   validateDiscount,
   recordRedemption,
@@ -110,10 +112,38 @@ function generateBookingId(): string {
  * (e.g. 23:00 + 3h = 02:00). End times never include a date because the
  * booking row already carries session_date.
  */
-function computeEndTime(startTime: string, durationHours: number): string {
+export function computeEndTime(startTime: string, durationHours: number): string {
   const [h, m] = startTime.split(':').map(Number)
   const endHour = (h + durationHours) % 24
   return `${String(endHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+/** Normalize a Postgres TIME ("HH:MM:SS") or form value to "HH:MM". */
+function toHHMM(time: string): string {
+  const [h = '00', m = '00'] = time.split(':')
+  return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
+}
+
+/** Format an integer-cents amount as "$X.XX" for admin-facing warnings. */
+function formatDollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+/**
+ * True only if "YYYY-MM-DD" names a real calendar day. A shape-only regex
+ * accepts "2026-13-45" or "2026-02-30", which JS's Date silently rolls over
+ * (or turns into Invalid Date) — that would bypass the closed-Monday guard and
+ * the price matrix. We reject anything that doesn't round-trip exactly.
+ */
+function isRealCalendarDate(ymd: string): boolean {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(`${ymd}T12:00:00`)
+  return (
+    !Number.isNaN(dt.getTime()) &&
+    dt.getFullYear() === y &&
+    dt.getMonth() + 1 === m &&
+    dt.getDate() === d
+  )
 }
 
 /**
@@ -804,4 +834,307 @@ export async function createInviteBooking(
   })
 
   return { bookingId, customerId }
+}
+
+// ---------------------------------------------------------------------------
+// Admin "edit booking details" — recompute money server-side, reconcile racer
+// rows, keep the Google Calendar event + discount in sync.
+// ---------------------------------------------------------------------------
+
+/** Thrown for admin-fixable edit problems (bad input, status guard). Routes map it to 400. */
+export class BookingEditError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'BookingEditError'
+  }
+}
+
+export interface EditBookingInput {
+  sessionDate?: string // "YYYY-MM-DD"
+  startTime?: string // "HH:MM"
+  durationHours?: 1 | 2 | 3
+  racerCount?: 1 | 2 | 3
+  // Manual override of the session price in cents. undefined = recompute from
+  // the matrix; a number = use exactly this (POS-style override). Never trust
+  // a client price except through this explicit field.
+  priceOverrideCents?: number | null
+  notes?: string | null
+}
+
+export interface EditBookingResult {
+  bookingId: string
+  sessionPriceCents: number
+  discountAmountCents: number
+  noShowFeeCents: number
+  warnings: string[]
+}
+
+// Scheduling/price/racer edits are only safe while a booking is still open.
+// Terminal states have settled money (no-show charges, POS payments, showed_up
+// flags) that these edits would silently desync.
+const EDITABLE_STATUSES = new Set(['pending', 'confirmed'])
+
+/**
+ * Edit an existing booking. Recomputes end_time, session price, no-show fee,
+ * and any applied discount server-side; reconciles booking_racers rows when the
+ * racer count changes; and re-syncs the Google Calendar event. Returns a list
+ * of non-fatal warnings (over-collection, consent gap, discount no longer
+ * covering the session) for the admin to see.
+ *
+ * Throws BookingEditError for admin-fixable problems (bad values, editing a
+ * settled booking). Best-effort for side effects (calendar) — those never fail
+ * the edit.
+ */
+export async function editBooking(
+  bookingId: string,
+  input: EditBookingInput,
+  actor: { adminUserId: string }
+): Promise<EditBookingResult> {
+  const supabase = createAdminClient()
+  const warnings: string[] = []
+
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select(
+      `id, status, source, session_date, start_time, duration_hours, racer_count,
+       session_price_cents, price_overridden, no_show_fee_cents, discount_code, discount_amount_cents,
+       consent_fee_cents, stripe_payment_method_id, google_calendar_event_id,
+       customer:customers(first_name, last_name, email, phone)`
+    )
+    .eq('id', bookingId)
+    .maybeSingle()
+
+  if (error) throw new Error(`Booking lookup failed: ${error.message}`)
+  if (!booking) throw new BookingEditError('Booking not found.')
+
+  // Resolve the new values (fall back to current). start_time from the DB is a
+  // TIME "HH:MM:SS"; normalize everything to "HH:MM".
+  const newDate = input.sessionDate ?? booking.session_date
+  const newStart = toHHMM(input.startTime ?? booking.start_time)
+  const newDuration = (input.durationHours ?? booking.duration_hours) as 1 | 2 | 3
+  const newRacerCount = (input.racerCount ?? booking.racer_count) as 1 | 2 | 3
+
+  // ---- Validate (reject bad input with a clean 400, never let it hit the DB) ---
+  // Bound the shapes tightly: a loose regex would pass "29:00" / "2026-13-45"
+  // straight to the TIME/DATE columns and surface as an opaque 500.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate) || !isRealCalendarDate(newDate)) {
+    throw new BookingEditError('Invalid session date.')
+  }
+  if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(newStart)) {
+    throw new BookingEditError('Invalid start time.')
+  }
+  if (![1, 2, 3].includes(newDuration)) throw new BookingEditError('Duration must be 1, 2, or 3 hours.')
+  if (![1, 2, 3].includes(newRacerCount)) throw new BookingEditError('Racers must be 1, 2, or 3.')
+  if (isMonday(newDate)) throw new BookingEditError('The venue is closed Mondays — pick another day.')
+
+  const schedulingChanged =
+    newDate !== booking.session_date ||
+    newStart !== toHHMM(booking.start_time) ||
+    newDuration !== booking.duration_hours
+  const racerChanged = newRacerCount !== booking.racer_count
+  // A price change is *requested* whenever the caller sends the field at all
+  // (a number sets an override, null clears it). Omitting it is not a change.
+  const priceChangeRequested = input.priceOverrideCents !== undefined
+  const structuralChange = schedulingChanged || racerChanged || priceChangeRequested
+
+  // ---- Status guard: only open bookings can have money/schedule edited ----
+  if (structuralChange && !EDITABLE_STATUSES.has(booking.status)) {
+    throw new BookingEditError(
+      `A ${booking.status} booking's date, time, racers, or price can't be changed — only its notes. Money and no-show status are already settled.`
+    )
+  }
+
+  // ---- Recompute money server-side --------------------------------------
+  // The auto (matrix) price for the resolved date/duration/racers.
+  const autoPriceCents = calculatePrice(newDate, newDuration, newRacerCount).price * 100
+  let newPriceCents: number
+  let newOverridden: boolean
+  if (input.priceOverrideCents === null) {
+    // Explicitly clear any override → back to the matrix price.
+    newPriceCents = autoPriceCents
+    newOverridden = false
+  } else if (input.priceOverrideCents !== undefined) {
+    // Explicit manual override.
+    const override = Math.round(input.priceOverrideCents)
+    if (!Number.isFinite(override) || override < 0) {
+      throw new BookingEditError('Override price must be $0 or more.')
+    }
+    newPriceCents = override
+    newOverridden = true
+  } else if (booking.price_overridden) {
+    // Price field omitted AND this booking already carries a manual override —
+    // preserve it (a notes-only or reschedule edit must not silently reset a
+    // deliberately-set price back to the matrix).
+    newPriceCents = booking.session_price_cents
+    newOverridden = true
+  } else {
+    // Price field omitted, no prior override → track the matrix price.
+    newPriceCents = autoPriceCents
+    newOverridden = false
+  }
+
+  const newEndTime = computeEndTime(newStart, newDuration)
+  const newNoShowFeeCents = calculateNoShowFeeCents(newRacerCount)
+
+  // ---- Reconcile the applied discount against the new price/hours --------
+  // We DON'T re-run full validateDiscount here (this booking already consumed
+  // the code's redemption at confirm time, so cap checks would falsely fail).
+  // We just re-derive the discount AMOUNT for the new price, and flag if the
+  // code's terms no longer cover the edited session.
+  let newDiscountCents = booking.discount_amount_cents ?? 0
+  if (booking.discount_code && (structuralChange || newDiscountCents > 0)) {
+    const { data: dc } = await supabase
+      .from('discount_codes')
+      .select('kind, percent_off, amount_off_cents, max_hours_per_booking')
+      .eq('code_upper', booking.discount_code)
+      .maybeSingle()
+    if (dc) {
+      if (dc.max_hours_per_booking != null && newDuration > dc.max_hours_per_booking) {
+        newDiscountCents = 0
+        warnings.push(
+          `Discount ${booking.discount_code} only covers sessions up to ${dc.max_hours_per_booking}h; the new ${newDuration}h session isn't eligible, so the discount was removed.`
+        )
+      } else if (dc.kind === 'percent' && dc.percent_off) {
+        newDiscountCents = Math.floor((newPriceCents * dc.percent_off) / 100)
+      } else if (dc.kind === 'fixed' && dc.amount_off_cents) {
+        newDiscountCents = dc.amount_off_cents
+      }
+    }
+    newDiscountCents = Math.max(0, Math.min(newDiscountCents, newPriceCents))
+  }
+
+  // ---- Consent gap: raising racers expands no-show beyond what was agreed --
+  if (
+    newRacerCount > booking.racer_count &&
+    booking.stripe_payment_method_id &&
+    booking.consent_fee_cents != null &&
+    newNoShowFeeCents > booking.consent_fee_cents
+  ) {
+    warnings.push(
+      `Racer count went up: the customer only authorized a ${formatDollars(booking.consent_fee_cents)} no-show fee, so the extra seats aren't covered by the card on file.`
+    )
+  }
+
+  // ---- Over-collection: lowering the total below what's already paid ------
+  if (structuralChange) {
+    const { data: txns } = await supabase
+      .from('transactions')
+      .select('amount_cents, tip_cents')
+      .eq('booking_id', bookingId)
+      .is('soft_deleted_at', null)
+    const paidCents = (txns ?? []).reduce(
+      (sum, t) => sum + (t.amount_cents - (t.tip_cents ?? 0)),
+      0
+    )
+    const newNetCents = Math.max(0, newPriceCents - newDiscountCents)
+    if (paidCents > newNetCents) {
+      warnings.push(
+        `Already collected ${formatDollars(paidCents)} but the new total is ${formatDollars(newNetCents)} — you may owe the customer a ${formatDollars(paidCents - newNetCents)} refund.`
+      )
+    }
+  }
+
+  // ---- Reconcile booking_racers BEFORE committing racer_count -----------
+  // Order matters: if this fails we throw before the bookings UPDATE, so
+  // racer_count can never be committed out of sync with the actual rows.
+  if (racerChanged) {
+    if (newRacerCount < booking.racer_count) {
+      // Never destroy a seat that carries evidence — check-in stamps a signed
+      // waiver (waiver_signed_at / waiver_form_data) onto the slot row while the
+      // booking is still 'confirmed'. Refuse rather than silently delete it.
+      const { data: excess, error: exErr } = await supabase
+        .from('booking_racers')
+        .select('slot, waiver_signed_at, waiver_form_data, showed_up')
+        .eq('booking_id', bookingId)
+        .gt('slot', newRacerCount)
+      if (exErr) throw new Error(`Racer lookup failed: ${exErr.message}`)
+      const checkedIn = (excess ?? []).filter(
+        (r) => r.waiver_signed_at != null || r.waiver_form_data != null || r.showed_up != null
+      )
+      if (checkedIn.length > 0) {
+        const slots = checkedIn.map((r) => r.slot).join(', ')
+        throw new BookingEditError(
+          `Can't lower the racer count — seat ${slots} already has a checked-in racer / signed waiver. Handle that seat before shrinking the booking.`
+        )
+      }
+      const { error: delErr } = await supabase
+        .from('booking_racers')
+        .delete()
+        .eq('booking_id', bookingId)
+        .gt('slot', newRacerCount)
+      if (delErr) throw new Error(`Removing racer rows failed: ${delErr.message}`)
+    } else {
+      // Add placeholder rows for the new seats. Real names/waivers are captured
+      // at check-in. Only insert slots that don't already exist (avoids the
+      // UNIQUE(booking_id, slot) violation if a gap was left by a prior edit).
+      const { data: existing, error: exErr } = await supabase
+        .from('booking_racers')
+        .select('slot')
+        .eq('booking_id', bookingId)
+      if (exErr) throw new Error(`Racer lookup failed: ${exErr.message}`)
+      const have = new Set((existing ?? []).map((r) => r.slot))
+      const rows = []
+      for (let slot = 2; slot <= newRacerCount; slot++) {
+        if (!have.has(slot)) rows.push({ booking_id: bookingId, slot, name: `Racer ${slot}` })
+      }
+      if (rows.length > 0) {
+        const { error: racerErr } = await supabase.from('booking_racers').insert(rows)
+        if (racerErr) throw new Error(`Adding racer rows failed: ${racerErr.message}`)
+      }
+    }
+  }
+
+  // ---- Persist the booking row ------------------------------------------
+  const patch: Database['public']['Tables']['bookings']['Update'] = {
+    session_date: newDate,
+    start_time: newStart,
+    end_time: newEndTime,
+    duration_hours: newDuration,
+    racer_count: newRacerCount,
+    session_price_cents: newPriceCents,
+    price_overridden: newOverridden,
+    no_show_fee_cents: newNoShowFeeCents,
+    discount_amount_cents: newDiscountCents,
+    updated_by_user_id: actor.adminUserId,
+  }
+  if (input.notes !== undefined) patch.notes = input.notes
+  // If the date moved, let the day-before reminder cron fire again.
+  if (newDate !== booking.session_date) patch.reminder_email_sent_at = null
+
+  const { error: updateError } = await supabase
+    .from('bookings')
+    .update(patch)
+    .eq('id', bookingId)
+  if (updateError) throw new Error(`Booking update failed: ${updateError.message}`)
+
+  // ---- Re-sync the Google Calendar event (best-effort) ------------------
+  if (booking.google_calendar_event_id) {
+    const c = Array.isArray(booking.customer) ? booking.customer[0] : booking.customer
+    try {
+      await resyncBookingCalendarEvent(booking.google_calendar_event_id, {
+        bookingId,
+        customerName: c ? `${c.first_name} ${c.last_name}`.trim() : bookingId,
+        customerEmail: c?.email ?? '',
+        customerPhone: c?.phone ?? null,
+        sessionDate: newDate,
+        startTime: newStart,
+        durationHours: newDuration,
+        racerCount: newRacerCount,
+        sessionPriceCents: newPriceCents,
+        noShowFeeCents: newNoShowFeeCents,
+        source: booking.source,
+      })
+    } catch (err) {
+      console.error(`editBooking: calendar re-sync failed for ${bookingId}:`, err)
+      warnings.push('Booking saved, but the Google Calendar event could not be updated.')
+    }
+  }
+
+  return {
+    bookingId,
+    sessionPriceCents: newPriceCents,
+    discountAmountCents: newDiscountCents,
+    noShowFeeCents: newNoShowFeeCents,
+    warnings,
+  }
 }
