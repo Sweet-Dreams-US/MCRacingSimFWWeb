@@ -61,7 +61,7 @@ export default function MembershipsClient() {
                 </div>
                 <div className="flex justify-between items-center border-b border-white/10 pb-3">
                   <span className="telemetry-text text-pit-gray">Weekend Hours</span>
-                  <span className="telemetry-text text-grid-white font-bold">1hr/month</span>
+                  <span className="telemetry-text text-grid-white font-bold">Unlimited</span>
                 </div>
                 <div className="flex justify-between items-center border-b border-white/10 pb-3">
                   <span className="telemetry-text text-pit-gray">Bring Friends</span>
@@ -106,7 +106,7 @@ export default function MembershipsClient() {
                 </div>
                 <div className="flex justify-between items-center border-b border-white/10 pb-3">
                   <span className="telemetry-text text-pit-gray">Weekend Hours</span>
-                  <span className="telemetry-text text-grid-white font-bold">2hrs/month</span>
+                  <span className="telemetry-text text-grid-white font-bold">Unlimited</span>
                 </div>
                 <div className="flex justify-between items-center border-b border-white/10 pb-3">
                   <span className="telemetry-text text-pit-gray">Bring Friends</span>
@@ -146,7 +146,7 @@ export default function MembershipsClient() {
                 </div>
                 <div className="flex justify-between items-center border-b border-white/10 pb-3">
                   <span className="telemetry-text text-pit-gray">Weekend Hours</span>
-                  <span className="telemetry-text text-grid-white font-bold">4hrs/month</span>
+                  <span className="telemetry-text text-grid-white font-bold">Unlimited</span>
                 </div>
                 <div className="flex justify-between items-center border-b border-white/10 pb-3">
                   <span className="telemetry-text text-pit-gray">Bring Friends</span>
@@ -159,7 +159,7 @@ export default function MembershipsClient() {
               </div>
 
               <p className="telemetry-text text-sm text-pit-gray mb-6 text-center">
-                Premium tier with the most weekend hours and friend visits.
+                Premium tier with unlimited hours and the most friend visits.
               </p>
 
               <div className="text-center">
@@ -261,9 +261,9 @@ export default function MembershipsClient() {
                 <span className="text-telemetry-cyan">02 // </span>Solo Hours &amp; Weekends
               </h3>
               <p className="telemetry-text text-pit-gray">
-                Solo, Crew, and VIP memberships include weekday solo racing Tuesday through Friday, Noon to 7pm.
-                Weekend hours vary by tier: Solo gets 1hr/month, Crew gets 2hrs/month, and VIP gets 4hrs/month.
-                Duo members get unlimited access anytime.
+                Every membership includes unlimited hours. Solo, Crew, and VIP get weekday solo racing
+                Tuesday through Friday, Noon to 7pm, plus unlimited weekend hours. Duo members get
+                unlimited access anytime, for two.
               </p>
             </div>
 
@@ -360,9 +360,9 @@ export default function MembershipsClient() {
                 </tr>
                 <tr className="border-b border-white/10">
                   <td className="text-pit-gray py-4 px-4">Weekend Hours</td>
-                  <td className="text-center text-grid-white py-4 px-4">1hr/mo</td>
-                  <td className="text-center text-grid-white py-4 px-4">2hrs/mo</td>
-                  <td className="text-center text-grid-white py-4 px-4">4hrs/mo</td>
+                  <td className="text-center text-telemetry-cyan font-bold py-4 px-4">Unlimited</td>
+                  <td className="text-center text-apex-red font-bold py-4 px-4">Unlimited</td>
+                  <td className="text-center text-telemetry-cyan font-bold py-4 px-4">Unlimited</td>
                   <td className="text-center text-apex-red font-bold py-4 px-4">Anytime</td>
                 </tr>
                 <tr className="border-b border-white/10">
