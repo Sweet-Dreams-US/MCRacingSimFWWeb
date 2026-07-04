@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { getTimeSlots } from '@/lib/pricing'
+import { isSlotBlocked, type AvailabilityBlockWindow } from '@/lib/availability'
 
 interface TimeSlot {
   time: string
@@ -9,6 +10,8 @@ interface TimeSlot {
   simsAvailable?: number
   /** Set when the slot is unavailable because of the 90-minute online cutoff. */
   withinCutoff?: boolean
+  /** Set when the slot is unavailable because of an admin availability block. */
+  blocked?: boolean
 }
 
 interface TimeSlotPickerProps {
@@ -113,17 +116,55 @@ export default function TimeSlotPicker({
     })
   }
 
-  // Slots are computed locally (every operating-hours slot open), then the
-  // 90-minute online cutoff is applied. We migrated off the old Google Apps
-  // Script — real per-slot sim-capacity checking against Supabase bookings is
-  // a future enhancement; the 3 simulators absorb overlapping bookings for now.
+  // Grey out slots that fall inside an admin availability block. The whole
+  // session (start + duration) must clear the block, not just the start slot.
+  const applyBlocks = (
+    rawSlots: TimeSlot[],
+    blocks: AvailabilityBlockWindow[]
+  ): TimeSlot[] => {
+    if (blocks.length === 0) return rawSlots
+    return rawSlots.map((slot) => {
+      const mins = parseSlotTimeToMinutes(slot.time)
+      const hhmm = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
+      if (isSlotBlocked(blocks, hhmm, duration)) {
+        return { ...slot, available: false, blocked: true }
+      }
+      return slot
+    })
+  }
+
+  // Slots are computed locally (every operating-hours slot open), then admin
+  // availability blocks + the 90-minute online cutoff are applied. Real
+  // per-slot sim-capacity checking against Supabase bookings is a future
+  // enhancement; the 3 simulators absorb overlapping bookings for now.
   useEffect(() => {
     if (!date) {
       setSlots([])
       return
     }
+    let cancelled = false
+    setLoading(true)
+    // Show the local slots immediately, then refine once blocks arrive.
     setSlots(applyCutoff(generateLocalSlots(), date))
-    setLoading(false)
+
+    fetch(`/api/booking/blocked-slots?date=${date}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const blocks: AvailabilityBlockWindow[] = data?.success ? data.blocks : []
+        setSlots(applyCutoff(applyBlocks(generateLocalSlots(), blocks), date))
+      })
+      .catch(() => {
+        // Block fetch failing is non-fatal for the UI — the server re-checks
+        // blocks at create time, so a blocked slot still can't be booked.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, duration, racerCount])
 

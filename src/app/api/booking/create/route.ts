@@ -7,7 +7,11 @@
 // The card itself never touches our server — it goes browser → Stripe via
 // the Elements iframe.
 import { NextRequest, NextResponse } from 'next/server'
-import { createBooking, type CreateBookingInput } from '@/lib/booking'
+import {
+  createBooking,
+  AvailabilityBlockedError,
+  type CreateBookingInput,
+} from '@/lib/booking'
 import { DiscountError } from '@/lib/discounts'
 
 interface IncomingPayload {
@@ -120,6 +124,11 @@ export async function POST(request: NextRequest) {
     // friendly reason with a 400 so the checkout can show it inline, rather
     // than a generic 500.
     if (error instanceof DiscountError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 })
+    }
+    // A blocked slot is likewise the customer's problem to fix (pick another
+    // time) — surface the friendly message with a 400, not a generic 500.
+    if (error instanceof AvailabilityBlockedError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 })
     }
     console.error('Booking API error:', error)

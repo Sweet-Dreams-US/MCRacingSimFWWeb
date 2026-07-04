@@ -21,6 +21,7 @@ import {
   isMonday,
 } from './pricing'
 import { createBookingCalendarEvent, resyncBookingCalendarEvent } from './calendar'
+import { isSlotBlocked } from './availability'
 import {
   validateDiscount,
   recordRedemption,
@@ -152,6 +153,46 @@ function isRealCalendarDate(ymd: string): boolean {
   )
 }
 
+/** Thrown when the requested slot falls inside an admin availability block. Routes map it to 400. */
+export class AvailabilityBlockedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AvailabilityBlockedError'
+  }
+}
+
+/**
+ * Reject online bookings that overlap an admin availability block.
+ * Admin-placed bookings (invites, imports) deliberately bypass blocks — the
+ * owner may hand-place a session inside a blocked window (private event).
+ */
+async function assertSlotNotBlocked(
+  supabase: ReturnType<typeof createAdminClient>,
+  sessionDate: string,
+  startTime: string,
+  durationHours: number
+): Promise<void> {
+  const { data: blocks, error } = await supabase
+    .from('availability_blocks')
+    .select('start_time, end_time')
+    .eq('block_date', sessionDate)
+  if (error) {
+    // Fail open would let bookings slip through a block; fail closed would
+    // take booking down on a transient DB error. The block table is tiny and
+    // the same DB just served the rest of the flow — treat this as fatal.
+    throw new Error(`Availability check failed: ${error.message}`)
+  }
+  const windows = (blocks ?? []).map((b) => ({
+    startTime: b.start_time,
+    endTime: b.end_time,
+  }))
+  if (isSlotBlocked(windows, startTime, durationHours)) {
+    throw new AvailabilityBlockedError(
+      'That time is no longer available for online booking — please pick a different time or call the venue.'
+    )
+  }
+}
+
 /**
  * Create a booking with a card-on-file SetupIntent.
  *
@@ -179,6 +220,17 @@ export async function createBooking(
   const noShowFeeCents = calculateNoShowFeeCents(input.racerCount)
   const endTime = computeEndTime(input.startTime, input.durationHours)
   const emailLower = input.customer.email.trim().toLowerCase()
+
+  // 0b. Refuse slots inside an admin availability block (online bookings only —
+  // admin/imported sources bypass, see assertSlotNotBlocked).
+  if ((input.source ?? 'online') === 'online') {
+    await assertSlotNotBlocked(
+      supabase,
+      input.sessionDate,
+      input.startTime,
+      input.durationHours
+    )
+  }
 
   // 1. Find or create the customer (case-insensitive email match)
   // Exact lowercased match — NOT ilike. An email local-part can contain `_` or
