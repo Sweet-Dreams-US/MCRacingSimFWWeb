@@ -10,6 +10,13 @@
 const GRAPH_VERSION = 'v21.0'
 const TOKEN = process.env.META_ADS_TOKEN || ''
 const AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID || ''
+// The ad account is shared across brands (Sweet Dreams Music / Sweet Dreams US
+// / MC Racing), so we only count campaigns whose NAME contains this keyword.
+// Convention: every MC Racing campaign must include "MC Racing" in its name.
+const CAMPAIGN_KEYWORD = process.env.META_CAMPAIGN_KEYWORD || 'MC Racing'
+
+/** Exposed so the admin page can show which brand filter is active. */
+export const campaignKeyword = CAMPAIGN_KEYWORD
 
 export type DatePreset = 'today' | 'last_7d' | 'last_30d' | 'last_90d' | 'maximum'
 
@@ -105,6 +112,13 @@ async function fetchInsights(level: 'account' | 'campaign', datePreset: DatePres
   url.searchParams.set('date_preset', datePreset)
   url.searchParams.set('fields', fields.join(','))
   url.searchParams.set('limit', '100')
+  // Server-side brand filter: only campaigns whose name contains the keyword
+  // roll up into these numbers — works at account level too, so the summary
+  // excludes the other brands sharing this ad account.
+  url.searchParams.set(
+    'filtering',
+    JSON.stringify([{ field: 'campaign.name', operator: 'CONTAIN', value: CAMPAIGN_KEYWORD }])
+  )
   url.searchParams.set('access_token', TOKEN)
 
   const res = await fetch(url.toString(), { cache: 'no-store' })

@@ -5,7 +5,7 @@
 // booking (Schedule) + Lead + Purchase conversions shown here are the same
 // events our Pixel + Conversions API report, so cost-per-booking is real.
 import Link from 'next/link'
-import { getAdInsights, DATE_PRESETS, type DatePreset } from '@/lib/meta/insights'
+import { getAdInsights, campaignKeyword, DATE_PRESETS, type DatePreset } from '@/lib/meta/insights'
 import { formatDollars } from '@/lib/accounting'
 
 export const dynamic = 'force-dynamic' // always fetch fresh insights
@@ -48,6 +48,9 @@ export default async function AdsPage({ searchParams }: PageProps) {
           <h1 className="racing-headline text-3xl lg:text-4xl text-grid-white">Meta Ads</h1>
           <p className="telemetry-text text-sm text-pit-gray mt-1">
             Facebook &amp; Instagram ad performance — bookings tracked via the Pixel + Conversions API.
+          </p>
+          <p className="telemetry-text text-xs text-pit-gray/70 uppercase tracking-wider mt-2">
+            Showing only campaigns named with &ldquo;{campaignKeyword}&rdquo; (shared ad account)
           </p>
         </div>
         {/* Date-range switcher — plain links so it works without client JS. */}
@@ -102,9 +105,10 @@ export default async function AdsPage({ searchParams }: PageProps) {
           {result.summary.spend === 0 && result.summary.impressions === 0 ? (
             <div className="card-dark p-8 mb-8">
               <p className="telemetry-text text-sm text-pit-gray">
-                No ad activity in this period yet. Once campaigns run in the{' '}
-                <span className="text-grid-white">Sweet Dreams Music</span> ad account, spend, reach, and
-                cost-per-booking will show here.
+                No MC Racing ad activity in this period. Only campaigns with{' '}
+                <span className="text-grid-white">&ldquo;{campaignKeyword}&rdquo;</span> in their name are
+                counted here (the ad account is shared with other brands) — make sure MC Racing campaigns
+                follow that naming.
               </p>
             </div>
           ) : (
