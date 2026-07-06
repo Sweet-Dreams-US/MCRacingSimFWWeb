@@ -19,6 +19,7 @@ import {
   useElements,
 } from '@stripe/react-stripe-js'
 import { useRouter } from 'next/navigation'
+import { metaTrack } from '@/components/MetaPixel'
 
 interface CardSetupFormProps {
   bookingId: string
@@ -77,6 +78,15 @@ export default function CardSetupForm({
       setSubmitting(false)
       return
     }
+
+    // Meta Pixel — card saved successfully = AddPaymentInfo. Only reachable on
+    // the no-redirect (non-3DS) path; 3DS cards leave the page before we can
+    // fire, which is acceptable undercounting for a funnel-health signal.
+    metaTrack(
+      'AddPaymentInfo',
+      { value: sessionPriceCents / 100, currency: 'USD', content_category: 'booking' },
+      `api_${bookingId}`
+    )
 
     // No-redirect path (card didn't require 3DS): navigate ourselves.
     router.push(redirectUrl.toString())

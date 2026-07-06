@@ -71,6 +71,8 @@ export default function BookingFlow() {
   const [cardSetup, setCardSetup] = useState<CardSetupSession | null>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
   const cardSetupRef = useRef<HTMLDivElement>(null)
+  // Fire AddToCart at most once per visit (first time-slot pick).
+  const addToCartFired = useRef(false)
 
   // Booking state
   const [racerCount, setRacerCount] = useState<1 | 2 | 3>(1)
@@ -455,7 +457,20 @@ export default function BookingFlow() {
               duration={duration}
               racerCount={racerCount}
               value={selectedTime}
-              onChange={setSelectedTime}
+              onChange={(time) => {
+                setSelectedTime(time)
+                // Meta Pixel — picking a slot is the "added to cart" moment of
+                // this funnel. Ref-guarded to once per page visit so browsing
+                // between slots doesn't spam events.
+                if (time && !addToCartFired.current) {
+                  addToCartFired.current = true
+                  metaTrack('AddToCart', {
+                    content_name: 'Sim Racing Session',
+                    content_category: 'booking',
+                    num_items: racerCount,
+                  })
+                }
+              }}
             />
           </div>
 

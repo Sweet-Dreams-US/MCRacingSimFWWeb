@@ -56,6 +56,24 @@ export function MetaEventOnMount(props: {
   return null
 }
 
+// Sitewide Contact event: any click on a tel:/mailto: link (call buttons in
+// the nav, footer, call-to-book popup, contact page) counts as the customer
+// reaching out. One capture-phase listener beats sprinkling handlers on every
+// phone link in the codebase.
+function ContactClickTracker() {
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as Element | null)?.closest?.('a[href^="tel:"], a[href^="mailto:"]')
+      if (!anchor) return
+      const isCall = anchor.getAttribute('href')?.startsWith('tel:')
+      metaTrack('Contact', { content_name: isCall ? 'phone_call' : 'email' })
+    }
+    document.addEventListener('click', onClick, { capture: true })
+    return () => document.removeEventListener('click', onClick, { capture: true })
+  }, [])
+  return null
+}
+
 // PageView on client-side route changes. useSearchParams must sit inside a
 // Suspense boundary or it opts the whole tree out of static rendering.
 function RouteChangePageView() {
@@ -94,6 +112,7 @@ export default function MetaPixel() {
       <Suspense fallback={null}>
         <RouteChangePageView />
       </Suspense>
+      <ContactClickTracker />
     </>
   )
 }

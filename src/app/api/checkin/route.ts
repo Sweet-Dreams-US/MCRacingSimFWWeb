@@ -19,6 +19,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Json } from '@/lib/supabase/types'
+import { sendMetaEvent, metaContextFromRequest } from '@/lib/meta/capi'
+import { waitUntil } from '@vercel/functions'
 
 interface CheckinBody {
   firstName?: string
@@ -182,6 +184,35 @@ export async function POST(request: NextRequest) {
         console.error('Check-in: failed to update booking racer waiver:', racerError)
       }
     }
+
+    // Meta CAPI — a completed waiver/check-in is a CompleteRegistration.
+    // Two modes, two treatments:
+    //   • Linked booking (racer signs remotely from the SMS /checkin?bookingId
+    //     link, on their OWN phone) → action_source 'website', and we DO pass
+    //     the request's fbp/fbc/IP/UA — those are the racer's real browser
+    //     signals and the strongest match we'll get.
+    //   • Walk-in kiosk → action_source 'physical_store', and we deliberately
+    //     omit fbp/fbc: the shared kiosk cookie would wrongly stitch every
+    //     racer to one profile. Hashed email/phone/name is the match signal.
+    // Fire-and-forget via waitUntil so a slow Meta call never blocks the kiosk
+    // response (the waiver is already saved by this point).
+    waitUntil(
+      sendMetaEvent({
+        eventName: 'CompleteRegistration',
+        eventId: `checkin_${customerId}_${now.slice(0, 10)}`,
+        actionSource: isLinkedBooking ? 'website' : 'physical_store',
+        eventSourceUrl: isLinkedBooking ? request.headers.get('referer') || undefined : undefined,
+        userData: {
+          email: email || null,
+          phone: phone || null,
+          firstName,
+          lastName,
+          externalId: customerId,
+          ...(isLinkedBooking ? metaContextFromRequest(request) : {}),
+        },
+        customData: { content_name: 'Racer check-in', status: true },
+      })
+    )
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,6 @@
 import { Metadata } from 'next'
 import LocationClient from './LocationClient'
+import { MetaEventOnMount } from '@/components/MetaPixel'
 
 export const metadata: Metadata = {
   title: 'Location & Hours - The Paddock',
@@ -25,5 +26,11 @@ export const metadata: Metadata = {
 }
 
 export default function LocationPage() {
-  return <LocationClient />
+  return (
+    <>
+      {/* Meta Pixel — viewing the location/hours page is a FindLocation. */}
+      <MetaEventOnMount event="FindLocation" />
+      <LocationClient />
+    </>
+  )
 }

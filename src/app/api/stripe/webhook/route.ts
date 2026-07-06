@@ -19,6 +19,7 @@
 //   3. ACK FAST — Stripe times out at 30s and retries on timeout.
 //      Do the minimum here and queue anything expensive.
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import Stripe from 'stripe'
 import { getStripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -268,6 +269,53 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
         payment_method: 'stripe_terminal',
         created_by_user_id: intent.metadata.admin_user_id || null,
       })
+
+      // Meta CAPI — money captured at the counter is a Purchase. Lives inside
+      // the no-transaction-yet guard, so a redelivered webhook can't double-
+      // fire it. action_source physical_store; matched on the customer's
+      // hashed email/phone when the sale is tied to a customer (anonymous
+      // walk-up sales still send, carried by the deterministic event id).
+      //
+      // Runs via waitUntil — OFF the Stripe ACK path. This handler must ack
+      // fast (Stripe times out at 30s and retries; a duplicate hits the
+      // event-id guard and returns 200 without re-stamping processed_at), so
+      // the customer lookup + Meta send happen after we've responded.
+      const posCustomerId = charge.customer_id
+      const posIntentId = intent.id
+      const posAmount = finalAmount
+      const posDesc = intent.description || 'In-person sale'
+      waitUntil(
+        (async () => {
+          const { sendMetaEvent } = await import('@/lib/meta/capi')
+          let purchaseUser: import('@/lib/meta/capi').MetaUserData = {}
+          if (posCustomerId) {
+            const { data: cust } = await supabase
+              .from('customers')
+              .select('email, phone, first_name, last_name')
+              .eq('id', posCustomerId)
+              .maybeSingle()
+            purchaseUser = {
+              email: cust?.email,
+              phone: cust?.phone,
+              firstName: cust?.first_name,
+              lastName: cust?.last_name,
+              externalId: posCustomerId,
+            }
+          }
+          await sendMetaEvent({
+            eventName: 'Purchase',
+            eventId: `pos_${posIntentId}`,
+            actionSource: 'physical_store',
+            userData: purchaseUser,
+            customData: {
+              value: posAmount / 100,
+              currency: 'USD',
+              content_name: posDesc,
+              content_category: 'pos',
+            },
+          })
+        })()
+      )
     }
   }
 

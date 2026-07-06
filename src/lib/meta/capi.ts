@@ -123,6 +123,10 @@ export async function sendMetaEvent(ev: MetaEvent): Promise<void> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        // Hard bound. Without this, a slow/blackholed graph.facebook.com would
+        // hang up to undici's ~300s default — pinning any awaiting business
+        // request (webhook ACK, kiosk check-in). Tracking must never do that.
+        signal: AbortSignal.timeout(2500),
       }
     )
     if (!res.ok) {
