@@ -10,6 +10,7 @@ import BookingCalendar from './BookingCalendar'
 import TimeSlotPicker from './TimeSlotPicker'
 import CustomerInfoForm from './CustomerInfoForm'
 import AdditionalRacerForm from './AdditionalRacerForm'
+import { metaTrack } from '@/components/MetaPixel'
 import WaiverSection from './WaiverSection'
 import PriceSummary from './PriceSummary'
 import CardSetupForm from './CardSetupForm'
@@ -386,6 +387,19 @@ export default function BookingFlow() {
         noShowFeeCents: result.noShowFeeCents,
       })
       setSubmitting(false)
+
+      // Meta Pixel — entering the card step is InitiateCheckout. Same id the
+      // server CAPI used (ic_<bookingId>) so Meta dedupes the pair.
+      metaTrack(
+        'InitiateCheckout',
+        {
+          value: result.sessionPriceCents / 100,
+          currency: 'USD',
+          content_name: 'Sim Racing Session',
+          content_category: 'booking',
+        },
+        `ic_${result.bookingId}`
+      )
 
       // Scroll the card step into view
       setTimeout(() => {

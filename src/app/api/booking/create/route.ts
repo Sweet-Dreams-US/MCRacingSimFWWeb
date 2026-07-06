@@ -13,6 +13,7 @@ import {
   type CreateBookingInput,
 } from '@/lib/booking'
 import { DiscountError } from '@/lib/discounts'
+import { sendMetaEvent, metaContextFromRequest } from '@/lib/meta/capi'
 
 interface IncomingPayload {
   sessionDate?: string
@@ -107,6 +108,31 @@ export async function POST(request: NextRequest) {
       consentUserAgent,
       source: 'online',
       discountCode: body.discountCode ?? null,
+    })
+
+    // Meta CAPI — the customer submitted their details and a booking row now
+    // exists; they're entering the card step. That's InitiateCheckout. Fired
+    // here (inside the browser's request) so we get fbp/fbc/IP/UA for a strong
+    // match; deduped against the client Pixel via ic_<bookingId>.
+    await sendMetaEvent({
+      eventName: 'InitiateCheckout',
+      eventId: `ic_${result.bookingId}`,
+      eventSourceUrl:
+        request.headers.get('referer') || 'https://www.mcracingfortwayne.com/book',
+      userData: {
+        email: body.email,
+        phone: body.phone,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        ...metaContextFromRequest(request),
+      },
+      customData: {
+        value: result.sessionPriceCents / 100,
+        currency: 'USD',
+        content_name: 'Sim Racing Session',
+        content_category: 'booking',
+        num_items: racerCount,
+      },
     })
 
     return NextResponse.json({
