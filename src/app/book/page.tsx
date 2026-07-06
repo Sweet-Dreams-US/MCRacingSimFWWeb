@@ -1,6 +1,5 @@
 import { Metadata } from 'next'
 import BookingFlow from '@/components/booking/BookingFlow'
-import StatCounter from '@/components/StatCounter'
 
 export const metadata: Metadata = {
   title: 'Book Your Session | MC Racing Sim Fort Wayne',
@@ -18,6 +17,21 @@ function StepCard({ n, title, body }: { n: number; title: string; body: string }
       </div>
       <h3 className="racing-headline text-xl text-grid-white mb-2">{title}</h3>
       <p className="telemetry-text text-sm text-pit-gray leading-relaxed">{body}</p>
+    </div>
+  )
+}
+
+// Compact trust-bar stat — sized to sit four-across cleanly (unlike the
+// giant hero StatCounter, whose clamp(3rem,8vw,6rem) numbers collide here).
+function StatPill({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="text-center px-2">
+      <div className="racing-headline text-3xl sm:text-4xl text-telemetry-cyan leading-none whitespace-nowrap">
+        {value}
+      </div>
+      <p className="telemetry-text text-[11px] sm:text-xs text-pit-gray uppercase tracking-wider mt-2">
+        {label}
+      </p>
     </div>
   )
 }
@@ -110,11 +124,11 @@ export default function BookPage() {
           </div>
 
           {/* Trust stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto border-t border-white/10 pt-10">
-            <StatCounter value={20} prefix="$" suffix="K+" label="Per Racing Rig" />
-            <StatCounter value={4000} suffix=" sq ft" label="Racing Floor" />
-            <StatCounter value={3} label="Racers Side-by-Side" />
-            <StatCounter value={6} label="Days a Week" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-8 max-w-3xl mx-auto border-t border-white/10 pt-10">
+            <StatPill value="$20K+" label="Per Racing Rig" />
+            <StatPill value="4,000+" label="Sq Ft Facility" />
+            <StatPill value="Up to 3" label="Racers at Once" />
+            <StatPill value="6 Days" label="Open Weekly" />
           </div>
         </div>
       </section>
