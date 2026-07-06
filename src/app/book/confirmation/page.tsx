@@ -6,6 +6,7 @@
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatDateLong } from '@/lib/pricing'
+import { MetaEventOnMount } from '@/components/MetaPixel'
 
 interface PageProps {
   searchParams: Promise<{ bookingId?: string; name?: string }>
@@ -61,6 +62,22 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
 
   return (
     <main className="min-h-screen bg-asphalt pt-24 pb-16 px-4">
+      {/* Meta Pixel Schedule — fires once in the browser, deduped against the
+          server-side CAPI Schedule via the shared sched_<id> event id. Only
+          when a card actually landed (real confirmation), never for a pending. */}
+      {cardOnFile && (
+        <MetaEventOnMount
+          event="Schedule"
+          eventId={`sched_${booking.id}`}
+          data={{
+            value: booking.session_price_cents / 100,
+            currency: 'USD',
+            content_name: 'Sim Racing Session',
+            content_category: 'booking',
+            num_items: booking.racer_count,
+          }}
+        />
+      )}
       <div className="max-w-2xl mx-auto">
         {/* Success Icon */}
         <div className="text-center mb-8">

@@ -11,6 +11,7 @@ import { findOrCreateCustomerIdByEmail } from './customers'
 import { sendEmail, getOwnerNotificationEmail } from './email'
 import { partyDepositInviteEmail, ownerNewPartyEmail } from './emails/templates'
 import { computeDepositCents, type PartyType } from './parties-shared'
+import { sendMetaEvent, splitName } from './meta/capi'
 
 // Re-export the client-safe helpers so existing server imports of '@/lib/parties'
 // keep working.
@@ -302,10 +303,34 @@ export async function finalizePartyDeposit(opts: {
   try {
     const { data: party } = await supabase
       .from('party_bookings')
-      .select('contact_name, contact_email, party_type, session_date, start_time, deposit_cents, total_price_cents')
+      .select('contact_name, contact_email, contact_phone, party_type, session_date, start_time, deposit_cents, total_price_cents')
       .eq('id', opts.partyId)
       .maybeSingle()
     if (party) {
+      // Meta CAPI — a paid deposit is a real Purchase (money in hand). Fired
+      // server-only (the invitee's browser redirect isn't a reliable signal),
+      // so no Pixel counterpart and no dedup needed; the deterministic
+      // party_<id> event id still guards against a redelivered webhook.
+      const { firstName, lastName } = splitName(party.contact_name)
+      await sendMetaEvent({
+        eventName: 'Purchase',
+        eventId: `party_${opts.partyId}`,
+        eventSourceUrl: 'https://www.mcracingfortwayne.com',
+        actionSource: 'website',
+        userData: {
+          email: party.contact_email,
+          phone: party.contact_phone,
+          firstName,
+          lastName,
+        },
+        customData: {
+          value: opts.capturedAmountCents / 100,
+          currency: 'USD',
+          content_name: `Party deposit — ${party.party_type}`,
+          content_category: 'party',
+        },
+      })
+
       const { partyConfirmedEmail } = await import('./emails/templates')
       const { subject, html } = partyConfirmedEmail({
         contactName: party.contact_name,

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import Button from '@/components/Button'
 import { CONTACT_REASONS, CONTACT_REASON_LABELS, EVENT_REASONS, type ContactReason } from '@/lib/contact'
+import { metaTrack } from '@/components/MetaPixel'
 
 const inputClass =
   'w-full bg-asphalt-dark border border-white/15 text-grid-white telemetry-text px-4 py-3 focus:border-telemetry-cyan focus:outline-none placeholder:text-pit-gray/60'
@@ -27,6 +28,12 @@ export default function ContactClient() {
     e.preventDefault()
     setStatus('sending')
     setError(null)
+    // One id shared between the Pixel Lead (below) and the CAPI Lead (server),
+    // so Meta dedupes the pair into a single, well-matched conversion.
+    const eventId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `lead_${Date.now()}_${Math.round(Math.random() * 1e9)}`
     try {
       const res = await fetch('/api/contact', {
         method: 'POST',
@@ -40,10 +47,13 @@ export default function ContactClient() {
           groupSize: showEventFields ? groupSize : '',
           message,
           company,
+          eventId,
         }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || 'Something went wrong.')
+      // Fire the browser-side Lead with the same id (deduped against CAPI).
+      metaTrack('Lead', { content_category: 'contact' }, eventId)
       setStatus('sent')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')

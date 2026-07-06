@@ -5,6 +5,7 @@ import './globals.css'
 import Navigation from '@/components/Navigation'
 import Footer from '@/components/Footer'
 import ScrollToTop from '@/components/ScrollToTop'
+import MetaPixel from '@/components/MetaPixel'
 
 const siteUrl = 'https://mcracingfortwayne.com'
 
@@ -232,6 +233,7 @@ export default function RootLayout({
         </Script>
       </head>
       <body className="min-h-screen bg-asphalt text-grid-white antialiased">
+        <MetaPixel />
         <Navigation />
         <main>{children}</main>
         <Footer />

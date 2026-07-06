@@ -35,3 +35,5 @@ next-env.d.ts
 # Claude Code worktrees (internal — never commit)
 .claude/worktrees/
 
+
+.vercel

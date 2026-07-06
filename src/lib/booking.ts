@@ -30,6 +30,7 @@ import {
 } from './discounts'
 import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
+import { sendMetaEvent } from './meta/capi'
 import {
   inviteBookingEmail,
   inviteHoldCardEmail,
@@ -540,6 +541,35 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
   const customer = Array.isArray(booking.customer)
     ? booking.customer[0]
     : booking.customer
+
+  // Meta CAPI — a confirmed booking is a Schedule (appointment booked). Only the
+  // winner of the pending→confirmed race fires it, so a redelivered webhook
+  // can't double-count; the deterministic event_id (sched_<bookingId>) also
+  // dedupes against the browser Pixel fired on the confirmation page. This runs
+  // in the webhook, away from the browser, so we match on hashed PII only —
+  // still a strong signal via email + phone + external_id.
+  if (wonConfirmRace && customer) {
+    await sendMetaEvent({
+      eventName: 'Schedule',
+      eventId: `sched_${bookingId}`,
+      eventSourceUrl: 'https://www.mcracingfortwayne.com/book',
+      actionSource: 'website',
+      userData: {
+        email: customer.email,
+        phone: customer.phone,
+        firstName: customer.first_name,
+        lastName: customer.last_name,
+        externalId: booking.customer_id,
+      },
+      customData: {
+        value: booking.session_price_cents / 100,
+        currency: 'USD',
+        content_name: 'Sim Racing Session',
+        content_category: 'booking',
+        num_items: booking.racer_count,
+      },
+    })
+  }
 
   // Calendar event (only if not already created)
   if (customer && !booking.google_calendar_event_id) {
