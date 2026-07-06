@@ -95,6 +95,9 @@ export const metadata: Metadata = {
     google: 'G-ED0JD995SP',
     other: {
       'msvalidate.01': 'ED0A5F8D6CC2B48EDB8BBCE53D976FDF',
+      // Meta (Facebook) domain verification — unlocks iOS/AEM attribution and
+      // lets our ad account own this domain's events.
+      'facebook-domain-verification': 'r2yflg72x3xlf1szsjtimmynn2wgvb',
     },
   },
   other: {
