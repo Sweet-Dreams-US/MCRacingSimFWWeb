@@ -91,6 +91,7 @@ fun BookingsScreen(
     onRefresh: () -> Unit,
     onPick: (BookingDto) -> Unit,
     onWalkIn: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val open = bookings.filter { !isBookingDone(it.status) }
     val done = bookings.filter { isBookingDone(it.status) }
@@ -102,7 +103,18 @@ fun BookingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Bookings", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = ApexRed)
-            OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Gear → Stripe device settings (WiFi, screen timeout, passcode).
+                // Needed because our kiosk app disables the swipe-to-settings
+                // gesture; Stripe still asks for the admin passcode (07139).
+                TextButton(onClick = onOpenSettings) {
+                    Text("⚙", color = PitGray, fontSize = 22.sp)
+                }
+                OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+            }
         }
         Spacer(Modifier.height(8.dp))
         Button(

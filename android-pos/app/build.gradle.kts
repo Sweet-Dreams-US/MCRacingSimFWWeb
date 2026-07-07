@@ -36,8 +36,8 @@ android {
         applicationId = "com.mcracing.pos"
         minSdk = 28
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
 
         // Backend base URL (Next.js) + device key, injected at build time.
         buildConfigField(

@@ -1,5 +1,8 @@
 package com.mcracing.pos.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -7,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcracing.pos.net.ApiClient
 import com.mcracing.pos.net.BookingActionRequest
@@ -19,6 +23,24 @@ import com.stripe.stripeterminal.external.models.ConnectionStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
+
+/**
+ * Open the Stripe reader's admin/device settings (WiFi, screen timeout,
+ * passcode, diagnostics). On Apps-on-Devices, once our app is the kiosk
+ * launcher Stripe DISABLES the swipe-from-left-edge settings gesture — the
+ * only supported way in is this deep link, which our app must expose. Stripe
+ * still gates the menu behind the admin passcode (default 07139).
+ */
+private fun openStripeSettings(context: android.content.Context) {
+    try {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW).setData(Uri.parse("stripe://settings/"))
+        )
+    } catch (e: Exception) {
+        // Non-Stripe hardware (e.g. an emulator) won't resolve the deep link.
+        Toast.makeText(context, "Device settings unavailable on this hardware", Toast.LENGTH_SHORT).show()
+    }
+}
 
 /** Editable sale being charged. */
 data class SaleDraft(
@@ -51,6 +73,7 @@ private enum class Stage { Bookings, Sale, Processing, Result }
 @Composable
 fun PosApp() {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val connStatus by TerminalManager.connectionStatus.collectAsStateWithLifecycle()
     val connected = connStatus == ConnectionStatus.CONNECTED
 
@@ -146,6 +169,7 @@ fun PosApp() {
             loading = loading,
             today = today,
             onRefresh = { loadBookings() },
+            onOpenSettings = { openStripeSettings(context) },
             onPick = { b ->
                 // Prefill the REMAINING balance (net of any online discount) so a
                 // partly-paid booking is one tap to finish; the discounted total
