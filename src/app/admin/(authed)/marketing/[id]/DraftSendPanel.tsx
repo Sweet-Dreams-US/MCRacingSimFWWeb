@@ -18,6 +18,34 @@ export default function DraftSendPanel({
   const [testState, setTestState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [testMsg, setTestMsg] = useState<string | null>(null)
 
+  // Optional: render the test AS a real customer to verify {{firstName}} etc.
+  type CustHit = { id: string; name: string; email: string | null }
+  const [custQuery, setCustQuery] = useState('')
+  const [custResults, setCustResults] = useState<CustHit[]>([])
+  const [selectedCust, setSelectedCust] = useState<CustHit | null>(null)
+
+  async function searchCustomers(q: string) {
+    setCustQuery(q)
+    setSelectedCust(null)
+    if (q.trim().length < 2) {
+      setCustResults([])
+      return
+    }
+    try {
+      const res = await fetch(`/api/admin/customers/search?q=${encodeURIComponent(q.trim())}`)
+      const data = await res.json()
+      setCustResults(data.customers ?? [])
+    } catch {
+      setCustResults([])
+    }
+  }
+
+  function pickCustomer(c: CustHit) {
+    setSelectedCust(c)
+    setCustQuery(c.name || c.email || '')
+    setCustResults([])
+  }
+
   const [confirming, setConfirming] = useState(false)
   const [blasting, setBlasting] = useState(false)
   const [blastErr, setBlastErr] = useState<string | null>(null)
@@ -29,12 +57,20 @@ export default function DraftSendPanel({
       const res = await fetch(`/api/admin/marketing/campaigns/${campaignId}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: testEmail.trim() }),
+        body: JSON.stringify({
+          email: testEmail.trim(),
+          customerId: selectedCust?.id ?? null,
+        }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || 'Send failed')
       setTestState('sent')
-      setTestMsg(`Test sent to ${testEmail.trim()} — check your inbox (and spam folder).`)
+      const who = data.renderedAs
+        ? `personalized as ${data.renderedAs}`
+        : 'using the sample name "Alex"'
+      setTestMsg(
+        `Test sent to ${testEmail.trim()} (${who}) — check your inbox (and spam folder).`
+      )
     } catch (err) {
       setTestState('error')
       setTestMsg(err instanceof Error ? err.message : 'Send failed')
@@ -99,6 +135,60 @@ export default function DraftSendPanel({
             {testState === 'sending' ? 'Sending…' : 'Send Test'}
           </button>
         </div>
+
+        {/* Optional: preview as a real customer so {{firstName}} shows a real name */}
+        <div className="mt-3">
+          <p className="telemetry-text text-xs text-pit-gray mb-1.5">
+            Preview as a customer{' '}
+            <span className="text-pit-gray/60">
+              (optional — checks the name personalization; the test still goes to
+              the address above)
+            </span>
+          </p>
+          {selectedCust ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="telemetry-text text-sm bg-telemetry-cyan/10 border border-telemetry-cyan/30 text-grid-white px-3 py-2">
+                Rendering as {selectedCust.name || selectedCust.email}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCust(null)
+                  setCustQuery('')
+                }}
+                className="telemetry-text text-xs text-pit-gray hover:text-apex-red"
+              >
+                Clear
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <input
+                type="text"
+                value={custQuery}
+                onChange={(e) => searchCustomers(e.target.value)}
+                placeholder="Search a customer by name or email…"
+                className="composer-input w-full"
+              />
+              {custResults.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full bg-asphalt-dark border border-white/15 max-h-60 overflow-y-auto">
+                  {custResults.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => pickCustomer(c)}
+                      className="block w-full text-left px-3 py-2 telemetry-text text-sm text-grid-white hover:bg-telemetry-cyan/10"
+                    >
+                      {c.name || '(no name)'}{' '}
+                      <span className="text-pit-gray">{c.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {testMsg && (
           <p
             className={`telemetry-text text-xs mt-2 ${

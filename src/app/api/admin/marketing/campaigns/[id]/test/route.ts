@@ -6,11 +6,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendOne } from '@/lib/marketing/send'
-import { applyMergeFields, applyMergeFieldsText } from '@/lib/marketing/render'
+import { applyMergeFields, applyMergeFieldsText, mergeVarsFor, type MergeVars } from '@/lib/marketing/render'
 
 export const runtime = 'nodejs'
 
-const SAMPLE_VARS = { firstName: 'Alex', lastName: 'Driver', fullName: 'Alex Driver' }
+// Used when no real customer is chosen — makes {{firstName}} an obvious sample.
+const SAMPLE_VARS: MergeVars = { firstName: 'Alex', lastName: 'Driver', fullName: 'Alex Driver' }
+const THROWAWAY_TOKEN = '00000000-0000-0000-0000-000000000000'
 
 export async function POST(
   request: NextRequest,
@@ -30,9 +32,11 @@ export async function POST(
 
   const { id } = await params
   let to = ''
+  let customerId: string | null = null
   try {
-    const body = (await request.json()) as { email?: string }
+    const body = (await request.json()) as { email?: string; customerId?: string | null }
     to = (body.email ?? '').trim()
+    customerId = body.customerId?.trim() || null
   } catch {
     return NextResponse.json(
       { success: false, error: 'Invalid JSON body' },
@@ -61,15 +65,37 @@ export async function POST(
     )
   }
 
+  // If a real customer was chosen, render with THEIR name + real unsubscribe
+  // token so the test is a faithful preview of what that customer receives.
+  // The email still goes to `to` (the admin's inbox), never the customer.
+  let vars: MergeVars = SAMPLE_VARS
+  let unsubscribeToken = THROWAWAY_TOKEN
+  let renderedAs: string | null = null
+  if (customerId) {
+    const { data: cust } = await supabase
+      .from('customers')
+      .select('first_name, last_name, unsubscribe_token')
+      .eq('id', customerId)
+      .maybeSingle()
+    if (!cust) {
+      return NextResponse.json(
+        { success: false, error: 'Selected customer not found' },
+        { status: 404 }
+      )
+    }
+    vars = mergeVarsFor(cust)
+    unsubscribeToken = cust.unsubscribe_token
+    renderedAs = vars.fullName || vars.firstName
+  }
+
   const result = await sendOne({
     to,
-    subject: `[TEST] ${applyMergeFieldsText(campaign.subject, SAMPLE_VARS)}`,
-    innerHtml: applyMergeFields(campaign.body_html, SAMPLE_VARS),
+    subject: `[TEST] ${applyMergeFieldsText(campaign.subject, vars)}`,
+    innerHtml: applyMergeFields(campaign.body_html, vars),
     preheader: campaign.preheader
-      ? applyMergeFieldsText(campaign.preheader, SAMPLE_VARS)
+      ? applyMergeFieldsText(campaign.preheader, vars)
       : null,
-    // Throwaway token — the test's unsubscribe link won't match a real customer.
-    unsubscribeToken: '00000000-0000-0000-0000-000000000000',
+    unsubscribeToken,
   })
 
   if (!result.ok) {
@@ -79,5 +105,5 @@ export async function POST(
     )
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, renderedAs })
 }
