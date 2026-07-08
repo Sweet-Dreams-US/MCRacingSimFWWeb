@@ -32,13 +32,15 @@ type SupabaseAdmin = ReturnType<typeof createAdminClient>
 // Config
 // ---------------------------------------------------------------------------
 
-// The marketing subdomain. Default points at the dedicated send.* subdomain the
-// owner verifies in Resend. Override-able so we can fall back to the main domain
-// before the subdomain is verified.
+// The marketing FROM address. Must be on a domain VERIFIED in Resend, else
+// every send 400s ("domain is not verified"). Default is the verified root
+// domain; set MARKETING_FROM_EMAIL to a dedicated send.* subdomain (also
+// verified in Resend) if/when you want to isolate marketing reputation from
+// transactional booking mail.
 export function getMarketingFrom(): string {
   const name = process.env.MARKETING_FROM_NAME || 'MC Racing Sim Fort Wayne'
   const email =
-    process.env.MARKETING_FROM_EMAIL || 'hello@send.mcracingfortwayne.com'
+    process.env.MARKETING_FROM_EMAIL || 'hello@mcracingfortwayne.com'
   return `${name} <${email}>`
 }
 
@@ -300,13 +302,37 @@ export interface CampaignSendResult {
   skipped: number
 }
 
+// Count recipients who still need this campaign — anyone in the current
+// emailable audience without a SUCCESSFUL send row (i.e. failed, only-queued,
+// or never attempted). Mirrors the per-recipient skip logic in sendCampaign, so
+// it's an exact preview of what a resend would attempt.
+export async function countResendable(campaignId: string): Promise<number> {
+  const supabase = createAdminClient()
+  const audience = await getEmailableAudience(supabase)
+  const { data: sends } = await supabase
+    .from('marketing_sends')
+    .select('customer_id, status')
+    .eq('campaign_id', campaignId)
+  const delivered = new Set<string>()
+  for (const s of sends ?? []) {
+    if (s.customer_id && s.status !== 'failed' && s.status !== 'queued') {
+      delivered.add(s.customer_id)
+    }
+  }
+  return audience.filter((c) => !delivered.has(c.id)).length
+}
+
 // Send a draft campaign to the whole emailable audience.
 //
 // Idempotent & resumable: a customer who already has a non-failed send row for
 // this campaign is skipped, so re-running after a partial failure only fills the
 // gaps. The (campaign_id, customer_id) unique index is the hard backstop.
+//
+// `force` lets a resend proceed on an already-'sent' campaign to fill the gaps
+// (the per-recipient skip logic below still never re-mails anyone who got it).
 export async function sendCampaign(
-  campaignId: string
+  campaignId: string,
+  opts?: { force?: boolean }
 ): Promise<CampaignSendResult> {
   const supabase = createAdminClient()
 
@@ -320,7 +346,7 @@ export async function sendCampaign(
   if (!campaign) throw new Error('Campaign not found')
   const camp = campaign as CampaignRow
 
-  if (camp.status === 'sent') {
+  if (camp.status === 'sent' && !opts?.force) {
     return { attempted: 0, sent: 0, failed: 0, skipped: 0 }
   }
 

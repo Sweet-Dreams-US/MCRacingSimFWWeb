@@ -6,10 +6,11 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { countEmailableAudience } from '@/lib/marketing/send'
+import { countEmailableAudience, countResendable } from '@/lib/marketing/send'
 import CampaignComposer from '../CampaignComposer'
 import { CampaignStatusBadge } from '../CampaignStatusBadge'
 import DraftSendPanel from './DraftSendPanel'
+import ResendPanel from './ResendPanel'
 import SendingPoller from './SendingPoller'
 
 function formatDateTime(iso: string | null): string {
@@ -46,9 +47,12 @@ export default async function CampaignDetailPage({
 
   const isDraft = campaign.status === 'draft'
   const isSending = campaign.status === 'sending'
+  const isDone = campaign.status === 'sent' || campaign.status === 'failed'
 
   // Only need the live audience count while still composing.
   const audienceCount = isDraft ? await countEmailableAudience(supabase) : 0
+  // For a finished campaign, how many still need it (failed / never sent)?
+  const resendableCount = isDone ? await countResendable(id) : 0
 
   const deliverRate =
     campaign.sent_count > 0
@@ -131,6 +135,11 @@ export default async function CampaignDetailPage({
               open numbers keep climbing as inboxes report back over the next
               minutes to hours.
             </p>
+          )}
+
+          {/* Resend to anyone who didn't receive it (failed / never sent) */}
+          {isDone && (
+            <ResendPanel campaignId={campaign.id} resendableCount={resendableCount} />
           )}
 
           {/* Read-only content */}
