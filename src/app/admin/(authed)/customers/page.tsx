@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CustomerSearchInput from './CustomerSearchInput'
+import CustomerAcquisitionCharts from './CustomerAcquisitionCharts'
 
 function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -35,6 +36,11 @@ export default async function CustomersPage({ searchParams }: PageProps) {
   const { q } = await searchParams
   const query = q?.trim() ?? ''
   const supabase = createAdminClient()
+
+  // Fetch overall statistics for the pie charts (across all customers)
+  const { data: statsData } = await supabase
+    .from('customers')
+    .select('how_heard, total_bookings, total_spent_cents')
 
   let queryBuilder = supabase
     .from('customers')
@@ -75,6 +81,8 @@ export default async function CustomersPage({ searchParams }: PageProps) {
           {query && ` matching "${query}"`}
         </p>
       </div>
+
+      <CustomerAcquisitionCharts customers={statsData ?? []} />
 
       <CustomerSearchInput initialValue={query} />
 
