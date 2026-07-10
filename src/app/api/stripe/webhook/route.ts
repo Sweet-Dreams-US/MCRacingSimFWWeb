@@ -281,32 +281,42 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       // event-id guard and returns 200 without re-stamping processed_at), so
       // the customer lookup + Meta send happen after we've responded.
       const posCustomerId = charge.customer_id
+      const posBookingId = charge.booking_id
       const posIntentId = intent.id
       const posAmount = finalAmount
+      const posTip = tipCents
       const posDesc = intent.description || 'In-person sale'
+      const posOccurredOn = todayEastern
+      const posSaleType = saleType
       waitUntil(
         (async () => {
-          const { sendMetaEvent } = await import('@/lib/meta/capi')
-          let purchaseUser: import('@/lib/meta/capi').MetaUserData = {}
+          // One customer lookup, reused for the Meta event + the receipt email.
+          let cust:
+            | { email: string | null; phone: string | null; first_name: string | null; last_name: string | null }
+            | null = null
           if (posCustomerId) {
-            const { data: cust } = await supabase
+            const { data } = await supabase
               .from('customers')
               .select('email, phone, first_name, last_name')
               .eq('id', posCustomerId)
               .maybeSingle()
-            purchaseUser = {
-              email: cust?.email,
-              phone: cust?.phone,
-              firstName: cust?.first_name,
-              lastName: cust?.last_name,
-              externalId: posCustomerId,
-            }
+            cust = data ?? null
           }
+
+          const { sendMetaEvent } = await import('@/lib/meta/capi')
           await sendMetaEvent({
             eventName: 'Purchase',
             eventId: `pos_${posIntentId}`,
             actionSource: 'physical_store',
-            userData: purchaseUser,
+            userData: cust
+              ? {
+                  email: cust.email,
+                  phone: cust.phone,
+                  firstName: cust.first_name,
+                  lastName: cust.last_name,
+                  externalId: posCustomerId,
+                }
+              : {},
             customData: {
               value: posAmount / 100,
               currency: 'USD',
@@ -314,6 +324,32 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
               content_category: 'pos',
             },
           })
+
+          // Branded receipt + thank-you to the customer selected at the POS.
+          // Guarded once-per-charge by the enclosing `if (!count)`. Off the ACK
+          // path (waitUntil) so a slow email never delays the Stripe response.
+          if (cust?.email) {
+            const { sendEmail } = await import('@/lib/email')
+            const { transactionReceiptEmail } = await import('@/lib/emails/templates')
+            const { formatTransactionType } = await import('@/lib/accounting')
+            const { subject, html } = transactionReceiptEmail({
+              customerFirstName: cust.first_name || 'racer',
+              description: posDesc,
+              amountCents: posAmount,
+              tipCents: posTip,
+              occurredOn: posOccurredOn,
+              paymentMethodLabel: 'Card (in person)',
+              typeLabel: formatTransactionType(posSaleType),
+            })
+            await sendEmail({
+              to: cust.email,
+              subject,
+              html,
+              template: 'transaction_receipt',
+              relatedBookingId: posBookingId,
+              relatedCustomerId: posCustomerId,
+            })
+          }
         })()
       )
     }

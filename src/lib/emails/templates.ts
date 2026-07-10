@@ -975,3 +975,69 @@ export function firstTimerThankYouEmail(
     html: layout(inner, `Thanks for your first race — here's 50% off for up to 3 friends.`),
   }
 }
+
+// ===========================================================================
+// TEMPLATE 10: transactionReceiptEmail
+// Branded receipt for a payment (POS card sale, cash sale, or any transaction).
+// Doubles as a thank-you. Sent automatically after a POS sale with a customer
+// on file, and re-sendable from the transaction detail page.
+// ===========================================================================
+
+export interface TransactionReceiptEmailParams {
+  customerFirstName: string
+  description: string
+  amountCents: number
+  tipCents?: number
+  occurredOn: string // YYYY-MM-DD
+  paymentMethodLabel: string
+  typeLabel: string
+}
+
+export function transactionReceiptEmail(
+  params: TransactionReceiptEmailParams
+): { subject: string; html: string } {
+  const {
+    customerFirstName,
+    description,
+    amountCents,
+    tipCents = 0,
+    occurredOn,
+    paymentMethodLabel,
+    typeLabel,
+  } = params
+
+  const subject = `Your MC Racing receipt — ${formatCents(amountCents)}`
+  const rows: Array<[string, string]> = [
+    ['Date', escapeHtml(formatDateLong(occurredOn))],
+    ['For', escapeHtml(description || typeLabel)],
+    ['Payment', escapeHtml(paymentMethodLabel)],
+  ]
+  if (tipCents > 0) {
+    rows.push(['Tip', formatCents(tipCents)])
+  }
+  rows.push([
+    'Total',
+    `<span style="color:#4ade80;">${formatCents(amountCents)}</span>`,
+  ])
+
+  const inner = `
+    ${h1(`Thanks for racing, ${escapeHtml(customerFirstName)}!`)}
+    ${p(`Here's your receipt from <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong>. We hope you had a blast on track.`)}
+
+    ${detailsCard(rows)}
+
+    ${noticeBox(
+      'Come back and beat your time',
+      `Book your next session anytime at <a href="https://www.mcracingfortwayne.com/book" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a> or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a>.`
+    )}
+
+    ${divider()}
+
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">Questions about this charge? Just reply to this email.</span>`)}
+  `
+
+  return {
+    subject,
+    html: layout(inner, `Your MC Racing receipt for ${formatCents(amountCents)} — thanks for racing.`),
+  }
+}
