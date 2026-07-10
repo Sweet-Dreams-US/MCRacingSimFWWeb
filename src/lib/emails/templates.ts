@@ -986,11 +986,14 @@ export function firstTimerThankYouEmail(
 export interface TransactionReceiptEmailParams {
   customerFirstName: string
   description: string
-  amountCents: number
+  amountCents: number // full total charged (incl. tax + tip)
+  taxCents?: number
   tipCents?: number
   occurredOn: string // YYYY-MM-DD
   paymentMethodLabel: string
   typeLabel: string
+  /** e.g. "7%" — shown on the tax row when tax was collected. */
+  taxRateLabel?: string
 }
 
 export function transactionReceiptEmail(
@@ -1000,10 +1003,12 @@ export function transactionReceiptEmail(
     customerFirstName,
     description,
     amountCents,
+    taxCents = 0,
     tipCents = 0,
     occurredOn,
     paymentMethodLabel,
     typeLabel,
+    taxRateLabel,
   } = params
 
   const subject = `Your MC Racing receipt — ${formatCents(amountCents)}`
@@ -1012,6 +1017,12 @@ export function transactionReceiptEmail(
     ['For', escapeHtml(description || typeLabel)],
     ['Payment', escapeHtml(paymentMethodLabel)],
   ]
+  // Break out subtotal + tax so the customer sees the add-on clearly.
+  if (taxCents > 0) {
+    const subtotalCents = amountCents - taxCents - tipCents
+    rows.push(['Subtotal', formatCents(subtotalCents)])
+    rows.push([taxRateLabel ? `Sales tax (${taxRateLabel})` : 'Sales tax', formatCents(taxCents)])
+  }
   if (tipCents > 0) {
     rows.push(['Tip', formatCents(tipCents)])
   }

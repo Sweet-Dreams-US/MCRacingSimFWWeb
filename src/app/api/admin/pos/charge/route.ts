@@ -11,6 +11,7 @@ import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
 import { getActiveReader, processOnReader } from '@/lib/terminal'
+import { computeTaxCents } from '@/lib/tax'
 
 export const runtime = 'nodejs'
 
@@ -54,6 +55,12 @@ export async function POST(request: NextRequest) {
   if (!body.description?.trim()) {
     return NextResponse.json({ success: false, error: 'Description is required.' }, { status: 400 })
   }
+
+  // Sales tax — amountCents is the pre-tax subtotal; we add tax and charge the
+  // total. Tax carried in metadata so the webhook records tax_cents.
+  const subtotalCents = body.amountCents
+  const taxCents = computeTaxCents(subtotalCents)
+  const chargeCents = subtotalCents + taxCents
 
   const supabase = createAdminClient()
   const stripe = getStripe()
@@ -105,7 +112,7 @@ export async function POST(request: NextRequest) {
   // Create the card_present PaymentIntent
   const intent = await stripe.paymentIntents.create(
     {
-      amount: body.amountCents,
+      amount: chargeCents,
       currency: 'usd',
       payment_method_types: ['card_present'],
       capture_method: 'automatic',
@@ -118,6 +125,8 @@ export async function POST(request: NextRequest) {
         booking_id: body.bookingId ?? '',
         supabase_customer_id: body.customerId ?? '',
         admin_user_id: adminCtx.admin.id,
+        subtotal_cents: String(subtotalCents),
+        tax_cents: String(taxCents),
       },
     },
     { idempotencyKey }
@@ -129,7 +138,7 @@ export async function POST(request: NextRequest) {
     stripe_payment_intent_id: intent.id,
     booking_id: body.bookingId || null,
     customer_id: body.customerId || null,
-    amount_cents: body.amountCents,
+    amount_cents: chargeCents,
     currency: 'usd',
     status: 'pending',
     payment_method_type: 'stripe_terminal',

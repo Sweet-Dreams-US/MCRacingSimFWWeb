@@ -10,6 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
 import { isDeviceAuthorized } from '@/lib/device-auth'
 import { findOrCreateCustomerIdByEmail } from '@/lib/customers'
+import { computeTaxCents } from '@/lib/tax'
 
 export const runtime = 'nodejs'
 
@@ -45,6 +46,13 @@ export async function POST(request: NextRequest) {
     ? (body.saleType as SaleType)
     : 'in_person_sale'
   const description = (body.description ?? '').trim() || 'In-person sale'
+
+  // Sales tax: the amount from the reader is the pre-tax subtotal. We add tax
+  // and charge the total; the tax portion is carried in metadata so the webhook
+  // records it on the transaction (for remittance reporting).
+  const subtotalCents = amountCents as number
+  const taxCents = computeTaxCents(subtotalCents)
+  const chargeCents = subtotalCents + taxCents
 
   const supabase = createAdminClient()
   const stripe = getStripe()
@@ -87,7 +95,7 @@ export async function POST(request: NextRequest) {
 
   const intent = await stripe.paymentIntents.create(
     {
-      amount: amountCents as number,
+      amount: chargeCents,
       currency: 'usd',
       payment_method_types: ['card_present'],
       // MANUAL capture: the device collects + confirms, then the app captures
@@ -110,6 +118,8 @@ export async function POST(request: NextRequest) {
         supabase_customer_id: customerId ?? '',
         admin_user_id: '', // device charge — webhook coerces '' → null
         device: 'reader',
+        subtotal_cents: String(subtotalCents),
+        tax_cents: String(taxCents),
       },
     },
     { idempotencyKey }
@@ -119,7 +129,7 @@ export async function POST(request: NextRequest) {
     stripe_payment_intent_id: intent.id,
     booking_id: (saleType === 'booking_income' ? body.bookingId : null) || null,
     customer_id: customerId,
-    amount_cents: amountCents as number,
+    amount_cents: chargeCents,
     currency: 'usd',
     status: 'pending',
     payment_method_type: 'stripe_terminal',

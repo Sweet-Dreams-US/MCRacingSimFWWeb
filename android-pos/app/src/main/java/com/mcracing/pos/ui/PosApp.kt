@@ -168,7 +168,8 @@ fun PosApp() {
             } catch (_: Exception) {
                 false
             }
-            if (ok) showResult(true, "Cash recorded", draft.amountCents())
+            // Show the taxed total actually recorded (backend adds tax to the subtotal).
+            if (ok) showResult(true, "Cash recorded", draft.amountCents() + computeTaxCents(draft.amountCents()))
             else showResult(false, "Couldn't record cash")
         }
     }

@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isDeviceAuthorized } from '@/lib/device-auth'
 import { findOrCreateCustomerIdByEmail } from '@/lib/customers'
+import { computeTaxCents } from '@/lib/tax'
 
 export const runtime = 'nodejs'
 
@@ -64,11 +65,18 @@ export async function POST(request: NextRequest) {
     customerId = await findOrCreateCustomerIdByEmail(supabase, body.receiptEmail)
   }
 
+  // Sales tax: the amount is the pre-tax subtotal; the customer pays the total
+  // in cash. Record the total as amount_cents with the tax portion broken out.
+  const subtotalCents = amountCents as number
+  const taxCents = computeTaxCents(subtotalCents)
+  const totalCents = subtotalCents + taxCents
+
   const { data: inserted, error } = await supabase
     .from('transactions')
     .insert({
       type,
-      amount_cents: amountCents as number,
+      amount_cents: totalCents,
+      tax_cents: taxCents,
       occurred_on: getTodayEastern(),
       description,
       payment_method: 'cash',

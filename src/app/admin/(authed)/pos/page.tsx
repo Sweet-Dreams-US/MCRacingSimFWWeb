@@ -2,6 +2,7 @@
 import { redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { getActiveReader, getTerminalLocationId } from '@/lib/terminal'
+import { SALES_TAX_RATE_BPS } from '@/lib/tax'
 import PosClient from './PosClient'
 
 export default async function PosPage() {
@@ -64,7 +65,7 @@ export default async function PosPage() {
         </span>
       </div>
 
-      <PosClient readerOnline={readerOnline} />
+      <PosClient readerOnline={readerOnline} taxRateBps={SALES_TAX_RATE_BPS} />
     </div>
   )
 }

@@ -257,10 +257,15 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       const tipNote =
         tipCents > 0 ? ` (incl. $${(tipCents / 100).toFixed(2)} tip)` : ''
 
+      // Tax portion carried in PI metadata by the charge routes (the PI amount
+      // was created as subtotal + tax, so finalAmount already includes it).
+      const posTaxCents = Number(intent.metadata?.tax_cents) || 0
+
       await supabase.from('transactions').insert({
         type: saleType,
-        amount_cents: finalAmount, // total captured, incl. tip — positive (money in)
+        amount_cents: finalAmount, // total captured, incl. tax + tip — positive (money in)
         tip_cents: tipCents, // tip portion broken out for staff tip-outs
+        tax_cents: posTaxCents, // sales tax portion broken out for remittance
         occurred_on: todayEastern,
         description: `${intent.description || 'In-person sale (Terminal)'}${tipNote}`,
         booking_id: charge.booking_id,
@@ -332,14 +337,17 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
             const { sendEmail } = await import('@/lib/email')
             const { transactionReceiptEmail } = await import('@/lib/emails/templates')
             const { formatTransactionType } = await import('@/lib/accounting')
+            const { taxRateLabel } = await import('@/lib/tax')
             const { subject, html } = transactionReceiptEmail({
               customerFirstName: cust.first_name || 'racer',
               description: posDesc,
               amountCents: posAmount,
+              taxCents: posTaxCents,
               tipCents: posTip,
               occurredOn: posOccurredOn,
               paymentMethodLabel: 'Card (in person)',
               typeLabel: formatTransactionType(posSaleType),
+              taxRateLabel: posTaxCents > 0 ? taxRateLabel() : undefined,
             })
             await sendEmail({
               to: cust.email,

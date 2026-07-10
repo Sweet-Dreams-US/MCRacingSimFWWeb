@@ -412,6 +412,28 @@ fun SaleScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        // Tax summary — subtotal is what staff entered; customer pays the total.
+        val subtotalC = draft.amountCents()
+        val taxC = computeTaxCents(subtotalC)
+        val totalC = subtotalC + taxC
+        if (subtotalC >= 1 && taxC > 0) {
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("+ Sales tax (${taxRateLabel()})", color = PitGray, fontSize = 14.sp)
+                Text(centsToDollars(taxC), color = PitGray, fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Total", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    centsToDollars(totalC),
+                    color = TelemetryCyan,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+
         Spacer(Modifier.height(20.dp))
         HorizontalDivider()
         Spacer(Modifier.height(16.dp))
@@ -423,7 +445,7 @@ fun SaleScreen(
             colors = ButtonDefaults.buttonColors(containerColor = ApexRed),
         ) {
             Text(
-                if (draft.amountCents() >= 50) "Charge ${centsToDollars(draft.amountCents())} on reader" else "Enter an amount",
+                if (draft.amountCents() >= 50) "Charge ${centsToDollars(totalC)} on reader" else "Enter an amount",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
             )
@@ -438,7 +460,7 @@ fun SaleScreen(
             onClick = onRecordCash,
             enabled = draft.amountCents() >= 1,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Record ${centsToDollars(draft.amountCents())} cash") }
+        ) { Text("Record ${centsToDollars(totalC)} cash") }
 
         // Booking actions only for OPEN bookings. Once closed out, the reader
         // can't cancel/delete it — that's owner-only from the admin site.
@@ -510,6 +532,9 @@ fun CustomerConfirmScreen(
     // the customer here — they see the TOTAL, confirm it, and only then does the
     // tip screen (then tap-to-pay) appear. This is the whole point: the customer
     // is never handed a tip prompt as the first thing they see.
+    // amountCents is the pre-tax subtotal; the customer is charged subtotal + tax.
+    val taxCents = computeTaxCents(amountCents)
+    val totalCents = amountCents + taxCents
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -518,11 +543,19 @@ fun CustomerConfirmScreen(
             Text("YOUR TOTAL", color = PitGray, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
             Text(
-                centsToDollars(amountCents),
+                centsToDollars(totalCents),
                 color = CompletedGreen,
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
             )
+            if (taxCents > 0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Subtotal ${centsToDollars(amountCents)}   ·   Tax (${taxRateLabel()}) ${centsToDollars(taxCents)}",
+                    color = PitGray,
+                    fontSize = 14.sp,
+                )
+            }
             if (description.isNotBlank()) {
                 Spacer(Modifier.height(10.dp))
                 Text(description, color = PitGray, fontSize = 15.sp)

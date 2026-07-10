@@ -44,6 +44,7 @@ interface PeriodTxRow {
   type: TransactionType
   amount_cents: number
   tip_cents: number
+  tax_cents: number
   payment_method: PaymentMethod
   expense_category_id: string | null
   expense_category: { name: string; schedule_c_line: string | null } | null
@@ -102,7 +103,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const { data: rawPeriodRows, error: periodErr } = await supabase
     .from('transactions')
     .select(
-      `type, amount_cents, tip_cents, payment_method, expense_category_id,
+      `type, amount_cents, tip_cents, tax_cents, payment_method, expense_category_id,
        expense_category:expense_categories(name, schedule_c_line)`
     )
     .gte('occurred_on', period.from)
@@ -157,6 +158,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const netRevenueCents = grossRevenueCents + refundsCents
   // Tips are the tip portion already inside amount_cents (income rows only).
   const tipsCents = periodRows.reduce((s, r) => s + (r.tip_cents ?? 0), 0)
+  // Sales tax collected — the tax portion already inside amount_cents. This is
+  // a liability owed to the state (not revenue); surfaced so it can be remitted.
+  const salesTaxCollectedCents = periodRows.reduce((s, r) => s + (r.tax_cents ?? 0), 0)
   // Expenses stored negative; absExpense is the positive magnitude.
   const expensesCents = sumByType('expense')
   const absExpensesCents = Math.abs(expensesCents)
@@ -322,6 +326,12 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           valueCents={tipsCents}
           tone="white"
           helper="Included in revenue; for staff tip-outs"
+        />
+        <StatCard
+          label="Sales Tax Collected"
+          valueCents={salesTaxCollectedCents}
+          tone="white"
+          helper="Owed to the state — remit separately"
         />
         <StatCard
           label="Total Expenses"

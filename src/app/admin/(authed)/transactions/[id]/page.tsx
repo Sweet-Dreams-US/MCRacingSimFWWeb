@@ -46,7 +46,7 @@ export default async function TransactionDetailPage({
     .from('transactions')
     .select(
       `id, occurred_on, created_at, type, description, payment_method, amount_cents,
-       tip_cents, vendor, receipt_url, stripe_charge_id, booking_id, customer_id,
+       tip_cents, tax_cents, vendor, receipt_url, stripe_charge_id, booking_id, customer_id,
        soft_deleted_at,
        customer:customers(id, first_name, last_name, email, phone),
        booking:bookings(id, session_date, start_time, customer:customers(id, first_name, last_name, email))`
@@ -105,6 +105,9 @@ export default async function TransactionDetailPage({
       <div className="bg-asphalt-dark border border-white/5 p-5">
         <DetailRow label="Description">{t.description || '—'}</DetailRow>
         <DetailRow label="Type">{formatTransactionType(t.type)}</DetailRow>
+        {t.tax_cents > 0 && (
+          <DetailRow label="Sales tax included">{formatDollars(t.tax_cents)}</DetailRow>
+        )}
         {t.tip_cents > 0 && <DetailRow label="Tip included">{formatDollars(t.tip_cents)}</DetailRow>}
         {t.vendor && <DetailRow label="Vendor">{t.vendor}</DetailRow>}
         {booking && (

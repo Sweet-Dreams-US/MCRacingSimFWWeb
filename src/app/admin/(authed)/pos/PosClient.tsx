@@ -31,7 +31,13 @@ function dayLabel(dateStr: string, today: string): string {
   })
 }
 
-export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
+export default function PosClient({
+  readerOnline,
+  taxRateBps,
+}: {
+  readerOnline: boolean
+  taxRateBps: number
+}) {
   // Sale form state
   const [amount, setAmount] = useState('')
   const [saleType, setSaleType] = useState<SaleType>('in_person_sale')
@@ -93,6 +99,11 @@ export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
   const amountCents = Math.round(parseFloat(amount || '0') * 100)
+  // Tax is added server-side on charge; mirror it here so staff/customer see
+  // the breakdown + real total before paying.
+  const taxCents = amountCents > 0 ? Math.round((amountCents * taxRateBps) / 10000) : 0
+  const totalCents = amountCents + taxCents
+  const taxPctLabel = `${Number.isInteger(taxRateBps / 100) ? (taxRateBps / 100).toFixed(0) : (taxRateBps / 100).toFixed(2)}%`
   const canCharge =
     readerOnline && amountCents >= 50 && description.trim() !== '' && phase === 'form'
 
@@ -492,13 +503,31 @@ export default function PosClient({ readerOnline }: { readerOnline: boolean }) {
           </div>
         </div>
 
+        {/* Tax breakdown — shows the customer/staff the add-on + real total */}
+        {amountCents >= 50 && taxCents > 0 && (
+          <div className="border border-white/10 bg-asphalt-dark p-4 space-y-1.5">
+            <div className="flex justify-between telemetry-text text-sm text-pit-gray">
+              <span>Subtotal</span>
+              <span className="text-grid-white">${(amountCents / 100).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between telemetry-text text-sm text-pit-gray">
+              <span>Sales tax ({taxPctLabel})</span>
+              <span className="text-grid-white">${(taxCents / 100).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between telemetry-text text-base font-bold border-t border-white/10 pt-1.5">
+              <span className="text-grid-white">Total</span>
+              <span className="text-telemetry-cyan">${(totalCents / 100).toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={startCharge}
           disabled={!canCharge}
           className="w-full px-8 py-4 bg-apex-red text-white racing-headline text-xl hover:bg-apex-red/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {amountCents >= 50 ? `Charge $${(amountCents / 100).toFixed(2)} on Reader` : 'Charge on Reader'}
+          {amountCents >= 50 ? `Charge $${(totalCents / 100).toFixed(2)} on Reader` : 'Charge on Reader'}
         </button>
         {!readerOnline && (
           <p className="telemetry-text text-xs text-amber-400 text-center">

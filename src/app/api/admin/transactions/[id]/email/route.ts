@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendEmail } from '@/lib/email'
 import { transactionReceiptEmail, sessionThankYouEmail } from '@/lib/emails/templates'
 import { formatTransactionType } from '@/lib/accounting'
+import { taxRateLabel } from '@/lib/tax'
 
 export const runtime = 'nodejs'
 
@@ -51,7 +52,7 @@ export async function POST(
   const { data: txn } = await supabase
     .from('transactions')
     .select(
-      'id, amount_cents, tip_cents, description, occurred_on, payment_method, type, booking_id, customer:customers(id, first_name, email)'
+      'id, amount_cents, tip_cents, tax_cents, description, occurred_on, payment_method, type, booking_id, customer:customers(id, first_name, email)'
     )
     .eq('id', id)
     .maybeSingle()
@@ -77,10 +78,12 @@ export async function POST(
           customerFirstName: firstName,
           description: txn.description,
           amountCents: txn.amount_cents,
+          taxCents: txn.tax_cents ?? 0,
           tipCents: txn.tip_cents ?? 0,
           occurredOn: txn.occurred_on,
           paymentMethodLabel: methodLabel(txn.payment_method),
           typeLabel: formatTransactionType(txn.type),
+          taxRateLabel: (txn.tax_cents ?? 0) > 0 ? taxRateLabel() : undefined,
         })
 
   const messageId = await sendEmail({

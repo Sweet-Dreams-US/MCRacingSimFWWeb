@@ -989,6 +989,7 @@ export type Database = {
           soft_deleted_by_user_id: string | null
           stripe_charge_id: string | null
           tip_cents: number
+          tax_cents: number
           type: Database["public"]["Enums"]["transaction_type"]
           updated_at: string
           updated_by_user_id: string | null
@@ -1014,6 +1015,7 @@ export type Database = {
           soft_deleted_by_user_id?: string | null
           stripe_charge_id?: string | null
           tip_cents?: number
+          tax_cents?: number
           type: Database["public"]["Enums"]["transaction_type"]
           updated_at?: string
           updated_by_user_id?: string | null
@@ -1039,6 +1041,7 @@ export type Database = {
           soft_deleted_by_user_id?: string | null
           stripe_charge_id?: string | null
           tip_cents?: number
+          tax_cents?: number
           type?: Database["public"]["Enums"]["transaction_type"]
           updated_at?: string
           updated_by_user_id?: string | null

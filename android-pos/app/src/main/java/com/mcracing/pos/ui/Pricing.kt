@@ -33,3 +33,21 @@ fun sessionPriceCents(isoDate: String, racers: Int, hours: Int): Long {
     val dollars = matrix[racers]?.get(hours) ?: return 0L
     return dollars.toLong() * 100L
 }
+
+// Sales tax — MUST match src/lib/tax.ts (SALES_TAX_RATE_BPS) + the backend env.
+// The backend is authoritative for what's charged; this only drives the on-reader
+// display so the customer sees the same total they'll be charged. If the rate
+// changes, update the backend env AND this constant, then rebuild the app.
+const val SALES_TAX_RATE_BPS = 700 // 7.00%
+
+/** Tax on a pre-tax subtotal, in cents (rounded to nearest cent, matches backend). */
+fun computeTaxCents(subtotalCents: Long): Long {
+    if (subtotalCents <= 0) return 0L
+    return Math.round(subtotalCents.toDouble() * SALES_TAX_RATE_BPS / 10000.0)
+}
+
+/** e.g. "7%" — for the reader's tax line. */
+fun taxRateLabel(): String {
+    val pct = SALES_TAX_RATE_BPS / 100.0
+    return if (pct == Math.floor(pct)) "${pct.toLong()}%" else "%.2f%%".format(pct)
+}
