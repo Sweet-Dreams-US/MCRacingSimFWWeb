@@ -44,7 +44,7 @@ export default function TransactionCustomerPanel({
     }
   }
 
-  async function connect(customerId: string | null) {
+  async function connect(next: Customer | null) {
     setBusy(true)
     setErr(null)
     setMsg(null)
@@ -52,10 +52,14 @@ export default function TransactionCustomerPanel({
       const res = await fetch(`/api/admin/transactions/${transactionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId }),
+        body: JSON.stringify({ customerId: next?.id ?? null }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || 'Update failed')
+      // Update local state directly — router.refresh() re-renders the server
+      // component but does NOT re-seed this client component's useState, so the
+      // panel would otherwise still show the old (un)connected customer.
+      setCustomer(next)
       setResults([])
       setQuery('')
       router.refresh()
@@ -160,7 +164,7 @@ export default function TransactionCustomerPanel({
         {bookingCustomer && (
           <button
             type="button"
-            onClick={() => connect(bookingCustomer.id)}
+            onClick={() => connect(bookingCustomer)}
             disabled={busy}
             className="block w-full text-left telemetry-text text-sm text-grid-white bg-telemetry-cyan/5 border border-telemetry-cyan/20 hover:bg-telemetry-cyan/10 disabled:opacity-40 px-3 py-2.5"
           >
@@ -183,7 +187,7 @@ export default function TransactionCustomerPanel({
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => connect(c.id)}
+                  onClick={() => connect(c)}
                   disabled={busy}
                   className="block w-full text-left px-3 py-2 telemetry-text text-sm text-grid-white hover:bg-telemetry-cyan/10 disabled:opacity-40"
                 >
