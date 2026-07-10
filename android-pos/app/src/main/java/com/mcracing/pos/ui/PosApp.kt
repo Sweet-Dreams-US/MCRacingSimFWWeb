@@ -68,7 +68,7 @@ data class SaleDraft(
     }
 }
 
-private enum class Stage { Bookings, Sale, Processing, Result }
+private enum class Stage { Bookings, Sale, CustomerConfirm, Processing, Result }
 
 @Composable
 fun PosApp() {
@@ -125,6 +125,29 @@ fun PosApp() {
             ApiClient.service.customersSearch(customerQuery.trim()).customers
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    // Runs the actual card sale on the Stripe reader (tip screen → tap card).
+    // Called only AFTER the customer taps Confirm on our total screen, so the
+    // reader is handed over showing the TOTAL — never the tip screen first.
+    fun runSale() {
+        stage = Stage.Processing
+        scope.launch {
+            val result = TerminalManager.processSale(
+                amountCents = draft.amountCents(),
+                description = draft.description.ifBlank { "In-person sale" },
+                saleType = draft.saleType,
+                customerId = draft.customerId,
+                bookingId = draft.bookingId,
+                receiptEmail = draft.receiptEmail,
+            )
+            when (result) {
+                is TerminalManager.SaleResult.Success ->
+                    showResult(true, "Payment approved", result.amountCents)
+                is TerminalManager.SaleResult.Failure ->
+                    showResult(false, "Payment failed", 0L, result.message)
+            }
         }
     }
 
@@ -225,30 +248,21 @@ fun PosApp() {
             onAmountChange = { draft = draft.copy(amountText = it) },
             onDescriptionChange = { draft = draft.copy(description = it) },
             onEmailChange = { draft = draft.copy(receiptEmail = it) },
-            onCharge = {
-                stage = Stage.Processing
-                scope.launch {
-                    val result = TerminalManager.processSale(
-                        amountCents = draft.amountCents(),
-                        description = draft.description.ifBlank { "In-person sale" },
-                        saleType = draft.saleType,
-                        customerId = draft.customerId,
-                        bookingId = draft.bookingId,
-                        receiptEmail = draft.receiptEmail,
-                    )
-                    when (result) {
-                        is TerminalManager.SaleResult.Success ->
-                            showResult(true, "Payment approved", result.amountCents)
-                        is TerminalManager.SaleResult.Failure ->
-                            showResult(false, "Payment failed", 0L, result.message)
-                    }
-                }
-            },
+            // Hand-off: show the customer the total to confirm BEFORE Stripe's
+            // tip screen appears. runSale() (→ tip → tap card) fires on confirm.
+            onCharge = { stage = Stage.CustomerConfirm },
             onRecordCash = { recordCash() },
             onMarkComplete = { doBookingAction("complete", "Booking completed") },
             onNoShow = { doBookingAction("noshow", "Marked no-show") },
             onCancelBooking = { doBookingAction("cancel", "Booking cancelled") },
             onBack = { stage = Stage.Bookings },
+        )
+
+        Stage.CustomerConfirm -> CustomerConfirmScreen(
+            amountCents = draft.amountCents(),
+            description = draft.description.ifBlank { "In-person sale" },
+            onConfirm = { runSale() },
+            onCancel = { stage = Stage.Sale },
         )
 
         Stage.Processing -> ProcessingScreen()

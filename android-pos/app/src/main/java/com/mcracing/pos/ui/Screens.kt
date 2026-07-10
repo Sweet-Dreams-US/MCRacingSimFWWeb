@@ -500,6 +500,50 @@ private enum class ConfirmAction(val title: String, val body: String) {
 }
 
 @Composable
+fun CustomerConfirmScreen(
+    amountCents: Long,
+    description: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    // Shown on the reader BEFORE Stripe's tip screen. Staff hands the reader to
+    // the customer here — they see the TOTAL, confirm it, and only then does the
+    // tip screen (then tap-to-pay) appear. This is the whole point: the customer
+    // is never handed a tip prompt as the first thing they see.
+    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("YOUR TOTAL", color = PitGray, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                centsToDollars(amountCents),
+                color = CompletedGreen,
+                fontSize = 64.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            if (description.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(description, color = PitGray, fontSize = 15.sp)
+            }
+            Spacer(Modifier.height(40.dp))
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.fillMaxWidth().height(72.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = TelemetryCyan),
+            ) {
+                Text("Confirm & Continue", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                Text("Cancel")
+            }
+        }
+    }
+}
+
+@Composable
 fun ProcessingScreen() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
