@@ -3,16 +3,7 @@
 // Sort dropdown for the customer list. Updates ?sort=... in the URL (preserving
 // the search term), which re-runs the server component's ordered query.
 import { useRouter, useSearchParams } from 'next/navigation'
-
-export type CustomerSort = 'recent' | 'spent' | 'bookings' | 'name' | 'newest'
-
-export const CUSTOMER_SORTS: { value: CustomerSort; label: string }[] = [
-  { value: 'recent', label: 'Recently visited' },
-  { value: 'spent', label: 'Most spent' },
-  { value: 'bookings', label: 'Most bookings' },
-  { value: 'name', label: 'Name (A–Z)' },
-  { value: 'newest', label: 'Newest' },
-]
+import { CUSTOMER_SORTS, type CustomerSort } from './customerSorts'
 
 export default function CustomerSortSelect({ value }: { value: CustomerSort }) {
   const router = useRouter()

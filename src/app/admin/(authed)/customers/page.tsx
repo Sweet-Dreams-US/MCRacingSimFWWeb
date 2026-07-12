@@ -6,7 +6,8 @@ import { redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CustomerSearchInput from './CustomerSearchInput'
-import CustomerSortSelect, { CUSTOMER_SORTS, type CustomerSort } from './CustomerSortSelect'
+import CustomerSortSelect from './CustomerSortSelect'
+import { CUSTOMER_SORTS, type CustomerSort } from './customerSorts'
 import CustomerAcquisitionCharts from './CustomerAcquisitionCharts'
 
 function formatDollars(cents: number): string {
