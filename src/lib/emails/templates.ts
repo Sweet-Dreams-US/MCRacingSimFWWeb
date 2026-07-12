@@ -1052,3 +1052,53 @@ export function transactionReceiptEmail(
     html: layout(inner, `Your MC Racing receipt for ${formatCents(amountCents)} — thanks for racing.`),
   }
 }
+
+// ===========================================================================
+// TEMPLATE 11: incompleteBookingReminderEmail
+// Friendly nudge ~30 min after someone started an online booking but never
+// saved a card. Links them to the hold-card page to finish. Not pushy.
+// ===========================================================================
+
+export interface IncompleteBookingReminderEmailParams {
+  customerFirstName: string
+  resumeUrl: string // /hold-card/<token>
+  sessionDate: string // YYYY-MM-DD
+  startTime: string // "HH:MM" / "HH:MM:SS"
+}
+
+export function incompleteBookingReminderEmail(
+  params: IncompleteBookingReminderEmailParams
+): { subject: string; html: string } {
+  const { customerFirstName, resumeUrl, sessionDate, startTime } = params
+  const when = `${formatDateLong(sessionDate)} at ${formatTimeDisplay(startTime)}`
+
+  const subject = `You're almost booked in — finish your MC Racing session 🏁`
+
+  const inner = `
+    ${h1(`Almost there, ${escapeHtml(customerFirstName)}!`)}
+    ${p(`You started booking a session at <strong style="color:${COLOR.gridWhite};">MC Racing Sim Fort Wayne</strong> for <strong style="color:${COLOR.gridWhite};">${escapeHtml(when)}</strong>, but it looks like you didn't quite finish — your spot isn't locked in yet.`)}
+    ${p(`Good news: it only takes a few seconds. Just add a card to secure your seat. <strong style="color:${COLOR.gridWhite};">You're not charged now</strong> — the card only covers a no-show.`)}
+
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr><td style="background:${COLOR.apexRed};border-radius:4px;">
+        <a href="${resumeUrl}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-family:'Oswald',sans-serif;font-weight:700;font-size:16px;text-transform:uppercase;letter-spacing:1px;text-decoration:none;">
+          Finish My Booking →
+        </a>
+      </td></tr>
+    </table>
+
+    ${noticeBox(
+      'Changed your mind?',
+      `No worries at all — no card, no charge. Questions? Call or text <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a>.`
+    )}
+
+    ${divider()}
+
+    ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">See you on the grid!</span>`)}
+  `
+
+  return {
+    subject,
+    html: layout(inner, `You're almost booked in — finish saving your card to lock in your session.`),
+  }
+}

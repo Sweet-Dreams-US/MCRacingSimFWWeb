@@ -161,6 +161,7 @@ export type Database = {
           price_overridden: boolean
           racer_count: number
           reminder_email_sent_at: string | null
+          incomplete_reminder_sent_at: string | null
           session_date: string
           session_price_cents: number
           source: Database["public"]["Enums"]["booking_source"]
@@ -192,6 +193,7 @@ export type Database = {
           price_overridden?: boolean
           racer_count: number
           reminder_email_sent_at?: string | null
+          incomplete_reminder_sent_at?: string | null
           session_date: string
           session_price_cents: number
           source?: Database["public"]["Enums"]["booking_source"]
@@ -223,6 +225,7 @@ export type Database = {
           price_overridden?: boolean
           racer_count?: number
           reminder_email_sent_at?: string | null
+          incomplete_reminder_sent_at?: string | null
           session_date?: string
           session_price_cents?: number
           source?: Database["public"]["Enums"]["booking_source"]
