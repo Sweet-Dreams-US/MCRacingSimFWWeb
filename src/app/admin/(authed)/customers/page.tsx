@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CustomerSearchInput from './CustomerSearchInput'
+import CustomerSortSelect, { CUSTOMER_SORTS, type CustomerSort } from './CustomerSortSelect'
 import CustomerAcquisitionCharts from './CustomerAcquisitionCharts'
 
 function formatDollars(cents: number): string {
@@ -22,7 +23,7 @@ function formatDate(iso: string | null): string {
 }
 
 interface PageProps {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; sort?: string }>
 }
 
 export default async function CustomersPage({ searchParams }: PageProps) {
@@ -33,8 +34,11 @@ export default async function CustomersPage({ searchParams }: PageProps) {
     throw err
   }
 
-  const { q } = await searchParams
+  const { q, sort: sortParam } = await searchParams
   const query = q?.trim() ?? ''
+  const sort: CustomerSort = CUSTOMER_SORTS.some((s) => s.value === sortParam)
+    ? (sortParam as CustomerSort)
+    : 'recent'
   const supabase = createAdminClient()
 
   // Fetch overall statistics for the pie charts (across all customers)
@@ -47,8 +51,29 @@ export default async function CustomersPage({ searchParams }: PageProps) {
     .select(
       'id, first_name, last_name, email, phone, how_heard, marketing_opt_in, total_bookings, total_spent_cents, last_visit_at, created_at, stripe_customer_id'
     )
-    .order('last_visit_at', { ascending: false, nullsFirst: false })
     .limit(200)
+
+  // Apply the chosen sort (nulls last so blanks don't top the list).
+  switch (sort) {
+    case 'spent':
+      queryBuilder = queryBuilder.order('total_spent_cents', { ascending: false, nullsFirst: false })
+      break
+    case 'bookings':
+      queryBuilder = queryBuilder.order('total_bookings', { ascending: false, nullsFirst: false })
+      break
+    case 'name':
+      queryBuilder = queryBuilder
+        .order('last_name', { ascending: true, nullsFirst: false })
+        .order('first_name', { ascending: true, nullsFirst: false })
+      break
+    case 'newest':
+      queryBuilder = queryBuilder.order('created_at', { ascending: false, nullsFirst: false })
+      break
+    case 'recent':
+    default:
+      queryBuilder = queryBuilder.order('last_visit_at', { ascending: false, nullsFirst: false })
+      break
+  }
 
   if (query) {
     // Search across name and email
@@ -84,7 +109,10 @@ export default async function CustomersPage({ searchParams }: PageProps) {
 
       <CustomerAcquisitionCharts customers={statsData ?? []} />
 
-      <CustomerSearchInput initialValue={query} />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+        <CustomerSearchInput initialValue={query} />
+        <CustomerSortSelect value={sort} />
+      </div>
 
       {rows.length === 0 ? (
         <div className="bg-asphalt-dark border border-white/5 p-8 text-center">
