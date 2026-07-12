@@ -31,6 +31,10 @@ interface Body {
   description?: string
   receiptEmail?: string | null
   saleType?: SaleType
+  // Split payments: when true, amountCents is the EXACT cash amount (already
+  // tax-inclusive) and taxCents is its tax portion — we don't add tax.
+  amountIncludesTax?: boolean
+  taxCents?: number
 }
 
 export async function POST(request: NextRequest) {
@@ -65,11 +69,19 @@ export async function POST(request: NextRequest) {
     customerId = await findOrCreateCustomerIdByEmail(supabase, body.receiptEmail)
   }
 
-  // Sales tax: the amount is the pre-tax subtotal; the customer pays the total
-  // in cash. Record the total as amount_cents with the tax portion broken out.
-  const subtotalCents = amountCents as number
-  const taxCents = computeTaxCents(subtotalCents)
-  const totalCents = subtotalCents + taxCents
+  // Sales tax. Normally amountCents is the pre-tax subtotal; add tax and record
+  // the total. For a split's cash half, amountCents is already the exact (tax-
+  // inclusive) amount and taxCents is its portion — don't re-add.
+  let totalCents: number
+  let taxCents: number
+  if (body.amountIncludesTax) {
+    totalCents = amountCents as number
+    taxCents = Math.max(0, Math.min(totalCents, Math.round(body.taxCents ?? 0)))
+  } else {
+    const subtotalCents = amountCents as number
+    taxCents = computeTaxCents(subtotalCents)
+    totalCents = subtotalCents + taxCents
+  }
 
   const { data: inserted, error } = await supabase
     .from('transactions')

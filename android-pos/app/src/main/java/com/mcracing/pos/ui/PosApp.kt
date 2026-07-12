@@ -45,6 +45,9 @@ private fun openStripeSettings(context: android.content.Context) {
 /** Editable sale being charged. */
 data class SaleDraft(
     val amountText: String = "",
+    // Optional split payment: cash the customer hands over (tax-INCLUSIVE dollars);
+    // the remainder of the total goes on the card. Empty/0 = pay it all on card.
+    val cashPaidText: String = "",
     val description: String = "",
     val saleType: String = "in_person_sale",
     val customerId: String? = null,
@@ -65,6 +68,11 @@ data class SaleDraft(
     fun amountCents(): Long {
         val v = amountText.toDoubleOrNull() ?: return 0L
         return (v * 100).roundToLong()
+    }
+    /** Cash the customer is handing over (tax-inclusive), for a split payment. */
+    fun cashPaidCents(): Long {
+        val v = cashPaidText.toDoubleOrNull() ?: return 0L
+        return (v * 100).roundToLong().coerceAtLeast(0L)
     }
 }
 
@@ -130,25 +138,81 @@ fun PosApp() {
         }
     }
 
-    // Runs the actual card sale on the Stripe reader (tip screen → tap card).
-    // Called only AFTER the customer taps Confirm on our total screen, so the
-    // reader is handed over showing the TOTAL — never the tip screen first.
+    // Runs the sale on the Stripe reader (tip screen → tap card). Called only
+    // AFTER the customer taps Confirm on our total screen, so the reader is
+    // handed over showing the TOTAL — never the tip screen first.
+    //
+    // Split payments: if a cash amount was entered, record that cash first, then
+    // charge the remaining balance on the card. The card portion carries the
+    // full sales tax; the cash portion is recorded with tax_cents = 0 so the
+    // two rows still sum to the correct total AND the correct tax.
     fun runSale() {
         stage = Stage.Processing
         scope.launch {
+            val subtotal = draft.amountCents()
+            val tax = computeTaxCents(subtotal)
+            val total = subtotal + tax
+            val cash = draft.cashPaidCents().coerceIn(0L, total)
+            val card = total - cash
+
+            // 1. Record the cash portion (if any).
+            if (cash > 0) {
+                val cashTax = if (card > 0) 0L else tax // all-cash → tax lives here
+                val cashOk = try {
+                    ApiClient.service.cashPayment(
+                        CashPaymentRequest(
+                            bookingId = draft.bookingId,
+                            customerId = draft.customerId,
+                            amountCents = cash,
+                            description = draft.description.ifBlank { "Cash payment" },
+                            receiptEmail = draft.receiptEmail,
+                            saleType = draft.saleType,
+                            amountIncludesTax = true,
+                            taxCents = cashTax,
+                        )
+                    ).success
+                } catch (_: Exception) {
+                    false
+                }
+                if (!cashOk) {
+                    showResult(false, "Couldn't record cash")
+                    return@launch
+                }
+            }
+
+            // 2. Nothing left for the card → it was an all-cash sale.
+            if (card <= 0) {
+                showResult(true, "Cash recorded", cash)
+                return@launch
+            }
+
+            // 3. Charge the remaining balance on the card (tax-inclusive; the
+            //    reader's tip screen runs on this portion).
             val result = TerminalManager.processSale(
-                amountCents = draft.amountCents(),
+                amountCents = card,
                 description = draft.description.ifBlank { "In-person sale" },
                 saleType = draft.saleType,
                 customerId = draft.customerId,
                 bookingId = draft.bookingId,
                 receiptEmail = draft.receiptEmail,
+                amountIncludesTax = true,
+                taxCents = tax,
             )
             when (result) {
                 is TerminalManager.SaleResult.Success ->
-                    showResult(true, "Payment approved", result.amountCents)
+                    showResult(
+                        true,
+                        if (cash > 0) "Split payment approved" else "Payment approved",
+                        result.amountCents + cash, // card (incl. tip) + cash collected
+                    )
                 is TerminalManager.SaleResult.Failure ->
-                    showResult(false, "Payment failed", 0L, result.message)
+                    showResult(
+                        false,
+                        if (cash > 0) "Card declined — $${"%.2f".format(cash / 100.0)} cash was recorded"
+                        else "Payment failed",
+                        0L,
+                        result.message,
+                    )
             }
         }
     }
@@ -250,11 +314,18 @@ fun PosApp() {
                 customerQuery = ""
             },
             onAmountChange = { draft = draft.copy(amountText = it) },
+            onCashPaidChange = { draft = draft.copy(cashPaidText = it) },
             onDescriptionChange = { draft = draft.copy(description = it) },
             onEmailChange = { draft = draft.copy(receiptEmail = it) },
             // Hand-off: show the customer the total to confirm BEFORE Stripe's
             // tip screen appears. runSale() (→ tip → tap card) fires on confirm.
-            onCharge = { stage = Stage.CustomerConfirm },
+            // If cash covers the whole total (no card balance), skip the reader
+            // hand-off and record it straight away.
+            onCharge = {
+                val total = draft.amountCents() + computeTaxCents(draft.amountCents())
+                val cash = draft.cashPaidCents().coerceIn(0L, total)
+                if (total - cash > 0) stage = Stage.CustomerConfirm else runSale()
+            },
             onRecordCash = { recordCash() },
             onMarkComplete = { doBookingAction("complete", "Booking completed") },
             onNoShow = { doBookingAction("noshow", "Marked no-show") },
@@ -264,6 +335,10 @@ fun PosApp() {
 
         Stage.CustomerConfirm -> CustomerConfirmScreen(
             amountCents = draft.amountCents(),
+            cashCents = draft.cashPaidCents().coerceIn(
+                0L,
+                draft.amountCents() + computeTaxCents(draft.amountCents()),
+            ),
             description = draft.description.ifBlank { "In-person sale" },
             onConfirm = { runSale() },
             onCancel = { stage = Stage.Sale },

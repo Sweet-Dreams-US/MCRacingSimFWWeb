@@ -59,6 +59,10 @@ data class CreatePaymentRequest(
     val customerId: String?,
     val bookingId: String?,
     val receiptEmail: String?,
+    // Split payments: when true, amountCents is the exact (tax-inclusive) card
+    // amount and taxCents is its tax portion — the backend won't re-add tax.
+    val amountIncludesTax: Boolean = false,
+    val taxCents: Long = 0,
 )
 
 data class PaymentIntentResponse(val paymentIntentId: String, val secret: String)
@@ -96,6 +100,10 @@ data class CashPaymentRequest(
     val description: String,
     val receiptEmail: String?,
     val saleType: String?,
+    // Split payments: when true, amountCents is the exact (tax-inclusive) cash
+    // amount and taxCents is its tax portion — the backend won't re-add tax.
+    val amountIncludesTax: Boolean = false,
+    val taxCents: Long = 0,
 )
 
 data class ActionResponse(

@@ -24,6 +24,11 @@ interface Body {
   customerId?: string | null
   bookingId?: string | null
   receiptEmail?: string | null
+  // Split payments: when true, amountCents is the EXACT amount to charge
+  // (already tax-inclusive) and taxCents is its tax portion — we don't add tax.
+  // Used for the card half of a part-cash/part-card sale.
+  amountIncludesTax?: boolean
+  taxCents?: number
 }
 
 export async function POST(request: NextRequest) {
@@ -47,12 +52,21 @@ export async function POST(request: NextRequest) {
     : 'in_person_sale'
   const description = (body.description ?? '').trim() || 'In-person sale'
 
-  // Sales tax: the amount from the reader is the pre-tax subtotal. We add tax
-  // and charge the total; the tax portion is carried in metadata so the webhook
-  // records it on the transaction (for remittance reporting).
-  const subtotalCents = amountCents as number
-  const taxCents = computeTaxCents(subtotalCents)
-  const chargeCents = subtotalCents + taxCents
+  // Sales tax. Normally amountCents is the pre-tax subtotal and we add tax.
+  // For a split payment's card half, amountCents is already the exact (tax-
+  // inclusive) amount to charge and taxCents is its tax portion — don't re-add.
+  let subtotalCents: number
+  let taxCents: number
+  let chargeCents: number
+  if (body.amountIncludesTax) {
+    chargeCents = amountCents as number
+    taxCents = Math.max(0, Math.min(chargeCents, Math.round(body.taxCents ?? 0)))
+    subtotalCents = chargeCents - taxCents
+  } else {
+    subtotalCents = amountCents as number
+    taxCents = computeTaxCents(subtotalCents)
+    chargeCents = subtotalCents + taxCents
+  }
 
   const supabase = createAdminClient()
   const stripe = getStripe()

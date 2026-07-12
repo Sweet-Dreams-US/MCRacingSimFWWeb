@@ -246,6 +246,7 @@ fun SaleScreen(
     onCustomerPick: (CustomerHit) -> Unit,
     onClearCustomer: () -> Unit,
     onAmountChange: (String) -> Unit,
+    onCashPaidChange: (String) -> Unit,
     onDescriptionChange: (String) -> Unit,
     onEmailChange: (String) -> Unit,
     onCharge: () -> Unit,
@@ -406,6 +407,19 @@ fun SaleScreen(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))
+        // Split payment: cash the customer hands over now (of the total). The
+        // rest goes on the card. Leave blank for a normal full card/cash sale.
+        OutlinedTextField(
+            value = draft.cashPaidText,
+            onValueChange = onCashPaidChange,
+            label = { Text("Cash paid ($) — optional, rest on card") },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = KeyboardType.Decimal
+            ),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = draft.description,
             onValueChange = onDescriptionChange,
@@ -427,6 +441,11 @@ fun SaleScreen(
         val subtotalC = draft.amountCents()
         val taxC = computeTaxCents(subtotalC)
         val totalC = subtotalC + taxC
+        // Split payment: cash covers part (or all) of the total; card takes the rest.
+        val cashC = draft.cashPaidCents().coerceIn(0L, totalC)
+        val cardC = totalC - cashC
+        val isSplit = cashC > 0 && cardC > 0
+        val allCash = cashC > 0 && cardC <= 0
         if (subtotalC >= 1 && taxC > 0) {
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -444,34 +463,67 @@ fun SaleScreen(
                 )
             }
         }
+        // Split breakdown — shown once a cash amount is entered.
+        if (subtotalC >= 1 && cashC > 0) {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Cash paid", color = PitGray, fontSize = 14.sp)
+                Text("− ${centsToDollars(cashC)}", color = PitGray, fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(if (allCash) "All cash" else "On card", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    centsToDollars(cardC),
+                    color = TelemetryCyan,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
 
         Spacer(Modifier.height(20.dp))
         HorizontalDivider()
         Spacer(Modifier.height(16.dp))
 
+        // Primary finish button. All-cash needs no reader; a card balance does.
+        val cardTooSmall = cardC in 1..49 // Stripe minimum charge is $0.50
+        val chargeEnabled = if (allCash) totalC >= 1 else (connected && cardC >= 50)
         Button(
             onClick = onCharge,
-            enabled = connected && draft.amountCents() >= 50,
+            enabled = chargeEnabled,
             modifier = Modifier.fillMaxWidth().height(60.dp),
             colors = ButtonDefaults.buttonColors(containerColor = ApexRed),
         ) {
             Text(
-                if (draft.amountCents() >= 50) "Charge ${centsToDollars(totalC)} on reader" else "Enter an amount",
+                when {
+                    subtotalC < 1 -> "Enter an amount"
+                    allCash -> "Take ${centsToDollars(totalC)} cash"
+                    isSplit -> "${centsToDollars(cashC)} cash + charge ${centsToDollars(cardC)} card"
+                    else -> "Charge ${centsToDollars(totalC)} on reader"
+                },
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
-        if (!connected) {
+        if (cardTooSmall) {
+            Spacer(Modifier.height(6.dp))
+            Text("Card portion must be at least $0.50 — take it all as cash instead.", color = PitGray, fontSize = 12.sp)
+        } else if (!connected && !allCash) {
             Spacer(Modifier.height(6.dp))
             Text("Reader not connected yet…", color = PitGray, fontSize = 12.sp)
         }
 
-        Spacer(Modifier.height(10.dp))
-        OutlinedButton(
-            onClick = onRecordCash,
-            enabled = draft.amountCents() >= 1,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Record ${centsToDollars(totalC)} cash") }
+        // Standalone full-cash button — only when no split is in progress (so a
+        // partial cash amount can't be mistakenly recorded as the whole total).
+        if (cashC <= 0) {
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onRecordCash,
+                enabled = subtotalC >= 1,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Record ${centsToDollars(totalC)} cash") }
+        }
 
         // Booking actions only for OPEN bookings. Once closed out, the reader
         // can't cancel/delete it — that's owner-only from the admin site.
@@ -535,6 +587,7 @@ private enum class ConfirmAction(val title: String, val body: String) {
 @Composable
 fun CustomerConfirmScreen(
     amountCents: Long,
+    cashCents: Long,
     description: String,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
@@ -546,20 +599,36 @@ fun CustomerConfirmScreen(
     // amountCents is the pre-tax subtotal; the customer is charged subtotal + tax.
     val taxCents = computeTaxCents(amountCents)
     val totalCents = amountCents + taxCents
+    // Split payment: some cash was collected; the reader charges only the rest.
+    val cash = cashCents.coerceIn(0L, totalCents)
+    val cardCents = totalCents - cash
+    val isSplit = cash > 0
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("YOUR TOTAL", color = PitGray, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(
+                if (isSplit) "PAYING ON CARD" else "YOUR TOTAL",
+                color = PitGray,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
             Spacer(Modifier.height(10.dp))
             Text(
-                centsToDollars(totalCents),
+                centsToDollars(if (isSplit) cardCents else totalCents),
                 color = CompletedGreen,
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
             )
-            if (taxCents > 0) {
+            if (isSplit) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Total ${centsToDollars(totalCents)}   ·   Cash paid ${centsToDollars(cash)}",
+                    color = PitGray,
+                    fontSize = 14.sp,
+                )
+            } else if (taxCents > 0) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Subtotal ${centsToDollars(amountCents)}   ·   Tax (${taxRateLabel()}) ${centsToDollars(taxCents)}",

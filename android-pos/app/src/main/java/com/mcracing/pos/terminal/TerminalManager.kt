@@ -135,9 +135,12 @@ object TerminalManager {
         customerId: String?,
         bookingId: String?,
         receiptEmail: String?,
+        amountIncludesTax: Boolean = false,
+        taxCents: Long = 0,
     ): SaleResult {
         return try {
-            // 1. Create the PaymentIntent on our backend (manual capture).
+            // 1. Create the PaymentIntent on our backend (manual capture). For a
+            //    split payment's card half, amountCents is already tax-inclusive.
             val created = ApiClient.service.createPaymentIntent(
                 CreatePaymentRequest(
                     amountCents = amountCents,
@@ -146,6 +149,8 @@ object TerminalManager {
                     customerId = customerId,
                     bookingId = bookingId,
                     receiptEmail = receiptEmail,
+                    amountIncludesTax = amountIncludesTax,
+                    taxCents = taxCents,
                 )
             )
 
