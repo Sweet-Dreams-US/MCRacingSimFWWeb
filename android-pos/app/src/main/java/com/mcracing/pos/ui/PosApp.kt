@@ -80,6 +80,7 @@ fun PosApp() {
     var stage by remember { mutableStateOf(Stage.Bookings) }
     var bookings by remember { mutableStateOf<List<BookingDto>>(emptyList()) }
     var today by remember { mutableStateOf("") }
+    var tomorrow by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(SaleDraft()) }
     var resultSuccess by remember { mutableStateOf(false) }
@@ -104,6 +105,7 @@ fun PosApp() {
                 val resp = ApiClient.service.bookings()
                 bookings = resp.bookings
                 today = resp.today
+                tomorrow = resp.tomorrow
             } catch (_: Exception) {
                 // leave list as-is; walk-in flow still works
             } finally {
@@ -192,6 +194,7 @@ fun PosApp() {
             bookings = bookings,
             loading = loading,
             today = today,
+            tomorrow = tomorrow,
             onRefresh = { loadBookings() },
             onOpenSettings = { openStripeSettings(context) },
             onPick = { b ->

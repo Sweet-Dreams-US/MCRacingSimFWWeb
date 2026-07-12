@@ -88,13 +88,17 @@ fun BookingsScreen(
     bookings: List<BookingDto>,
     loading: Boolean,
     today: String,
+    tomorrow: String,
     onRefresh: () -> Unit,
     onPick: (BookingDto) -> Unit,
     onWalkIn: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val open = bookings.filter { !isBookingDone(it.status) }
-    val done = bookings.filter { isBookingDone(it.status) }
+    // Group by business day (the API rolls over at 7am, so late-night sessions
+    // stay under "today"). ISO date strings compare lexicographically.
+    val todayList = bookings.filter { it.sessionDate == today }
+    val tomorrowList = bookings.filter { it.sessionDate == tomorrow }
+    val upcomingList = bookings.filter { it.sessionDate > tomorrow }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -131,16 +135,23 @@ fun BookingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
-                item { SectionHeader("Upcoming (${open.size})") }
-                if (open.isEmpty()) {
-                    item { Text("No upcoming bookings.", color = PitGray) }
+                item { SectionHeader("Today (${todayList.size})") }
+                if (todayList.isEmpty()) {
+                    item { Text("No bookings today.", color = PitGray) }
                 }
-                items(open, key = { it.id }) { b -> BookingCard(b, today, onPick) }
+                items(todayList, key = { it.id }) { b -> BookingCard(b, today, onPick) }
 
-                if (done.isNotEmpty()) {
+                item { Spacer(Modifier.height(8.dp)) }
+                item { SectionHeader("Tomorrow (${tomorrowList.size})") }
+                if (tomorrowList.isEmpty()) {
+                    item { Text("No bookings tomorrow.", color = PitGray) }
+                }
+                items(tomorrowList, key = { it.id }) { b -> BookingCard(b, today, onPick) }
+
+                if (upcomingList.isNotEmpty()) {
                     item { Spacer(Modifier.height(8.dp)) }
-                    item { SectionHeader("Completed today (${done.size})") }
-                    items(done, key = { it.id }) { b -> BookingCard(b, today, onPick) }
+                    item { SectionHeader("Upcoming (${upcomingList.size})") }
+                    items(upcomingList, key = { it.id }) { b -> BookingCard(b, today, onPick) }
                 }
             }
         }

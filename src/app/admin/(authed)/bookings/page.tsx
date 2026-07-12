@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { businessDateEastern, addDaysISO } from '@/lib/business-day'
 import { BookingStatusBadge } from '../../StatusBadge'
 
 interface BookingRow {
@@ -46,17 +47,6 @@ function formatDate(d: string): string {
   })
 }
 
-function getTodayEastern(): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '01'
-  return `${get('year')}-${get('month')}-${get('day')}`
-}
-
 export default async function BookingsPage() {
   try {
     await requireAdmin()
@@ -66,7 +56,8 @@ export default async function BookingsPage() {
   }
 
   const supabase = createAdminClient()
-  const today = getTodayEastern()
+  const today = businessDateEastern() // rolls over at 7am so late-night stays "today"
+  const tomorrow = addDaysISO(today, 1)
 
   const { data: bookings, error } = await supabase
     .from('bookings')
@@ -102,7 +93,8 @@ export default async function BookingsPage() {
   }))
 
   const todayBookings = rows.filter((r) => r.session_date === today)
-  const futureBookings = rows.filter((r) => r.session_date > today)
+  const tomorrowBookings = rows.filter((r) => r.session_date === tomorrow)
+  const futureBookings = rows.filter((r) => r.session_date > tomorrow)
 
   return (
     <div className="space-y-8">
@@ -136,6 +128,27 @@ export default async function BookingsPage() {
         ) : (
           <div className="space-y-2">
             {todayBookings.map((b) => (
+              <BookingRowCard key={b.id} b={b} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Tomorrow */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="racing-headline text-xl text-grid-white">
+            Tomorrow <span className="text-pit-gray">({tomorrowBookings.length})</span>
+          </h2>
+          <p className="telemetry-text text-xs text-pit-gray">{formatDate(tomorrow)}</p>
+        </div>
+        {tomorrowBookings.length === 0 ? (
+          <div className="bg-asphalt-dark border border-white/5 p-8 text-center">
+            <p className="telemetry-text text-pit-gray">No bookings for tomorrow.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {tomorrowBookings.map((b) => (
               <BookingRowCard key={b.id} b={b} />
             ))}
           </div>

@@ -5,19 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isDeviceAuthorized } from '@/lib/device-auth'
+import { businessDateEastern, addDaysISO } from '@/lib/business-day'
 
 export const runtime = 'nodejs'
-
-function getTodayEastern(): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '01'
-  return `${get('year')}-${get('month')}-${get('day')}`
-}
 
 export async function GET(request: NextRequest) {
   if (!isDeviceAuthorized(request)) {
@@ -25,7 +15,9 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createAdminClient()
-  const today = getTodayEastern()
+  // Business day rolls over at 7am so last night's late sessions stay "today".
+  const today = businessDateEastern()
+  const tomorrow = addDaysISO(today, 1)
 
   const { data, error } = await supabase
     .from('bookings')
@@ -97,5 +89,5 @@ export async function GET(request: NextRequest) {
     }
   })
 
-  return NextResponse.json({ bookings, today })
+  return NextResponse.json({ bookings, today, tomorrow })
 }

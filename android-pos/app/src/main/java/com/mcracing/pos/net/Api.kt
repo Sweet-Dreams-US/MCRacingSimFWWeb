@@ -46,7 +46,11 @@ data class BookingDto(
     fun effectiveNetCents(): Long = if (netPriceCents > 0) netPriceCents else sessionPriceCents
 }
 
-data class BookingsResponse(val bookings: List<BookingDto>, val today: String)
+data class BookingsResponse(
+    val bookings: List<BookingDto>,
+    val today: String,
+    val tomorrow: String = "",
+)
 
 data class CreatePaymentRequest(
     val amountCents: Long,
