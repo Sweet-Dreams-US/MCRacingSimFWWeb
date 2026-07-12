@@ -70,13 +70,14 @@ export default async function BookingsPage() {
     `
     )
     .gte('session_date', today)
-    // Hide 'pending' bookings — those are incomplete (customer started online
-    // but never saved a card). EXCEPT require-card admin invites (they carry a
-    // card_link_token), which are intentional and should show as "awaiting card".
-    .or('status.neq.pending,card_link_token.not.is.null')
+    // Fetch everything upcoming, including incomplete online bookings (pending,
+    // no card) and require-card invites — we split them out below so the owner
+    // can still SEE the incomplete ones (to follow up) without cluttering the
+    // main Today/Tomorrow/Upcoming lists.
+    .neq('status', 'cancelled')
     .order('session_date', { ascending: true })
     .order('start_time', { ascending: true })
-    .limit(100)
+    .limit(150)
 
   if (error) {
     return (
@@ -92,9 +93,16 @@ export default async function BookingsPage() {
     customer: Array.isArray(b.customer) ? (b.customer[0] ?? null) : b.customer,
   }))
 
-  const todayBookings = rows.filter((r) => r.session_date === today)
-  const tomorrowBookings = rows.filter((r) => r.session_date === tomorrow)
-  const futureBookings = rows.filter((r) => r.session_date > tomorrow)
+  // Incomplete = a customer started an online booking but never saved a card
+  // (pending, no require-card link). Kept out of the main lists, shown at the
+  // bottom so the owner can follow up or clean them up.
+  const isIncomplete = (r: BookingRow) => r.status === 'pending' && !r.card_link_token
+  const incompleteBookings = rows.filter(isIncomplete)
+  const active = rows.filter((r) => !isIncomplete(r))
+
+  const todayBookings = active.filter((r) => r.session_date === today)
+  const tomorrowBookings = active.filter((r) => r.session_date === tomorrow)
+  const futureBookings = active.filter((r) => r.session_date > tomorrow)
 
   return (
     <div className="space-y-8">
@@ -172,6 +180,25 @@ export default async function BookingsPage() {
           </div>
         )}
       </section>
+
+      {/* Incomplete — started online, never finished the card step. Shown so the
+          owner can follow up (call them) or ignore; not real reservations. */}
+      {incompleteBookings.length > 0 && (
+        <section>
+          <h2 className="racing-headline text-xl text-grid-white mb-1">
+            Incomplete <span className="text-pit-gray">({incompleteBookings.length})</span>
+          </h2>
+          <p className="telemetry-text text-xs text-pit-gray mb-4">
+            Started an online booking but never saved a card — these aren&apos;t confirmed
+            reservations. Follow up with the customer, or leave them.
+          </p>
+          <div className="space-y-2">
+            {incompleteBookings.map((b) => (
+              <BookingRowCard key={b.id} b={b} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
@@ -221,6 +248,11 @@ function BookingRowCard({ b }: { b: BookingRow }) {
           {b.status === 'pending' && b.card_link_token && (
             <span className="telemetry-text text-xs px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
               Awaiting card
+            </span>
+          )}
+          {b.status === 'pending' && !b.card_link_token && (
+            <span className="telemetry-text text-xs px-2 py-0.5 bg-apex-red/10 text-apex-red border border-apex-red/30 uppercase tracking-wider">
+              Incomplete — no card
             </span>
           )}
           {!cardOnFile && b.source === 'online' && b.status !== 'pending' && (
