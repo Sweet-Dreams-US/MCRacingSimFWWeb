@@ -54,3 +54,63 @@ export function isSlotBlocked(
 export function isWholeDayBlocked(blocks: AvailabilityBlockWindow[]): boolean {
   return blocks.some((b) => b.startTime == null || b.endTime == null)
 }
+
+// ---------------------------------------------------------------------------
+// Seat capacity — the venue has a fixed number of sim seats (rigs). A time slot
+// is only "full" when the concurrent racers there would exceed capacity, so a
+// 1-seat booking at 6pm still leaves the other seats open at 6pm.
+// ---------------------------------------------------------------------------
+
+/** Total concurrent sim seats. Overridable server-side via SEAT_CAPACITY. */
+export const DEFAULT_SEAT_CAPACITY = 3
+
+/** An existing booking that occupies seats over a time window. */
+export interface SeatBooking {
+  startTime: string // "HH:MM" / "HH:MM:SS"
+  durationHours: number
+  racerCount: number
+}
+
+/**
+ * Peak number of concurrently-booked seats during [startTime, +durationHours).
+ * Occupancy is piecewise-constant and only jumps up at an existing booking's
+ * start, so the peak is found by sampling at the candidate start plus every
+ * existing start that falls inside the window.
+ */
+export function maxConcurrentRacers(
+  existing: SeatBooking[],
+  startTime: string,
+  durationHours: number
+): number {
+  const candStart = toExtendedMinutes(startTime)
+  const candEnd = candStart + durationHours * 60
+
+  const samplePoints = [candStart]
+  for (const b of existing) {
+    const s = toExtendedMinutes(b.startTime)
+    if (s > candStart && s < candEnd) samplePoints.push(s)
+  }
+
+  let peak = 0
+  for (const t of samplePoints) {
+    let occ = 0
+    for (const b of existing) {
+      const s = toExtendedMinutes(b.startTime)
+      const e = s + b.durationHours * 60
+      if (s <= t && t < e) occ += b.racerCount
+    }
+    if (occ > peak) peak = occ
+  }
+  return peak
+}
+
+/** True when `racerCount` more seats fit at this slot without exceeding capacity. */
+export function seatsAvailableFor(
+  existing: SeatBooking[],
+  startTime: string,
+  durationHours: number,
+  racerCount: number,
+  capacity: number = DEFAULT_SEAT_CAPACITY
+): boolean {
+  return maxConcurrentRacers(existing, startTime, durationHours) + racerCount <= capacity
+}

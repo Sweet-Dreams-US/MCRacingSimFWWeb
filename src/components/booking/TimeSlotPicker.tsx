@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { getTimeSlots } from '@/lib/pricing'
-import { isSlotBlocked, type AvailabilityBlockWindow } from '@/lib/availability'
+import {
+  isSlotBlocked,
+  seatsAvailableFor,
+  DEFAULT_SEAT_CAPACITY,
+  type AvailabilityBlockWindow,
+  type SeatBooking,
+} from '@/lib/availability'
 
 interface TimeSlot {
   time: string
@@ -133,10 +139,28 @@ export default function TimeSlotPicker({
     })
   }
 
+  // Grey out slots where the requested racers won't fit alongside the seats
+  // already booked at that time. A 1-seat booking still leaves the rest open.
+  const applySeats = (
+    rawSlots: TimeSlot[],
+    bookings: SeatBooking[],
+    capacity: number
+  ): TimeSlot[] => {
+    if (bookings.length === 0) return rawSlots
+    return rawSlots.map((slot) => {
+      if (!slot.available) return slot // already blocked/cutoff — leave as is
+      const mins = parseSlotTimeToMinutes(slot.time)
+      const hhmm = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
+      if (!seatsAvailableFor(bookings, hhmm, duration, racerCount, capacity)) {
+        return { ...slot, available: false, blocked: true }
+      }
+      return slot
+    })
+  }
+
   // Slots are computed locally (every operating-hours slot open), then admin
-  // availability blocks + the 90-minute online cutoff are applied. Real
-  // per-slot sim-capacity checking against Supabase bookings is a future
-  // enhancement; the 3 simulators absorb overlapping bookings for now.
+  // availability blocks, seat capacity, and the 90-minute online cutoff are
+  // applied. The server re-checks all of this at create time.
   useEffect(() => {
     if (!date) {
       setSlots([])
@@ -144,7 +168,7 @@ export default function TimeSlotPicker({
     }
     let cancelled = false
     setLoading(true)
-    // Show the local slots immediately, then refine once blocks arrive.
+    // Show the local slots immediately, then refine once data arrives.
     setSlots(applyCutoff(generateLocalSlots(), date))
 
     fetch(`/api/booking/blocked-slots?date=${date}`)
@@ -152,7 +176,11 @@ export default function TimeSlotPicker({
       .then((data) => {
         if (cancelled) return
         const blocks: AvailabilityBlockWindow[] = data?.success ? data.blocks : []
-        setSlots(applyCutoff(applyBlocks(generateLocalSlots(), blocks), date))
+        const bookings: SeatBooking[] = data?.success ? (data.bookings ?? []) : []
+        const capacity: number = data?.success ? (data.capacity ?? DEFAULT_SEAT_CAPACITY) : DEFAULT_SEAT_CAPACITY
+        const withBlocks = applyBlocks(generateLocalSlots(), blocks)
+        const withCutoff = applyCutoff(withBlocks, date)
+        setSlots(applySeats(withCutoff, bookings, capacity))
       })
       .catch(() => {
         // Block fetch failing is non-fatal for the UI — the server re-checks

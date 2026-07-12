@@ -21,7 +21,12 @@ import {
   isMonday,
 } from './pricing'
 import { createBookingCalendarEvent, resyncBookingCalendarEvent } from './calendar'
-import { isSlotBlocked } from './availability'
+import {
+  isSlotBlocked,
+  seatsAvailableFor,
+  DEFAULT_SEAT_CAPACITY,
+  type SeatBooking,
+} from './availability'
 import {
   validateDiscount,
   recordRedemption,
@@ -194,6 +199,50 @@ async function assertSlotNotBlocked(
   }
 }
 
+function seatCapacity(): number {
+  const n = Number(process.env.SEAT_CAPACITY)
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_SEAT_CAPACITY
+}
+
+/**
+ * Refuse a slot when the requested racers won't fit alongside the seats already
+ * booked at that time — the seat-aware backstop for the picker (which the
+ * client could bypass). Seat-aware, so a 1-seat booking still leaves room for
+ * others. Online-only; admin/imports may overbook intentionally.
+ */
+async function assertSeatsAvailable(
+  supabase: ReturnType<typeof createAdminClient>,
+  sessionDate: string,
+  startTime: string,
+  durationHours: number,
+  racerCount: number
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('start_time, duration_hours, racer_count, status, created_at')
+    .eq('session_date', sessionDate)
+    .in('status', ['confirmed', 'completed', 'partial_noshow', 'pending'])
+  if (error) {
+    throw new Error(`Seat availability check failed: ${error.message}`)
+  }
+  const pendingCutoff = Date.now() - 30 * 60 * 1000
+  const existing: SeatBooking[] = (data ?? [])
+    .filter(
+      (b) => b.status !== 'pending' || new Date(b.created_at).getTime() >= pendingCutoff
+    )
+    .map((b) => ({
+      startTime: b.start_time,
+      durationHours: b.duration_hours,
+      racerCount: b.racer_count,
+    }))
+
+  if (!seatsAvailableFor(existing, startTime, durationHours, racerCount, seatCapacity())) {
+    throw new AvailabilityBlockedError(
+      'That time is fully booked for the number of racers you selected — please pick a different time, fewer racers, or call the venue.'
+    )
+  }
+}
+
 /**
  * Create a booking with a card-on-file SetupIntent.
  *
@@ -230,6 +279,13 @@ export async function createBooking(
       input.sessionDate,
       input.startTime,
       input.durationHours
+    )
+    await assertSeatsAvailable(
+      supabase,
+      input.sessionDate,
+      input.startTime,
+      input.durationHours,
+      input.racerCount
     )
   }
 

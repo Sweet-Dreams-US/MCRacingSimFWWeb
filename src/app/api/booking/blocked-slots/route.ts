@@ -1,11 +1,20 @@
 // GET /api/booking/blocked-slots?date=YYYY-MM-DD
-// Public endpoint the booking widget uses to grey out admin-blocked times.
-// Returns only the time windows — never the internal reason.
+// Public endpoint the booking widget uses to grey out unavailable times:
+//   - admin availability blocks (returned as `blocks`)
+//   - seats already booked at each time (returned as `bookings` + `capacity`),
+//     so the picker can grey a slot only when the requested racers won't fit.
+// Returns only times/counts — never customer info or the internal block reason.
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { DEFAULT_SEAT_CAPACITY } from '@/lib/availability'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+function seatCapacity(): number {
+  const n = Number(process.env.SEAT_CAPACITY)
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_SEAT_CAPACITY
+}
 
 export async function GET(request: NextRequest) {
   const date = request.nextUrl.searchParams.get('date') ?? ''
@@ -17,23 +26,43 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createAdminClient()
-  const { data, error } = await supabase
-    .from('availability_blocks')
-    .select('start_time, end_time')
-    .eq('block_date', date)
+  const [blocksRes, bookingsRes] = await Promise.all([
+    supabase.from('availability_blocks').select('start_time, end_time').eq('block_date', date),
+    // Seats occupied on this date: committed bookings + still-active checkouts
+    // (recent pending). Abandoned pendings age out via the 30-min cutoff.
+    supabase
+      .from('bookings')
+      .select('start_time, duration_hours, racer_count, status, created_at')
+      .eq('session_date', date)
+      .in('status', ['confirmed', 'completed', 'partial_noshow', 'pending']),
+  ])
 
-  if (error) {
+  if (blocksRes.error || bookingsRes.error) {
     return NextResponse.json(
       { success: false, error: 'Could not load availability' },
       { status: 500 }
     )
   }
 
+  const pendingCutoff = Date.now() - 30 * 60 * 1000
+  const bookings = (bookingsRes.data ?? [])
+    .filter(
+      (b) =>
+        b.status !== 'pending' || new Date(b.created_at).getTime() >= pendingCutoff
+    )
+    .map((b) => ({
+      startTime: b.start_time, // "HH:MM:SS"
+      durationHours: b.duration_hours,
+      racerCount: b.racer_count,
+    }))
+
   return NextResponse.json({
     success: true,
-    blocks: (data ?? []).map((b) => ({
+    blocks: (blocksRes.data ?? []).map((b) => ({
       startTime: b.start_time, // "HH:MM:SS" or null (null = whole day)
       endTime: b.end_time,
     })),
+    bookings,
+    capacity: seatCapacity(),
   })
 }
