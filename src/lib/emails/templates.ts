@@ -14,6 +14,18 @@
 // Each template is a pure function: (typed params) → { subject, html }.
 
 import { formatPrice, formatDateLong } from '../pricing'
+import { computeTaxCents } from '../tax'
+
+// Party amounts are quoted PRE-TAX (deposit = 50% of the pre-tax total). 7%
+// sales tax is added at checkout: half on the deposit now, half on the balance
+// collected at the venue. Compute the tax-inclusive figures the customer will
+// actually see/pay so the invite quote, deposit page, and confirmation agree.
+function partyTaxAmounts(totalPriceCents: number, depositCents: number) {
+  const balancePreTax = Math.max(0, totalPriceCents - depositCents)
+  const depositTotal = depositCents + computeTaxCents(depositCents)
+  const balanceTotal = balancePreTax + computeTaxCents(balancePreTax)
+  return { depositTotal, balanceTotal, eventTotal: depositTotal + balanceTotal }
+}
 
 // ---------------------------------------------------------------------------
 // Brand tokens (inline-CSS-safe — no CSS variables in email!)
@@ -673,6 +685,7 @@ export function partyDepositInviteEmail(
   const { contactName, partyType, sessionDate, startTime, headcount, totalPriceCents, depositCents, payUrl } = params
   const first = contactName.trim().split(' ')[0] || 'there'
   const subject = `Confirm your ${partyLabel(partyType).toLowerCase()} at MC Racing Sim`
+  const { depositTotal, balanceTotal, eventTotal } = partyTaxAmounts(totalPriceCents, depositCents)
 
   const inner = `
     ${h1(`You're almost on the grid, ${escapeHtml(first)}.`)}
@@ -684,21 +697,21 @@ export function partyDepositInviteEmail(
       ['Date', escapeHtml(formatDateLong(sessionDate))],
       ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
       ['Guests', String(headcount)],
-      ['Total', formatCents(totalPriceCents)],
-      ['Deposit due now (50%)', `<span style="color:${COLOR.telemetryCyan};">${formatCents(depositCents)}</span>`],
+      ['Total (incl. 7% tax)', formatCents(eventTotal)],
+      ['Deposit due now (50%)', `<span style="color:${COLOR.telemetryCyan};">${formatCents(depositTotal)}</span>`],
     ])}
 
-    ${ctaButton(payUrl, `Pay ${formatCents(depositCents)} Deposit`)}
+    ${ctaButton(payUrl, `Pay ${formatCents(depositTotal)} Deposit`)}
 
     ${noticeBox(
       'What happens next',
-      `Once your deposit is in, your date is confirmed and we'll be in touch to finalize the details. The remaining <strong style="color:${COLOR.gridWhite};">${formatCents(totalPriceCents - depositCents)}</strong> is collected at the venue.`
+      `Once your deposit is in, your date is confirmed and we'll be in touch to finalize the details. The remaining <strong style="color:${COLOR.gridWhite};">${formatCents(balanceTotal)}</strong> (incl. tax) is collected at the venue.`
     )}
 
     ${p(`<span style="color:${COLOR.mutedGray};font-size:13px;">Questions? Reply here or call Mark at (808) 220-2600.</span>`)}
   `
 
-  return { subject, html: layout(inner, `Pay your ${formatCents(depositCents)} deposit to confirm your event.`) }
+  return { subject, html: layout(inner, `Pay your ${formatCents(depositTotal)} deposit to confirm your event.`) }
 }
 
 export interface OwnerNewPartyEmailParams {
@@ -722,6 +735,7 @@ export function ownerNewPartyEmail(
     sessionDate, startTime, headcount, totalPriceCents, depositCents,
   } = params
   const subject = `[New Party] ${partyLabel(partyType)} — ${contactName} (${partyId})`
+  const { depositTotal, eventTotal } = partyTaxAmounts(totalPriceCents, depositCents)
 
   const inner = `
     ${bookingIdBadge(partyId)}
@@ -732,8 +746,8 @@ export function ownerNewPartyEmail(
       ['Date', escapeHtml(formatDateLong(sessionDate))],
       ['Start', escapeHtml(formatTimeDisplay(startTime))],
       ['Guests', String(headcount)],
-      ['Total', formatCents(totalPriceCents)],
-      ['Deposit (50%)', formatCents(depositCents)],
+      ['Total (incl. 7% tax)', formatCents(eventTotal)],
+      ['Deposit (50%)', formatCents(depositTotal)],
     ])}
     ${detailsCard([
       ['Name', escapeHtml(contactName)],
@@ -761,6 +775,7 @@ export function partyConfirmedEmail(
   const { contactName, partyType, sessionDate, startTime, depositCents, totalPriceCents } = params
   const first = contactName.trim().split(' ')[0] || 'there'
   const subject = `You're confirmed! Your ${partyLabel(partyType).toLowerCase()} is booked 🏁`
+  const { depositTotal, balanceTotal } = partyTaxAmounts(totalPriceCents, depositCents)
 
   const inner = `
     ${h1(`It's official, ${escapeHtml(first)}.`)}
@@ -768,8 +783,8 @@ export function partyConfirmedEmail(
     ${detailsCard([
       ['Date', escapeHtml(formatDateLong(sessionDate))],
       ['Start Time', escapeHtml(formatTimeDisplay(startTime))],
-      ['Deposit paid', formatCents(depositCents)],
-      ['Balance due at venue', `<span style="color:${COLOR.telemetryCyan};">${formatCents(totalPriceCents - depositCents)}</span>`],
+      ['Deposit paid (incl. tax)', formatCents(depositTotal)],
+      ['Balance due at venue', `<span style="color:${COLOR.telemetryCyan};">${formatCents(balanceTotal)}</span>`],
     ])}
     ${noticeBox('See you soon', `We'll reach out to finalize the details. Can't wait to get your crew on track!`)}
     ${divider()}

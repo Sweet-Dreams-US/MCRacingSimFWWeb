@@ -20,6 +20,12 @@ function formatDollars(cents: number): string {
   return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+interface Breakdown {
+  depositCents: number
+  subtotalCents: number
+  taxCents: number
+}
+
 export default function PartyDepositClient({
   token,
   depositCents,
@@ -29,6 +35,13 @@ export default function PartyDepositClient({
 }) {
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Authoritative amounts come from the intent (tax-inclusive); seed with the
+  // pre-tax prop as a fallback until the fetch resolves.
+  const [amounts, setAmounts] = useState<Breakdown>({
+    depositCents,
+    subtotalCents: depositCents,
+    taxCents: 0,
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -39,6 +52,13 @@ export default function PartyDepositClient({
         if (cancelled) return
         if (!res.ok || !data.success) throw new Error(data.error || 'Could not start the deposit.')
         setClientSecret(data.clientSecret)
+        if (typeof data.depositCents === 'number') {
+          setAmounts({
+            depositCents: data.depositCents,
+            subtotalCents: data.subtotalCents ?? data.depositCents,
+            taxCents: data.taxCents ?? 0,
+          })
+        }
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Could not start the deposit.')
       }
@@ -83,12 +103,13 @@ export default function PartyDepositClient({
         },
       }}
     >
-      <DepositForm token={token} depositCents={depositCents} />
+      <DepositForm token={token} amounts={amounts} />
     </Elements>
   )
 }
 
-function DepositForm({ token, depositCents }: { token: string; depositCents: number }) {
+function DepositForm({ token, amounts }: { token: string; amounts: Breakdown }) {
+  const { depositCents, subtotalCents, taxCents } = amounts
   const stripe = useStripe()
   const elements = useElements()
   const [submitting, setSubmitting] = useState(false)
@@ -138,6 +159,18 @@ function DepositForm({ token, depositCents }: { token: string; depositCents: num
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="bg-asphalt-dark border border-white/10 p-6">
+        {taxCents > 0 && (
+          <div className="space-y-1.5 mb-4 pb-4 border-b border-white/10">
+            <div className="flex items-baseline justify-between">
+              <span className="telemetry-text text-xs text-pit-gray">Deposit (50% of event)</span>
+              <span className="telemetry-text text-sm text-grid-white">{formatDollars(subtotalCents)}</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="telemetry-text text-xs text-pit-gray">Sales tax (7%)</span>
+              <span className="telemetry-text text-sm text-grid-white">{formatDollars(taxCents)}</span>
+            </div>
+          </div>
+        )}
         <div className="flex items-baseline justify-between mb-5">
           <span className="telemetry-text text-sm text-pit-gray uppercase tracking-wider">Deposit due</span>
           <span className="racing-headline text-3xl text-telemetry-cyan">{formatDollars(depositCents)}</span>

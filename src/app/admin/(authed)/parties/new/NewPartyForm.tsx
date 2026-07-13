@@ -44,6 +44,8 @@ export default function NewPartyForm() {
 
   const totalNum = Number(totalPrice)
   const depositPreview = Number.isFinite(totalNum) && totalNum > 0 ? totalNum / 2 : 0
+  // The customer pays the deposit + 7% sales tax (added at checkout).
+  const depositWithTax = Math.round(depositPreview * 107) / 100
 
   async function submit() {
     setSaving(true)
@@ -169,12 +171,13 @@ export default function NewPartyForm() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
         <div>
-          <label className={labelClass}>Total quote ($)</label>
+          <label className={labelClass}>Total quote ($, pre-tax)</label>
           <input type="number" min="0" step="0.01" value={totalPrice} onChange={(e) => setTotalPrice(e.target.value)} className={inputClass} placeholder="e.g. 450.00" />
         </div>
         <div className="bg-telemetry-cyan/5 border border-telemetry-cyan/20 px-4 py-3">
-          <p className="telemetry-text text-xs text-pit-gray uppercase tracking-wider">Deposit due online (50%)</p>
-          <p className="racing-headline text-2xl text-telemetry-cyan">${depositPreview.toFixed(2)}</p>
+          <p className="telemetry-text text-xs text-pit-gray uppercase tracking-wider">Deposit due online (50% + 7% tax)</p>
+          <p className="racing-headline text-2xl text-telemetry-cyan">${depositWithTax.toFixed(2)}</p>
+          <p className="telemetry-text text-[11px] text-pit-gray mt-0.5">${depositPreview.toFixed(2)} + tax · balance collected at the venue</p>
         </div>
       </div>
 

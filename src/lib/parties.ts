@@ -11,6 +11,7 @@ import { findOrCreateCustomerIdByEmail } from './customers'
 import { sendEmail, getOwnerNotificationEmail } from './email'
 import { partyDepositInviteEmail, ownerNewPartyEmail } from './emails/templates'
 import { computeDepositCents, type PartyType } from './parties-shared'
+import { computeTaxCents } from './tax'
 import { sendMetaEvent, splitName } from './meta/capi'
 
 // Re-export the client-safe helpers so existing server imports of '@/lib/parties'
@@ -152,7 +153,13 @@ export async function createPartyInvite(
  */
 export async function createPartyDepositIntent(
   publicToken: string
-): Promise<{ clientSecret: string; depositCents: number; publishableKey: string | undefined }> {
+): Promise<{
+  clientSecret: string
+  depositCents: number
+  subtotalCents: number
+  taxCents: number
+  publishableKey: string | undefined
+}> {
   const supabase = createAdminClient()
   const stripe = getStripe()
 
@@ -167,7 +174,12 @@ export async function createPartyDepositIntent(
   if (!party) throw new PartyError('This deposit link is not valid.')
   if (party.deposit_status === 'paid') throw new PartyError('This deposit has already been paid.')
 
-  const depositCents = party.deposit_cents // authoritative server value
+  // The stored deposit is the PRE-TAX half of the event total. Add 7% sales tax
+  // on top: this deposit collects tax on its half now; the balance collected at
+  // the event (via the reader, which adds tax) covers tax on the other half.
+  const depositSubtotalCents = party.deposit_cents // authoritative server value (pre-tax)
+  const depositTaxCents = computeTaxCents(depositSubtotalCents)
+  const depositCents = depositSubtotalCents + depositTaxCents // what we actually charge
 
   // Ensure a Stripe customer for the receipt + saved association.
   let stripeCustomerId = party.stripe_customer_id ?? undefined
@@ -207,6 +219,8 @@ export async function createPartyDepositIntent(
         source: 'party_deposit',
         sale_type: 'party_deposit',
         party_id: party.id,
+        subtotal_cents: String(depositSubtotalCents),
+        tax_cents: String(depositTaxCents),
       },
     },
     { idempotencyKey }
@@ -247,6 +261,8 @@ export async function createPartyDepositIntent(
   return {
     clientSecret: intent.client_secret,
     depositCents,
+    subtotalCents: depositSubtotalCents,
+    taxCents: depositTaxCents,
     publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
   }
 }
@@ -260,6 +276,7 @@ export async function finalizePartyDeposit(opts: {
   partyId: string
   chargeRowId: string
   capturedAmountCents: number
+  taxCents?: number
 }): Promise<void> {
   const supabase = createAdminClient()
 
@@ -290,7 +307,8 @@ export async function finalizePartyDeposit(opts: {
       .maybeSingle()
     await supabase.from('transactions').insert({
       type: 'party_deposit',
-      amount_cents: opts.capturedAmountCents,
+      amount_cents: opts.capturedAmountCents, // tax-inclusive deposit captured
+      tax_cents: opts.taxCents ?? 0, // sales tax portion, for remittance reporting
       occurred_on: todayEastern,
       description: `Party deposit — ${opts.partyId}`,
       customer_id: charge?.customer_id ?? null,

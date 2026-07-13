@@ -371,6 +371,7 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       partyId: intent.metadata.party_id,
       chargeRowId: charge.id,
       capturedAmountCents: finalAmount,
+      taxCents: Number(intent.metadata?.tax_cents) || 0,
     })
   }
 

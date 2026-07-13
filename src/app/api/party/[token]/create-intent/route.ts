@@ -19,6 +19,8 @@ export async function POST(
       success: true,
       clientSecret: result.clientSecret,
       depositCents: result.depositCents,
+      subtotalCents: result.subtotalCents,
+      taxCents: result.taxCents,
       publishableKey: result.publishableKey,
     })
   } catch (err) {
