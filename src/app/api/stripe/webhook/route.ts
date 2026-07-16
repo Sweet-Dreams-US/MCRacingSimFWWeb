@@ -260,12 +260,15 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       // Tax portion carried in PI metadata by the charge routes (the PI amount
       // was created as subtotal + tax, so finalAmount already includes it).
       const posTaxCents = Number(intent.metadata?.tax_cents) || 0
+      // RC car racing upsell portion (pre-tax), already inside finalAmount.
+      const posRcCents = Number(intent.metadata?.rc_cents) || 0
 
       await supabase.from('transactions').insert({
         type: saleType,
         amount_cents: finalAmount, // total captured, incl. tax + tip — positive (money in)
         tip_cents: tipCents, // tip portion broken out for staff tip-outs
         tax_cents: posTaxCents, // sales tax portion broken out for remittance
+        rc_cents: posRcCents, // RC car racing portion (not simulator revenue)
         occurred_on: todayEastern,
         description: `${intent.description || 'In-person sale (Terminal)'}${tipNote}`,
         booking_id: charge.booking_id,

@@ -35,6 +35,9 @@ interface Body {
   // tax-inclusive) and taxCents is its tax portion — we don't add tax.
   amountIncludesTax?: boolean
   taxCents?: number
+  // RC car racing upsell (pre-tax) already INCLUDED in amountCents — broken out
+  // only so reports can separate RC revenue from simulator revenue.
+  rcCents?: number
 }
 
 export async function POST(request: NextRequest) {
@@ -89,6 +92,7 @@ export async function POST(request: NextRequest) {
       type,
       amount_cents: totalCents,
       tax_cents: taxCents,
+      rc_cents: Math.max(0, Math.round(body.rcCents ?? 0)), // RC car racing portion
       occurred_on: getTodayEastern(),
       description,
       payment_method: 'cash',

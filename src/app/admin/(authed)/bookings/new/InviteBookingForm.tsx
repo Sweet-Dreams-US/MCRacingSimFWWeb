@@ -41,21 +41,36 @@ export default function InviteBookingForm() {
   const [racerCount, setRacerCount] = useState<Unit>(1)
   const [notes, setNotes] = useState('')
   const [requireCard, setRequireCard] = useState(false)
+  // Blank = use the standard racers×hours price for the date.
+  const [price, setPrice] = useState('')
+  const [sendCustomerEmail, setSendCustomerEmail] = useState(true)
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ bookingId: string; requireCard: boolean; holdCardUrl: string | null } | null>(null)
+  const [result, setResult] = useState<{
+    bookingId: string
+    requireCard: boolean
+    holdCardUrl: string | null
+    emailed: boolean
+    hadEmail: boolean
+  } | null>(null)
 
   const dayType = sessionDate ? getDayType(sessionDate) : null
   const pricePreview =
     sessionDate && /^\d{4}-\d{2}-\d{2}$/.test(sessionDate)
       ? calculatePrice(sessionDate, durationHours, racerCount).price
       : null
+  // No email = a bare slot block: no customer, nothing to send.
+  const hasEmail = email.trim().length > 0
 
   async function submit() {
     setError(null)
-    if (!email.includes('@')) {
-      setError('Enter a valid customer email.')
+    if (hasEmail && !email.includes('@')) {
+      setError('That email address is not valid.')
+      return
+    }
+    if (!hasEmail && requireCard) {
+      setError('A customer email is required to request a no-show card.')
       return
     }
     if (!sessionDate) {
@@ -68,7 +83,7 @@ export default function InviteBookingForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim(),
+          email: email.trim() || undefined,
           firstName: firstName.trim() || undefined,
           lastName: lastName.trim() || undefined,
           phone: phone.trim() || undefined,
@@ -78,11 +93,19 @@ export default function InviteBookingForm() {
           racerCount,
           notes: notes.trim() || undefined,
           requireCard,
+          price: price.trim() || undefined,
+          sendCustomerEmail,
         }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || 'Invite failed')
-      setResult({ bookingId: data.bookingId, requireCard: !!data.requireCard, holdCardUrl: data.holdCardUrl ?? null })
+      setResult({
+        bookingId: data.bookingId,
+        requireCard: !!data.requireCard,
+        holdCardUrl: data.holdCardUrl ?? null,
+        emailed: !!data.emailed,
+        hadEmail: hasEmail,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invite failed')
     } finally {
@@ -98,6 +121,8 @@ export default function InviteBookingForm() {
     setPhone('')
     setNotes('')
     setRequireCard(false)
+    setPrice('')
+    setSendCustomerEmail(true)
   }
 
   if (result) {
@@ -105,7 +130,11 @@ export default function InviteBookingForm() {
       <div className="bg-green-500/10 border border-green-500/30 p-8 text-center space-y-4 max-w-xl">
         <div className="text-5xl">✓</div>
         <h2 className="racing-headline text-2xl text-grid-white">
-          {result.requireCard ? 'Invite sent' : 'Booking created & sent'}
+          {result.requireCard
+            ? 'Invite sent'
+            : result.emailed
+              ? 'Booking created & sent'
+              : 'Booking created'}
         </h2>
         <p className="telemetry-text text-sm text-pit-gray">
           {result.requireCard ? (
@@ -113,10 +142,20 @@ export default function InviteBookingForm() {
               Invite <span className="text-grid-white">{result.bookingId}</span> emailed to {email}. It confirms once
               they save a card. It shows here on the schedule after that.
             </>
-          ) : (
+          ) : result.emailed ? (
             <>
               Booking <span className="text-grid-white">{result.bookingId}</span> is on the calendar. We emailed {email}{' '}
               and notified MC Racing.
+            </>
+          ) : result.hadEmail ? (
+            <>
+              Booking <span className="text-grid-white">{result.bookingId}</span> is on the calendar. No email was sent
+              to the customer.
+            </>
+          ) : (
+            <>
+              Booking <span className="text-grid-white">{result.bookingId}</span> is on the calendar as a held slot —
+              no customer attached, no emails sent.
             </>
           )}
         </p>
@@ -158,7 +197,7 @@ export default function InviteBookingForm() {
         {/* Customer */}
         <div>
           <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">
-            Customer email *
+            Customer email <span className="text-pit-gray/60">(optional)</span>
           </label>
           <input
             type="email"
@@ -167,6 +206,11 @@ export default function InviteBookingForm() {
             placeholder="customer@example.com"
             className="composer-input"
           />
+          <p className="telemetry-text text-[11px] text-pit-gray mt-1.5">
+            {hasEmail
+              ? 'Links the booking to this customer.'
+              : 'Leave blank to just hold the slot — no customer, no emails.'}
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -251,27 +295,68 @@ export default function InviteBookingForm() {
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="composer-input resize-y" />
         </div>
 
+        {/* Price — blank uses the standard matrix price for the date */}
+        <div>
+          <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">
+            Price <span className="text-pit-gray/60">(optional — overrides the standard price)</span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder={pricePreview !== null ? pricePreview.toFixed(2) : 'e.g. 45.00'}
+            className="composer-input"
+          />
+          <p className="telemetry-text text-[11px] text-pit-gray mt-1.5">
+            {price.trim()
+              ? `Custom price — due at the venue. Standard would be ${pricePreview !== null ? formatPrice(pricePreview) : '—'}.`
+              : pricePreview !== null
+                ? `Blank = standard ${formatPrice(pricePreview)} for ${racerCount} racer${racerCount > 1 ? 's' : ''} × ${durationHours}h. Due at the venue.`
+                : 'Pick a date to see the standard price.'}
+          </p>
+        </div>
+
         {/* No-show card toggle */}
         <label className="flex items-start gap-3 bg-asphalt border border-white/10 p-4 cursor-pointer">
-          <input type="checkbox" checked={requireCard} onChange={(e) => setRequireCard(e.target.checked)} className="mt-1" />
+          <input
+            type="checkbox"
+            checked={requireCard}
+            onChange={(e) => setRequireCard(e.target.checked)}
+            disabled={!hasEmail}
+            className="mt-1"
+          />
           <span className="telemetry-text text-sm text-grid-white">
             Require a no-show card
             <span className="block text-xs text-pit-gray mt-1">
-              {requireCard
-                ? 'The customer must save a card (link emailed) before this confirms — a $20/seat no-show fee applies.'
-                : 'Off: card-less, confirms immediately, no no-show fee (the default for invites).'}
+              {!hasEmail
+                ? 'Needs a customer email — there’s nobody to send the save-card link to.'
+                : requireCard
+                  ? 'The customer must save a card (link emailed) before this confirms — a $20/seat no-show fee applies.'
+                  : 'Off: card-less, confirms immediately, no no-show fee (the default for invites).'}
             </span>
           </span>
         </label>
 
-        {/* Price preview */}
-        {pricePreview !== null && (
-          <div className="flex items-center justify-between bg-asphalt border border-white/10 px-4 py-3">
-            <span className="telemetry-text text-xs text-pit-gray uppercase tracking-wider">
-              Session price (due at venue)
+        {/* Email toggle — put it on the books without telling the customer */}
+        {hasEmail && !requireCard && (
+          <label className="flex items-start gap-3 bg-asphalt border border-white/10 p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sendCustomerEmail}
+              onChange={(e) => setSendCustomerEmail(e.target.checked)}
+              className="mt-1"
+            />
+            <span className="telemetry-text text-sm text-grid-white">
+              Email the customer
+              <span className="block text-xs text-pit-gray mt-1">
+                {sendCustomerEmail
+                  ? 'They get a booking confirmation email.'
+                  : 'Off: the booking goes on the calendar quietly — nothing is sent to them.'}
+              </span>
             </span>
-            <span className="racing-headline text-xl text-telemetry-cyan">{formatPrice(pricePreview)}</span>
-          </div>
+          </label>
         )}
         {dayType === 'closed' && (
           <p className="telemetry-text text-xs text-amber-400">
@@ -292,12 +377,22 @@ export default function InviteBookingForm() {
         disabled={submitting}
         className="racing-headline text-sm uppercase tracking-wider bg-apex-red hover:bg-apex-red-dark disabled:opacity-50 text-grid-white px-6 py-3 transition-colors"
       >
-        {submitting ? 'Creating…' : requireCard ? 'Send invite & card link →' : 'Create booking & send invite →'}
+        {submitting
+          ? 'Creating…'
+          : requireCard
+            ? 'Send invite & card link →'
+            : hasEmail && sendCustomerEmail
+              ? 'Create booking & send invite →'
+              : 'Create booking →'}
       </button>
       <p className="telemetry-text text-xs text-pit-gray">
         {requireCard
           ? 'The customer gets a link to save a no-show card. The booking confirms (calendar + reminder) once the card is on file.'
-          : 'No card is collected. The customer gets an email, MC Racing gets notified, it’s added to the Gmail calendar, and they’ll get a reminder the day before.'}
+          : !hasEmail
+            ? 'Holds the slot with no customer attached — nothing is emailed to anyone. It’s added to the Gmail calendar and you can charge it on the reader later.'
+            : sendCustomerEmail
+              ? 'No card is collected. The customer gets an email, MC Racing gets notified, it’s added to the Gmail calendar, and they’ll get a reminder the day before.'
+              : 'No card is collected and the customer is never contacted — no confirmation and no day-before reminder. It’s still linked to them and added to the Gmail calendar.'}
       </p>
     </div>
   )

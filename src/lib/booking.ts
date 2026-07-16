@@ -760,7 +760,10 @@ export async function onBookingCompleted(bookingId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export interface InviteBookingInput {
-  email: string
+  // Optional: omit to create a booking with NO customer at all — a bare slot
+  // block (time + racers + price) for a phone hold or walk-in reservation.
+  // When present it's the customer's identity (find-or-create keys off it).
+  email?: string
   firstName?: string
   lastName?: string
   phone?: string
@@ -773,13 +776,20 @@ export interface InviteBookingInput {
   // When true, the invite requires the customer to save a no-show card before
   // it confirms: the booking is created 'pending' and the customer gets a
   // "save your card" link. When false (default) it's a card-less confirmed
-  // booking with no no-show fee (the original behavior).
+  // booking with no no-show fee (the original behavior). Needs an email.
   requireCard?: boolean
+  // Override the matrix price (in cents) — e.g. a quoted phone rate. Omit to
+  // use the standard racers×hours price for the date.
+  priceCents?: number
+  // Set false to put the booking on the books WITHOUT emailing the customer.
+  // Ignored when there's no email to send to. Default true.
+  sendCustomerEmail?: boolean
 }
 
 export interface InviteBookingResult {
   bookingId: string
-  customerId: string
+  // null for a bare slot block with no customer.
+  customerId: string | null
   // Set only for require-card invites: the unguessable "save your card" link.
   cardLinkToken?: string | null
   holdCardUrl?: string | null
@@ -802,19 +812,36 @@ export async function createInviteBooking(
 ): Promise<InviteBookingResult> {
   const supabase = createAdminClient()
 
-  const emailLower = input.email.trim().toLowerCase()
-  if (!emailLower.includes('@')) {
-    throw new Error('A valid email address is required')
+  // No email = a bare slot block with no customer. An email that's present but
+  // malformed is a mistake, not an intent to skip — reject it.
+  const emailLower = input.email?.trim().toLowerCase() ?? ''
+  const hasEmail = emailLower.length > 0
+  if (hasEmail && !emailLower.includes('@')) {
+    throw new Error('That email address is not valid')
+  }
+  if (input.requireCard && !hasEmail) {
+    throw new Error('A customer email is required to request a no-show card.')
   }
 
-  // Amounts (price is informational — collected in person, not now).
+  // Amounts (price is informational — collected in person, not now). An admin
+  // can override the matrix price for a quoted rate.
   const { price: sessionPriceDollars } = calculatePrice(
     input.sessionDate,
     input.durationHours,
     input.racerCount
   )
-  const sessionPriceCents = sessionPriceDollars * 100
+  const matrixPriceCents = sessionPriceDollars * 100
+  const hasOverride =
+    typeof input.priceCents === 'number' &&
+    Number.isFinite(input.priceCents) &&
+    input.priceCents >= 0
+  const sessionPriceCents = hasOverride ? Math.round(input.priceCents as number) : matrixPriceCents
+  const priceOverridden = hasOverride && sessionPriceCents !== matrixPriceCents
   const endTime = computeEndTime(input.startTime, input.durationHours)
+
+  // Nothing to send when there's no email, and the caller can suppress it
+  // outright to just put the booking on the books quietly.
+  const notifyCustomer = hasEmail && (input.sendCustomerEmail ?? true)
 
   // Require-card invites become 'pending' until the customer saves a no-show
   // card via an emailed link; card-less invites confirm immediately.
@@ -825,6 +852,17 @@ export async function createInviteBooking(
   // 1. Find-or-create the customer by email (don't overwrite a returning
   //    customer's real name with a synthesized one).
   // Exact lowercased match — NOT ilike (see note in createBooking).
+  // With no email there's no identity to key on, so we deliberately create NO
+  // customer row (a nameless row would just accumulate as junk) — the booking
+  // simply carries customer_id = null.
+  let customerId: string | null = null
+  let firstName = ''
+  let lastName = ''
+
+  if (!hasEmail) {
+    firstName = input.firstName?.trim() || 'Walk-in'
+    lastName = input.lastName?.trim() || ''
+  } else {
   const { data: existing, error: lookupError } = await supabase
     .from('customers')
     .select('id, first_name, last_name')
@@ -834,10 +872,6 @@ export async function createInviteBooking(
   if (lookupError) {
     throw new Error(`Customer lookup failed: ${lookupError.message}`)
   }
-
-  let customerId: string
-  let firstName: string
-  let lastName: string
 
   if (existing) {
     customerId = existing.id
@@ -884,22 +918,27 @@ export async function createInviteBooking(
       customerId = inserted.id
     }
   }
+  }
 
-  const fullName = `${firstName} ${lastName}`.trim() || emailLower
+  const fullName = `${firstName} ${lastName}`.trim() || emailLower || 'Walk-in'
 
   // Idempotency: if an active booking already exists for this customer at the
   // exact same date + time (e.g. a double-clicked invite), reuse it instead of
-  // creating a duplicate booking + re-sending emails.
-  const { data: dupRows } = await supabase
-    .from('bookings')
-    .select('id')
-    .eq('customer_id', customerId)
-    .eq('session_date', input.sessionDate)
-    .eq('start_time', input.startTime)
-    .neq('status', 'cancelled')
-    .limit(1)
-  if (dupRows && dupRows.length > 0) {
-    return { bookingId: dupRows[0].id, customerId }
+  // creating a duplicate booking + re-sending emails. Only meaningful when we
+  // have a customer to key on — two anonymous holds at the same time are
+  // legitimate (the 3 sims seat more than one party).
+  if (customerId) {
+    const { data: dupRows } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('customer_id', customerId)
+      .eq('session_date', input.sessionDate)
+      .eq('start_time', input.startTime)
+      .neq('status', 'cancelled')
+      .limit(1)
+    if (dupRows && dupRows.length > 0) {
+      return { bookingId: dupRows[0].id, customerId }
+    }
   }
 
   // 2. Insert the confirmed, card-less booking under a human-friendly
@@ -924,6 +963,12 @@ export async function createInviteBooking(
     card_link_token: cardLinkToken,
     created_by_user_id: input.createdByUserId ?? null,
     notes: input.notes?.trim() || null,
+    price_overridden: priceOverridden,
+    // A quiet booking (no customer, or the admin chose not to email) must not
+    // get a day-before reminder either — that would contact the very customer we
+    // were told to leave alone. The reminder cron only picks up rows where this
+    // is null, so pre-claiming it here opts the booking out for good.
+    reminder_email_sent_at: notifyCustomer ? null : new Date().toISOString(),
   }
 
   let bookingId = ''
@@ -950,7 +995,7 @@ export async function createInviteBooking(
     booking_id: bookingId,
     slot: 1,
     name: fullName,
-    email: emailLower,
+    email: hasEmail ? emailLower : null,
     phone: input.phone?.trim() || null,
   })
   if (racersError) {
@@ -994,7 +1039,11 @@ export async function createInviteBooking(
     ? `${process.env.NEXT_PUBLIC_URL || 'https://mcracingfortwayne.com'}/hold-card/${cardLinkToken}`
     : null
 
-  if (requireCard && holdCardUrl) {
+  // The require-card link still comes back in the result so it can be shared by
+  // hand even when we don't email it.
+  if (!notifyCustomer) {
+    // no customer email
+  } else if (requireCard && holdCardUrl) {
     const hold = inviteHoldCardEmail({
       customerFirstName: firstName || 'racer',
       bookingId,
@@ -1034,26 +1083,30 @@ export async function createInviteBooking(
     })
   }
 
-  const owner = ownerNewBookingEmail({
-    bookingId,
-    customerName: fullName,
-    customerEmail: emailLower,
-    customerPhone: input.phone?.trim() || '',
-    sessionDate: input.sessionDate,
-    startTime: input.startTime,
-    durationHours: input.durationHours,
-    racerCount: input.racerCount,
-    sessionPriceCents,
-    source: 'admin',
-  })
-  await sendEmail({
-    to: getOwnerNotificationEmail(),
-    subject: owner.subject,
-    html: owner.html,
-    template: 'owner_new_booking',
-    relatedBookingId: bookingId,
-    relatedCustomerId: customerId,
-  })
+  // Owner alert — only for real customer bookings. A bare slot block is created
+  // BY the owner/staff at the counter, so alerting them about it is just noise.
+  if (hasEmail) {
+    const owner = ownerNewBookingEmail({
+      bookingId,
+      customerName: fullName,
+      customerEmail: emailLower,
+      customerPhone: input.phone?.trim() || '',
+      sessionDate: input.sessionDate,
+      startTime: input.startTime,
+      durationHours: input.durationHours,
+      racerCount: input.racerCount,
+      sessionPriceCents,
+      source: 'admin',
+    })
+    await sendEmail({
+      to: getOwnerNotificationEmail(),
+      subject: owner.subject,
+      html: owner.html,
+      template: 'owner_new_booking',
+      relatedBookingId: bookingId,
+      relatedCustomerId: customerId,
+    })
+  }
 
   return { bookingId, customerId, cardLinkToken, holdCardUrl }
 }

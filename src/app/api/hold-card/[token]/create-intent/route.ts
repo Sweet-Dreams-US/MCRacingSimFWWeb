@@ -40,7 +40,14 @@ export async function POST(
     )
   }
 
-  // Ensure a Stripe customer.
+  // Ensure a Stripe customer. A bare slot block has no customer, so there's
+  // nobody to attach a card to (it also never gets a card_link_token).
+  if (!booking.customer_id) {
+    return NextResponse.json(
+      { success: false, error: 'This booking has no customer attached.' },
+      { status: 400 }
+    )
+  }
   const { data: customer } = await supabase
     .from('customers')
     .select('id, email, first_name, last_name, stripe_customer_id')

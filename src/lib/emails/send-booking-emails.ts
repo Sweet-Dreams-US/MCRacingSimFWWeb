@@ -53,6 +53,10 @@ export async function sendBookingEmails(
   }
 
   // ---- 2. Load the customer ------------------------------------------------
+  // A bare slot block (admin/reader hold with no customer) has nobody to email.
+  if (!booking.customer_id) {
+    return { sent: 0, skipped: 1, failed: 0 }
+  }
   const { data: customer, error: customerError } = await supabase
     .from('customers')
     .select('id, first_name, last_name, email, phone')

@@ -29,6 +29,9 @@ interface Body {
   // Used for the card half of a part-cash/part-card sale.
   amountIncludesTax?: boolean
   taxCents?: number
+  // RC car racing upsell (pre-tax) already INCLUDED in amountCents — broken out
+  // only so reports can separate RC revenue from simulator revenue.
+  rcCents?: number
 }
 
 export async function POST(request: NextRequest) {
@@ -134,6 +137,7 @@ export async function POST(request: NextRequest) {
         device: 'reader',
         subtotal_cents: String(subtotalCents),
         tax_cents: String(taxCents),
+        rc_cents: String(Math.max(0, Math.round(body.rcCents ?? 0))),
       },
     },
     { idempotencyKey }

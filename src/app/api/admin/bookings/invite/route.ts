@@ -19,6 +19,19 @@ interface InviteBody {
   racerCount?: number | string
   notes?: string
   requireCard?: boolean
+  // Custom quoted price in DOLLARS (the form works in dollars). Omit for the
+  // standard racers×hours matrix price.
+  price?: number | string
+  // false = put it on the books without emailing the customer.
+  sendCustomerEmail?: boolean
+}
+
+/** "45", "45.50", 45 → cents. Returns undefined for blank/invalid. */
+function asPriceCents(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined
+  const n = typeof v === 'string' ? Number(v.trim()) : typeof v === 'number' ? v : NaN
+  if (!Number.isFinite(n) || n < 0) return undefined
+  return Math.round(n * 100)
 }
 
 function asUnit(v: unknown, fallback: 1 | 2 | 3): 1 | 2 | 3 {
@@ -47,10 +60,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  // Email is now OPTIONAL: with none, this just blocks the slot (no customer,
+  // no emails). A malformed one is a typo though, so still reject it.
   const email = (body.email ?? '').trim().toLowerCase()
-  if (!email || !email.includes('@')) {
+  if (email && !email.includes('@')) {
     return NextResponse.json(
-      { success: false, error: 'A valid customer email is required' },
+      { success: false, error: 'That email address is not valid' },
+      { status: 400 }
+    )
+  }
+  if (!email && body.requireCard === true) {
+    return NextResponse.json(
+      { success: false, error: 'A customer email is required to request a no-show card.' },
       { status: 400 }
     )
   }
@@ -86,7 +107,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await createInviteBooking({
-      email,
+      email: email || undefined,
       firstName: body.firstName?.trim() || undefined,
       lastName: body.lastName?.trim() || undefined,
       phone: body.phone?.trim() || undefined,
@@ -97,12 +118,15 @@ export async function POST(request: NextRequest) {
       notes: body.notes?.trim() || undefined,
       createdByUserId: adminCtx.admin.id,
       requireCard: body.requireCard === true,
+      priceCents: asPriceCents(body.price),
+      sendCustomerEmail: body.sendCustomerEmail !== false,
     })
     return NextResponse.json({
       success: true,
       bookingId: result.bookingId,
       requireCard: body.requireCard === true,
       holdCardUrl: result.holdCardUrl ?? null,
+      emailed: Boolean(email) && body.sendCustomerEmail !== false,
     })
   } catch (err) {
     return NextResponse.json(

@@ -152,7 +152,9 @@ export async function POST(
   }
 
   // ---- Charge the card on file --------------------------------------------
-  if (!booking.stripe_payment_method_id) {
+  // A bare slot block (no customer) can never have a card — status is updated
+  // above, but there's nobody to charge.
+  if (!booking.customer_id || !booking.stripe_payment_method_id) {
     // Walk-in booking with no card — can't charge anything. Status is updated
     // but the no-show fee will need to be collected in person.
     return NextResponse.json({
