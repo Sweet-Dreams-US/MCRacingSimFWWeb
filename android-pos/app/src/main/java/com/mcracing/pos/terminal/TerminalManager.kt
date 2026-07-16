@@ -137,6 +137,7 @@ object TerminalManager {
         receiptEmail: String?,
         amountIncludesTax: Boolean = false,
         taxCents: Long = 0,
+        rcCents: Long = 0,
     ): SaleResult {
         return try {
             // 1. Create the PaymentIntent on our backend (manual capture). For a
@@ -151,6 +152,7 @@ object TerminalManager {
                     receiptEmail = receiptEmail,
                     amountIncludesTax = amountIncludesTax,
                     taxCents = taxCents,
+                    rcCents = rcCents,
                 )
             )
 

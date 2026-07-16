@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,6 +94,7 @@ fun BookingsScreen(
     onRefresh: () -> Unit,
     onPick: (BookingDto) -> Unit,
     onWalkIn: () -> Unit,
+    onNewBooking: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     // Group by business day (the API rolls over at 7am, so late-night sessions
@@ -126,6 +129,12 @@ fun BookingsScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = ApexRed),
         ) { Text("Walk-in / new sale") }
+        Spacer(Modifier.height(8.dp))
+        // Put a session on the books now, take the money later.
+        OutlinedButton(
+            onClick = onNewBooking,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Add booking — no sale yet") }
         Spacer(Modifier.height(12.dp))
 
         if (loading) {
@@ -242,6 +251,9 @@ fun SaleScreen(
     connected: Boolean,
     customerQuery: String,
     customerHits: List<CustomerHit>,
+    recentCheckins: List<CustomerHit>,
+    onAddRc: (Long) -> Unit,
+    onClearRc: () -> Unit,
     onCustomerQueryChange: (String) -> Unit,
     onCustomerPick: (CustomerHit) -> Unit,
     onClearCustomer: () -> Unit,
@@ -314,6 +326,37 @@ fun SaleScreen(
                         .padding(vertical = 8.dp),
                 )
             }
+            // Just-signed liability forms — the usual case at the counter is the
+            // person who signed on the kiosk 30 seconds ago, so offer them by
+            // name instead of making staff type a search. Auto-refreshes.
+            if (customerQuery.isBlank() && recentCheckins.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("Just signed a liability form", color = PitGray, fontSize = 11.sp)
+                Spacer(Modifier.height(2.dp))
+                recentCheckins.take(8).forEach { hit ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onCustomerPick(hit) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            hit.name,
+                            color = TelemetryCyan,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            signedAgo(hit.signedAt),
+                            color = PitGray,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
+                }
+            }
             Spacer(Modifier.height(8.dp))
         }
 
@@ -346,29 +389,62 @@ fun SaleScreen(
 
         // New-booking builder (walk-in only): pick racers + hours → auto price.
         if (!isBooking) {
-            Text("Build a session", color = PitGray, fontSize = 11.sp)
+            Text("Build a session — simulators", color = PitGray, fontSize = 11.sp)
             Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 (1..3).forEach { r ->
-                    OutlinedButton(
+                    SelectChip(
+                        selected = bRacers == r,
+                        label = "$r racer${if (r > 1) "s" else ""}",
                         onClick = { bRacers = r; applyBuilder(r, bHours) },
-                        modifier = Modifier.weight(1f),
-                        colors = if (bRacers == r) ButtonDefaults.outlinedButtonColors(contentColor = ApexRed) else ButtonDefaults.outlinedButtonColors(),
-                    ) { Text("$r racer${if (r > 1) "s" else ""}", fontSize = 12.sp) }
+                    )
                 }
             }
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 (1..3).forEach { h ->
-                    OutlinedButton(
+                    SelectChip(
+                        selected = bHours == h,
+                        label = "${h}h",
                         onClick = { bHours = h; applyBuilder(bRacers, h) },
-                        modifier = Modifier.weight(1f),
-                        colors = if (bHours == h) ButtonDefaults.outlinedButtonColors(contentColor = ApexRed) else ButtonDefaults.outlinedButtonColors(),
-                    ) { Text("${h}h", fontSize = 12.sp) }
+                    )
                 }
             }
             Spacer(Modifier.height(12.dp))
         }
+
+        // RC car racing — a separate track, upsold on top of whatever's being
+        // sold (including an existing booking) while people aren't racing the
+        // sims. Each tap adds another $15/$20; it's recorded as RC revenue.
+        Text("Build a session — RC car racing (add-on)", color = PitGray, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(
+                onClick = { onAddRc(1500) },
+                modifier = Modifier.weight(1f),
+            ) { Text("+ $15", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+            OutlinedButton(
+                onClick = { onAddRc(2000) },
+                modifier = Modifier.weight(1f),
+            ) { Text("+ $20", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+        }
+        if (draft.rcCents > 0) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "RC added: ${centsToDollars(draft.rcCents)}",
+                    color = TelemetryCyan,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                TextButton(onClick = onClearRc) { Text("Clear", color = PitGray, fontSize = 12.sp) }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
 
         // Split by person (booking with signed-up racers, still open): charge each
         // their even share with their own email on the receipt.
@@ -437,8 +513,9 @@ fun SaleScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        // Tax summary — subtotal is what staff entered; customer pays the total.
-        val subtotalC = draft.amountCents()
+        // Tax summary — subtotal is what staff entered PLUS any RC add-on; the
+        // customer pays the total.
+        val subtotalC = draft.subtotalCents()
         val taxC = computeTaxCents(subtotalC)
         val totalC = subtotalC + taxC
         // Split payment: cash covers part (or all) of the total; card takes the rest.
@@ -575,6 +652,195 @@ fun SaleScreen(
             },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Back") } },
         )
+    }
+}
+
+/**
+ * "Add booking — no sale yet": put a session on the books to charge later.
+ * Deliberately minimal — time, racers, hours, price. No customer is required;
+ * staff can pick the booking off the list and charge it when they pay.
+ */
+@Composable
+fun NewBookingScreen(
+    draft: BookingDraft,
+    today: String,
+    tomorrow: String,
+    onChange: (BookingDraft) -> Unit,
+    onCreate: () -> Unit,
+    onBack: () -> Unit,
+) {
+    // Re-quote the standard price whenever the session shape changes, unless
+    // staff has typed their own number.
+    fun retime(next: BookingDraft, priceFollows: Boolean): BookingDraft {
+        if (!priceFollows) return next
+        val cents = sessionPriceCents(next.date, next.racers, next.hours)
+        return if (cents > 0) next.copy(priceText = "%.2f".format(cents / 100.0)) else next
+    }
+
+    val standardCents = sessionPriceCents(draft.date, draft.racers, draft.hours)
+    val priceIsStandard =
+        standardCents > 0 && draft.priceCents() == standardCents
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("← Back") }
+            Spacer(Modifier.weight(1f))
+        }
+        Text("Add booking", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = ApexRed)
+        Text(
+            "Puts the session on the books — no money is taken now.",
+            color = PitGray,
+            fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(16.dp))
+
+        Text("Day", color = PitGray, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            SelectChip(
+                selected = draft.date == today,
+                label = "Today",
+                onClick = { onChange(retime(draft.copy(date = today), priceIsStandard)) },
+            )
+            SelectChip(
+                selected = draft.date == tomorrow,
+                label = "Tomorrow",
+                onClick = { onChange(retime(draft.copy(date = tomorrow), priceIsStandard)) },
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Time stepper — 30-min slots from noon to 1:30am, matching the web form.
+        Text("Start time", color = PitGray, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = {
+                    val next = (draft.startMinutes - 30).coerceAtLeast(12 * 60)
+                    onChange(draft.copy(startMinutes = next))
+                },
+            ) { Text("−30m") }
+            Text(
+                prettyTime(draft.startTime()),
+                color = TelemetryCyan,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.Center,
+            )
+            OutlinedButton(
+                onClick = {
+                    val next = (draft.startMinutes + 30).coerceAtMost(25 * 60 + 30)
+                    onChange(draft.copy(startMinutes = next))
+                },
+            ) { Text("+30m") }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        Text("Racers", color = PitGray, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (1..3).forEach { r ->
+                SelectChip(
+                    selected = draft.racers == r,
+                    label = "$r racer${if (r > 1) "s" else ""}",
+                    onClick = { onChange(retime(draft.copy(racers = r), priceIsStandard)) },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Hours", color = PitGray, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (1..3).forEach { h ->
+                SelectChip(
+                    selected = draft.hours == h,
+                    label = "${h}h",
+                    onClick = { onChange(retime(draft.copy(hours = h), priceIsStandard)) },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = draft.priceText,
+            onValueChange = { onChange(draft.copy(priceText = it)) },
+            label = { Text("Price ($, pre-tax)") },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = KeyboardType.Decimal
+            ),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (standardCents > 0)
+                "Standard is ${centsToDollars(standardCents)} — edit to quote something else. Tax is added when you charge it."
+            else
+                "Tax is added when you charge it.",
+            color = PitGray,
+            fontSize = 11.sp,
+        )
+
+        Spacer(Modifier.height(20.dp))
+        Button(
+            onClick = onCreate,
+            enabled = draft.date.isNotBlank() && draft.priceCents() >= 0,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ApexRed),
+        ) {
+            Text(
+                "Add booking · ${prettyTime(draft.startTime())}",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+/**
+ * "3m ago" for a waiver timestamp, so staff can tell who just walked up.
+ * OffsetDateTime (not Instant) because PostgREST serializes with a "+00:00"
+ * offset rather than a bare "Z".
+ */
+private fun signedAgo(iso: String?): String {
+    if (iso.isNullOrBlank()) return ""
+    return try {
+        val then = java.time.OffsetDateTime.parse(iso).toInstant()
+        val mins = java.time.Duration.between(then, java.time.Instant.now()).toMinutes()
+        when {
+            mins < 1L -> "just now"
+            mins < 60L -> "${mins}m ago"
+            else -> "${mins / 60}h ago"
+        }
+    } catch (_: Exception) {
+        ""
+    }
+}
+
+/**
+ * A picker chip that FILLS red when selected (an outlined button with red text
+ * reads as unselected at a glance on the reader — staff need to see the current
+ * choice from arm's length).
+ */
+@Composable
+private fun RowScope.SelectChip(selected: Boolean, label: String, onClick: () -> Unit) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = Modifier.weight(1f),
+            colors = ButtonDefaults.buttonColors(containerColor = ApexRed, contentColor = Color.White),
+        ) { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = Modifier.weight(1f),
+        ) { Text(label, fontSize = 12.sp) }
     }
 }
 

@@ -63,6 +63,9 @@ data class CreatePaymentRequest(
     // amount and taxCents is its tax portion — the backend won't re-add tax.
     val amountIncludesTax: Boolean = false,
     val taxCents: Long = 0,
+    // RC car racing upsell (pre-tax) already included in amountCents — broken
+    // out so it's recorded as RC revenue, not simulator revenue.
+    val rcCents: Long = 0,
 )
 
 data class PaymentIntentResponse(val paymentIntentId: String, val secret: String)
@@ -83,6 +86,8 @@ data class CustomerHit(
     val name: String,
     val email: String?,
     val phone: String?,
+    // Only set by recent_checkins — when they signed the liability form.
+    val signedAt: String? = null,
 )
 
 data class CustomersResponse(val customers: List<CustomerHit>)
@@ -104,6 +109,23 @@ data class CashPaymentRequest(
     // amount and taxCents is its tax portion — the backend won't re-add tax.
     val amountIncludesTax: Boolean = false,
     val taxCents: Long = 0,
+    val rcCents: Long = 0,
+)
+
+data class CreateBookingRequest(
+    val sessionDate: String,   // "YYYY-MM-DD"
+    val startTime: String,     // "HH:MM" 24-hour
+    val durationHours: Int,
+    val racerCount: Int,
+    val priceCents: Long,
+    val customerId: String? = null,
+    val sendCustomerEmail: Boolean = false,
+)
+
+data class CreateBookingResponse(
+    val success: Boolean = false,
+    val bookingId: String? = null,
+    val error: String? = null,
 )
 
 data class ActionResponse(
@@ -141,6 +163,14 @@ interface BackendService {
 
     @POST("cash_payment/")
     suspend fun cashPayment(@Body body: CashPaymentRequest): ActionResponse
+
+    /** Recent liability forms — who just signed the waiver at the kiosk. */
+    @GET("customers/recent_checkins/")
+    suspend fun recentCheckins(): CustomersResponse
+
+    /** "Add booking — no sale yet": put a session on the books, charge later. */
+    @POST("create_booking/")
+    suspend fun createBooking(@Body body: CreateBookingRequest): CreateBookingResponse
 }
 
 // ---- Client -----------------------------------------------------------------

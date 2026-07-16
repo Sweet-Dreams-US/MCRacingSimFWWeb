@@ -16,6 +16,7 @@ import com.mcracing.pos.net.ApiClient
 import com.mcracing.pos.net.BookingActionRequest
 import com.mcracing.pos.net.BookingDto
 import com.mcracing.pos.net.CashPaymentRequest
+import com.mcracing.pos.net.CreateBookingRequest
 import com.mcracing.pos.net.CustomerHit
 import com.mcracing.pos.net.RacerDto
 import com.mcracing.pos.terminal.TerminalManager
@@ -62,6 +63,9 @@ data class SaleDraft(
     val bookingStatus: String? = null,
     val racers: List<RacerDto> = emptyList(),
     val today: String = "",
+    // RC car racing upsell (pre-tax cents) added on top of this sale — separate
+    // from the sims, recorded as RC revenue rather than simulator revenue.
+    val rcCents: Long = 0,
 ) {
     /** Discounted total to collect (falls back to session price when no discount). */
     fun effectiveNetCents(): Long = if (netPriceCents > 0) netPriceCents else sessionPriceCents
@@ -74,9 +78,34 @@ data class SaleDraft(
         val v = cashPaidText.toDoubleOrNull() ?: return 0L
         return (v * 100).roundToLong().coerceAtLeast(0L)
     }
+    /**
+     * The full PRE-TAX subtotal for this sale: what staff typed plus any RC
+     * upsell. Everything downstream (tax, total, the split, the confirm screen)
+     * derives from this, so RC can never be silently left out of the charge.
+     */
+    fun subtotalCents(): Long = amountCents() + rcCents
 }
 
-private enum class Stage { Bookings, Sale, CustomerConfirm, Processing, Result }
+/** "Add booking — no sale yet": a session put on the books to charge later. */
+data class BookingDraft(
+    val date: String = "", // ISO "YYYY-MM-DD"
+    // Minutes from midnight, 12:00 (720) → 01:30 next morning (1530), matching
+    // the web invite form's slot list. Converted to "HH:MM" for the API.
+    val startMinutes: Int = 18 * 60,
+    val racers: Int = 1,
+    val hours: Int = 1,
+    val priceText: String = "",
+    val customerId: String? = null,
+    val customerName: String? = null,
+) {
+    fun startTime(): String = "%02d:%02d".format((startMinutes / 60) % 24, startMinutes % 60)
+    fun priceCents(): Long {
+        val v = priceText.toDoubleOrNull() ?: return 0L
+        return (v * 100).roundToLong().coerceAtLeast(0L)
+    }
+}
+
+private enum class Stage { Bookings, Sale, NewBooking, CustomerConfirm, Processing, Result }
 
 @Composable
 fun PosApp() {
@@ -97,6 +126,8 @@ fun PosApp() {
     var resultMessage by remember { mutableStateOf("") }
     var customerQuery by remember { mutableStateOf("") }
     var customerHits by remember { mutableStateOf<List<CustomerHit>>(emptyList()) }
+    var recentCheckins by remember { mutableStateOf<List<CustomerHit>>(emptyList()) }
+    var bookingDraft by remember { mutableStateOf(BookingDraft()) }
 
     fun showResult(success: Boolean, title: String, amountCents: Long = 0L, message: String = "") {
         resultSuccess = success
@@ -124,6 +155,21 @@ fun PosApp() {
 
     LaunchedEffect(Unit) { loadBookings() }
 
+    // Recent liability forms. Someone signs at the kiosk then walks to the
+    // counter, so this has to be fresh: reload on entering the sale screen and
+    // keep polling while it's open (the effect cancels when the stage changes).
+    LaunchedEffect(stage) {
+        if (stage != Stage.Sale) return@LaunchedEffect
+        while (true) {
+            try {
+                recentCheckins = ApiClient.service.recentCheckins().customers
+            } catch (_: Exception) {
+                // keep whatever we last had; the search box still works
+            }
+            delay(20_000)
+        }
+    }
+
     // Debounced customer search for the walk-in flow.
     LaunchedEffect(customerQuery, draft.customerId) {
         if (draft.customerId != null || customerQuery.trim().length < 2) {
@@ -146,10 +192,15 @@ fun PosApp() {
     // charge the remaining balance on the card. The card portion carries the
     // full sales tax; the cash portion is recorded with tax_cents = 0 so the
     // two rows still sum to the correct total AND the correct tax.
+    // The RC upsell is recorded in rc_cents, but name it on the receipt too so
+    // the transaction reads as RC car racing rather than simulator time.
+    fun withRc(base: String): String =
+        if (draft.rcCents > 0) "$base · RC car racing ${centsToDollars(draft.rcCents)}" else base
+
     fun runSale() {
         stage = Stage.Processing
         scope.launch {
-            val subtotal = draft.amountCents()
+            val subtotal = draft.subtotalCents() // sale + any RC upsell, pre-tax
             val tax = computeTaxCents(subtotal)
             val total = subtotal + tax
             val cash = draft.cashPaidCents().coerceIn(0L, total)
@@ -164,11 +215,14 @@ fun PosApp() {
                             bookingId = draft.bookingId,
                             customerId = draft.customerId,
                             amountCents = cash,
-                            description = draft.description.ifBlank { "Cash payment" },
+                            description = withRc(draft.description.ifBlank { "Cash payment" }),
                             receiptEmail = draft.receiptEmail,
                             saleType = draft.saleType,
                             amountIncludesTax = true,
                             taxCents = cashTax,
+                            // All-cash → the RC portion is recorded on this row;
+                            // on a split it rides with the card leg instead.
+                            rcCents = if (card > 0) 0L else draft.rcCents,
                         )
                     ).success
                 } catch (_: Exception) {
@@ -190,13 +244,14 @@ fun PosApp() {
             //    reader's tip screen runs on this portion).
             val result = TerminalManager.processSale(
                 amountCents = card,
-                description = draft.description.ifBlank { "In-person sale" },
+                description = withRc(draft.description.ifBlank { "In-person sale" }),
                 saleType = draft.saleType,
                 customerId = draft.customerId,
                 bookingId = draft.bookingId,
                 receiptEmail = draft.receiptEmail,
                 amountIncludesTax = true,
                 taxCents = tax,
+                rcCents = draft.rcCents,
             )
             when (result) {
                 is TerminalManager.SaleResult.Success ->
@@ -225,18 +280,48 @@ fun PosApp() {
                     CashPaymentRequest(
                         bookingId = draft.bookingId,
                         customerId = draft.customerId,
-                        amountCents = draft.amountCents(),
-                        description = draft.description.ifBlank { "Cash payment" },
+                        amountCents = draft.subtotalCents(),
+                        description = withRc(draft.description.ifBlank { "Cash payment" }),
                         receiptEmail = draft.receiptEmail,
                         saleType = draft.saleType,
+                        rcCents = draft.rcCents,
                     )
                 ).success
             } catch (_: Exception) {
                 false
             }
             // Show the taxed total actually recorded (backend adds tax to the subtotal).
-            if (ok) showResult(true, "Cash recorded", draft.amountCents() + computeTaxCents(draft.amountCents()))
+            if (ok) showResult(true, "Cash recorded", draft.subtotalCents() + computeTaxCents(draft.subtotalCents()))
             else showResult(false, "Couldn't record cash")
+        }
+    }
+
+    // "Add booking — no sale yet": puts the session on the books so staff can
+    // charge it later off the bookings list. No customer needed.
+    fun createBooking() {
+        stage = Stage.Processing
+        scope.launch {
+            val resp = try {
+                ApiClient.service.createBooking(
+                    CreateBookingRequest(
+                        sessionDate = bookingDraft.date.ifBlank { today },
+                        startTime = bookingDraft.startTime(),
+                        durationHours = bookingDraft.hours,
+                        racerCount = bookingDraft.racers,
+                        priceCents = bookingDraft.priceCents(),
+                        customerId = bookingDraft.customerId,
+                    )
+                )
+            } catch (e: Exception) {
+                showResult(false, "Couldn't add booking", 0L, e.message ?: "")
+                return@launch
+            }
+            if (resp.success) {
+                loadBookings() // so it shows in the list straight away
+                showResult(true, "Booking added", bookingDraft.priceCents())
+            } else {
+                showResult(false, "Couldn't add booking", 0L, resp.error ?: "")
+            }
         }
     }
 
@@ -292,6 +377,24 @@ fun PosApp() {
                 customerHits = emptyList()
                 stage = Stage.Sale
             },
+            onNewBooking = {
+                // Default to the standard price for 1 racer / 1 hour today.
+                val d = today
+                bookingDraft = BookingDraft(
+                    date = d,
+                    priceText = "%.2f".format(sessionPriceCents(d, 1, 1) / 100.0),
+                )
+                stage = Stage.NewBooking
+            },
+        )
+
+        Stage.NewBooking -> NewBookingScreen(
+            draft = bookingDraft,
+            today = today,
+            tomorrow = tomorrow,
+            onChange = { bookingDraft = it },
+            onCreate = { createBooking() },
+            onBack = { stage = Stage.Bookings },
         )
 
         Stage.Sale -> SaleScreen(
@@ -299,6 +402,10 @@ fun PosApp() {
             connected = connected,
             customerQuery = customerQuery,
             customerHits = customerHits,
+            recentCheckins = recentCheckins,
+            // RC car racing: each tap adds another $15/$20 on top of the sale.
+            onAddRc = { cents -> draft = draft.copy(rcCents = draft.rcCents + cents) },
+            onClearRc = { draft = draft.copy(rcCents = 0) },
             onCustomerQueryChange = { customerQuery = it },
             onCustomerPick = { hit ->
                 draft = draft.copy(
@@ -322,7 +429,7 @@ fun PosApp() {
             // If cash covers the whole total (no card balance), skip the reader
             // hand-off and record it straight away.
             onCharge = {
-                val total = draft.amountCents() + computeTaxCents(draft.amountCents())
+                val total = draft.subtotalCents() + computeTaxCents(draft.subtotalCents())
                 val cash = draft.cashPaidCents().coerceIn(0L, total)
                 if (total - cash > 0) stage = Stage.CustomerConfirm else runSale()
             },
@@ -334,10 +441,10 @@ fun PosApp() {
         )
 
         Stage.CustomerConfirm -> CustomerConfirmScreen(
-            amountCents = draft.amountCents(),
+            amountCents = draft.subtotalCents(),
             cashCents = draft.cashPaidCents().coerceIn(
                 0L,
-                draft.amountCents() + computeTaxCents(draft.amountCents()),
+                draft.subtotalCents() + computeTaxCents(draft.subtotalCents()),
             ),
             description = draft.description.ifBlank { "In-person sale" },
             onConfirm = { runSale() },
