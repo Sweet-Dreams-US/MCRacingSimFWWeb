@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Button from '@/components/Button'
 import SectionDivider from '@/components/SectionDivider'
+import { ATTRIBUTION_SOURCES } from '@/lib/attribution'
 
 function CheckinContent() {
   const searchParams = useSearchParams()
@@ -129,16 +130,8 @@ function CheckinContent() {
     }
   }
 
-  const howDidYouHearOptions = [
-    'Google Search',
-    'Facebook',
-    'Instagram',
-    'TikTok',
-    'Friend/Family',
-    'Drive By',
-    'Event/Fair',
-    'Other',
-  ]
+  // Structured attribution — the canonical set shared with the DB + reporting.
+  const howDidYouHearOptions = ATTRIBUTION_SOURCES
 
   return (
     <>

@@ -36,6 +36,8 @@ import {
 import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
 import { sendMetaEvent } from './meta/capi'
+import { toAttributionSource } from './attribution'
+import { recordMcBooking } from './mc-bookings'
 import {
   inviteBookingEmail,
   inviteHoldCardEmail,
@@ -328,6 +330,9 @@ export async function createBooking(
         phone: input.customer.phone || null,
         birthday: input.customer.birthday || null,
         how_heard: input.customer.howHeard || null,
+        // Normalized marketing attribution (structured) alongside the legacy
+        // free-text how_heard, for revenue-by-source reporting.
+        attributed_source: toAttributionSource(input.customer.howHeard),
         marketing_opt_in: input.marketingOptIn,
         waiver_signed_at: nowIso,
         source: 'booking',
@@ -624,6 +629,29 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
         content_category: 'booking',
         num_items: booking.racer_count,
       },
+    })
+  }
+
+  // Unified reporting ledger (mc_bookings) — record every completed ONLINE
+  // booking as channel='online'. Best-effort + never throws (recordMcBooking
+  // swallows its own errors), so it can't affect the confirm/payment flow.
+  // attributed_source is backfilled from the customer inside recordMcBooking.
+  // Staff bookings (source='admin') are logged separately via the admin action.
+  if (wonConfirmRace && booking.source === 'online') {
+    const netCents = Math.max(0, booking.session_price_cents - (booking.discount_amount_cents ?? 0))
+    await recordMcBooking({
+      channel: 'online',
+      // Pin the session's wall-clock to UTC so the reporting view's
+      // date_trunc('month', …) always buckets under the session_date, regardless
+      // of the DB server timezone (a naive value could roll a late-night,
+      // month-boundary session into the next month).
+      bookingDatetime: `${booking.session_date}T${toHHMM(booking.start_time)}:00Z`,
+      racers: booking.racer_count,
+      durationHours: booking.duration_hours,
+      amountCents: netCents,
+      depositCents: null, // online booking collects $0 (card-on-file only)
+      customerId: booking.customer_id,
+      notes: `Booking ${bookingId}`,
     })
   }
 
