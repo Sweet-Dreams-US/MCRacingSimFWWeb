@@ -9,7 +9,7 @@ const navLinks = [
   { href: '/', label: 'Home', shortLabel: 'Home' },
   { href: '/pricing', label: 'Pricing', shortLabel: 'Pricing' },
   { href: '/memberships', label: 'Memberships', shortLabel: 'Members' },
-  { href: '/leagues', label: 'Leagues', shortLabel: 'Leagues' },
+  { href: '/leagues', label: 'Leaderboard', shortLabel: 'Leaderboard' },
   { href: '/pit-lane', label: 'Parties', shortLabel: 'Parties' },
   { href: '/location', label: 'About Us', shortLabel: 'About' },
   { href: '/contact', label: 'Contact', shortLabel: 'Contact' },

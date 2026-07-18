@@ -319,6 +319,84 @@ export type Database = {
         }
         Relationships: []
       }
+      leaderboards: {
+        Row: {
+          id: string
+          track_name: string
+          period_label: string | null
+          is_active: boolean
+          notes: string | null
+          created_at: string
+          created_by_user_id: string | null
+        }
+        Insert: {
+          id?: string
+          track_name: string
+          period_label?: string | null
+          is_active?: boolean
+          notes?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+        }
+        Update: {
+          id?: string
+          track_name?: string
+          period_label?: string | null
+          is_active?: boolean
+          notes?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+        }
+        Relationships: []
+      }
+      leaderboard_entries: {
+        Row: {
+          id: string
+          leaderboard_id: string
+          customer_id: string | null
+          display_name: string
+          time_ms: number
+          created_at: string
+          updated_at: string
+          created_by_user_id: string | null
+        }
+        Insert: {
+          id?: string
+          leaderboard_id: string
+          customer_id?: string | null
+          display_name: string
+          time_ms: number
+          created_at?: string
+          updated_at?: string
+          created_by_user_id?: string | null
+        }
+        Update: {
+          id?: string
+          leaderboard_id?: string
+          customer_id?: string | null
+          display_name?: string
+          time_ms?: number
+          created_at?: string
+          updated_at?: string
+          created_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'leaderboard_entries_leaderboard_id_fkey'
+            columns: ['leaderboard_id']
+            isOneToOne: false
+            referencedRelation: 'leaderboards'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'leaderboard_entries_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'customers'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       customers: {
         Row: {
           birthday: string | null
