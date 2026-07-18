@@ -24,7 +24,7 @@ export default async function LeaderboardDetailPage({
 
   const { data: board } = await supabase
     .from('leaderboards')
-    .select('id, track_name, period_label, is_active')
+    .select('id, track_name, period_label, is_active, map_image_url, photo_image_url')
     .eq('id', id)
     .maybeSingle()
 

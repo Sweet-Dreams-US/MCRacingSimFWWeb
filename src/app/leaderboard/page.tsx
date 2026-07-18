@@ -35,7 +35,9 @@ async function loadBoards(): Promise<PublicBoard[]> {
     const supabase = createAdminClient()
     const { data } = await supabase
       .from('leaderboards')
-      .select('id, track_name, period_label, is_active, leaderboard_entries(display_name, time_ms)')
+      .select(
+        'id, track_name, period_label, is_active, map_image_url, photo_image_url, leaderboard_entries(display_name, time_ms)'
+      )
       .order('is_active', { ascending: false })
       .order('created_at', { ascending: false })
 
@@ -46,6 +48,8 @@ async function loadBoards(): Promise<PublicBoard[]> {
         trackName: b.track_name,
         periodLabel: b.period_label,
         isActive: b.is_active,
+        mapImageUrl: b.map_image_url,
+        photoImageUrl: b.photo_image_url,
         entries: rows
           .slice()
           .sort((a, z) => a.time_ms - z.time_ms)

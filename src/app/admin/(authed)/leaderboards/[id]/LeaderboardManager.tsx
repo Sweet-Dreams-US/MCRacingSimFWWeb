@@ -15,6 +15,8 @@ interface Board {
   track_name: string
   period_label: string | null
   is_active: boolean
+  map_image_url: string | null
+  photo_image_url: string | null
 }
 interface CustomerHit {
   id: string
@@ -30,6 +32,74 @@ function firstLastInitial(fullName: string): string {
 }
 
 const medal = ['🥇', '🥈', '🥉']
+
+/** One upload slot: preview (or drop-zone), replace, and remove. */
+function ImageSlot({
+  label,
+  aspect,
+  url,
+  busy,
+  onFile,
+  onRemove,
+}: {
+  label: string
+  aspect: string
+  url: string | null
+  busy: boolean
+  onFile: (f: File) => void
+  onRemove: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <div>
+      <p className="telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">{label}</p>
+      <div className={`relative ${aspect} bg-asphalt border border-white/10 overflow-hidden flex items-center justify-center`}>
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt={label} className="w-full h-full object-contain" />
+        ) : (
+          <span className="telemetry-text text-xs text-pit-gray px-3 text-center">No image yet</span>
+        )}
+        {busy && (
+          <div className="absolute inset-0 bg-asphalt-dark/70 flex items-center justify-center">
+            <span className="telemetry-text text-xs text-telemetry-cyan">Uploading…</span>
+          </div>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/heic"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) onFile(f)
+          e.target.value = '' // allow re-picking the same file
+        }}
+      />
+      <div className="flex items-center gap-3 mt-2">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          className="telemetry-text text-xs uppercase tracking-wider text-telemetry-cyan hover:underline disabled:opacity-50"
+        >
+          {url ? 'Replace' : 'Upload'}
+        </button>
+        {url && (
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={busy}
+            className="telemetry-text text-xs uppercase tracking-wider text-apex-red/80 hover:text-apex-red disabled:opacity-50"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function LeaderboardManager({
   board,
@@ -161,6 +231,45 @@ export default function LeaderboardManager({
   const [isActive, setIsActive] = useState(board.is_active)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null)
+
+  // ---- Track images (map + wide photo) -----------------------------------
+  const [mapUrl, setMapUrl] = useState(board.map_image_url)
+  const [photoUrl, setPhotoUrl] = useState(board.photo_image_url)
+  const [imgBusy, setImgBusy] = useState<'map' | 'photo' | null>(null)
+  const [imgErr, setImgErr] = useState<string | null>(null)
+
+  async function uploadImage(kind: 'map' | 'photo', file: File) {
+    setImgErr(null)
+    setImgBusy(kind)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('kind', kind)
+      const res = await fetch(`/api/admin/leaderboards/${board.id}/image`, { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.error || 'Upload failed')
+      if (kind === 'map') setMapUrl(data.url)
+      else setPhotoUrl(data.url)
+    } catch (err) {
+      setImgErr(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setImgBusy(null)
+    }
+  }
+
+  async function removeImage(kind: 'map' | 'photo') {
+    setImgErr(null)
+    setImgBusy(kind)
+    try {
+      const res = await fetch(`/api/admin/leaderboards/${board.id}/image?kind=${kind}`, { method: 'DELETE' })
+      if (res.ok) {
+        if (kind === 'map') setMapUrl(null)
+        else setPhotoUrl(null)
+      }
+    } finally {
+      setImgBusy(null)
+    }
+  }
 
   async function saveSettings() {
     setSettingsMsg(null)
@@ -364,6 +473,36 @@ export default function LeaderboardManager({
             ))}
           </div>
         )}
+      </section>
+
+      {/* Track images */}
+      <section className="bg-asphalt-dark border border-white/10 p-6 space-y-4 max-w-2xl">
+        <div>
+          <h2 className="racing-headline text-lg text-grid-white">Track images</h2>
+          <p className="telemetry-text text-xs text-pit-gray mt-1">
+            Optional — shown on the public leaderboard. Map is usually a PNG; photo is a wide shot.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <ImageSlot
+            label="Track map"
+            aspect="aspect-square"
+            url={mapUrl}
+            busy={imgBusy === 'map'}
+            onFile={(f) => uploadImage('map', f)}
+            onRemove={() => removeImage('map')}
+          />
+          <ImageSlot
+            label="Wide photo"
+            aspect="aspect-video"
+            url={photoUrl}
+            busy={imgBusy === 'photo'}
+            onFile={(f) => uploadImage('photo', f)}
+            onRemove={() => removeImage('photo')}
+          />
+        </div>
+        {imgErr && <p className="telemetry-text text-sm text-apex-red">{imgErr}</p>}
+        <p className="telemetry-text text-[11px] text-pit-gray">PNG, JPG, WebP or HEIC · up to 10MB.</p>
       </section>
 
       {/* Settings */}

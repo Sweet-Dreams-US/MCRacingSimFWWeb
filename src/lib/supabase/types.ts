@@ -325,6 +325,8 @@ export type Database = {
           track_name: string
           period_label: string | null
           is_active: boolean
+          map_image_url: string | null
+          photo_image_url: string | null
           notes: string | null
           created_at: string
           created_by_user_id: string | null
@@ -334,6 +336,8 @@ export type Database = {
           track_name: string
           period_label?: string | null
           is_active?: boolean
+          map_image_url?: string | null
+          photo_image_url?: string | null
           notes?: string | null
           created_at?: string
           created_by_user_id?: string | null
@@ -343,6 +347,8 @@ export type Database = {
           track_name?: string
           period_label?: string | null
           is_active?: boolean
+          map_image_url?: string | null
+          photo_image_url?: string | null
           notes?: string | null
           created_at?: string
           created_by_user_id?: string | null
