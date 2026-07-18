@@ -598,13 +598,23 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
     ? booking.customer[0]
     : booking.customer
 
-  // Meta CAPI — a confirmed booking is a Schedule (appointment booked). Only the
-  // winner of the pending→confirmed race fires it, so a redelivered webhook
-  // can't double-count; the deterministic event_id (sched_<bookingId>) also
-  // dedupes against the browser Pixel fired on the confirmation page. This runs
+  // Meta CAPI — a confirmed booking is a Schedule (appointment booked).
+  //
+  // ONLINE ONLY. This webhook path also confirms require-card ADMIN invites
+  // (source='admin'), which are staff-entered and must NEVER be reported to Meta
+  // as conversions — doing so poisons ad optimization. So we gate on
+  // booking.source === 'online' (the discriminator for a genuine self-serve
+  // booking). Card-less admin invites never reach here (no SetupIntent).
+  //
+  // Only the winner of the pending→confirmed race fires it, so a redelivered
+  // webhook can't double-count; the deterministic event_id (sched_<bookingId>)
+  // also dedupes against the browser Pixel fired on the confirmation page. Runs
   // in the webhook, away from the browser, so we match on hashed PII only —
   // still a strong signal via email + phone + external_id.
-  if (wonConfirmRace && customer) {
+  if (wonConfirmRace && customer && booking.source === 'online') {
+    // Real committed total = session price minus any discount (pre-tax).
+    const bookingValue =
+      Math.max(0, booking.session_price_cents - (booking.discount_amount_cents ?? 0)) / 100
     await sendMetaEvent({
       eventName: 'Schedule',
       eventId: `sched_${bookingId}`,
@@ -618,11 +628,13 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
         externalId: booking.customer_id,
       },
       customData: {
-        value: booking.session_price_cents / 100,
+        value: bookingValue,
         currency: 'USD',
         content_name: 'Sim Racing Session',
         content_category: 'booking',
-        num_items: booking.racer_count,
+        num_racers: booking.racer_count,
+        duration_hours: booking.duration_hours,
+        is_membership: false, // no membership model yet; always false for now
       },
     })
   }
