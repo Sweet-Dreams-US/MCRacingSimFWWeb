@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isDeviceAuthorized } from '@/lib/device-auth'
-import { createInviteBooking } from '@/lib/booking'
+import { createInviteBooking, AvailabilityBlockedError } from '@/lib/booking'
 import { getDayType } from '@/lib/pricing'
 
 export const runtime = 'nodejs'
@@ -100,9 +100,10 @@ export async function POST(request: NextRequest) {
     })
     return NextResponse.json({ success: true, bookingId: result.bookingId })
   } catch (err) {
+    const status = err instanceof AvailabilityBlockedError ? 400 : 500
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Could not create booking' },
-      { status: 500 }
+      { status }
     )
   }
 }

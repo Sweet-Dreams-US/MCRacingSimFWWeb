@@ -3,7 +3,7 @@
 // email + owner alert + Google Calendar event (and it becomes reminder-eligible).
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
-import { createInviteBooking } from '@/lib/booking'
+import { createInviteBooking, AvailabilityBlockedError } from '@/lib/booking'
 import { getDayType } from '@/lib/pricing'
 
 export const runtime = 'nodejs'
@@ -129,9 +129,11 @@ export async function POST(request: NextRequest) {
       emailed: Boolean(email) && body.sendCustomerEmail !== false,
     })
   } catch (err) {
+    // A full slot is a user-actionable 400, not a server error.
+    const status = err instanceof AvailabilityBlockedError ? 400 : 500
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Invite failed' },
-      { status: 500 }
+      { status }
     )
   }
 }

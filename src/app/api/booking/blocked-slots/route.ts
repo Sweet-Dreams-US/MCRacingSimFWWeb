@@ -28,13 +28,15 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient()
   const [blocksRes, bookingsRes] = await Promise.all([
     supabase.from('availability_blocks').select('start_time, end_time').eq('block_date', date),
-    // Seats occupied on this date: committed bookings + still-active checkouts
-    // (recent pending). Abandoned pendings age out via the 30-min cutoff.
+    // Seats occupied on this date: only CONFIRMED reservations. A 'pending'
+    // booking is a customer still in checkout with no card saved — it does NOT
+    // hold the slot (whoever finishes first gets it). Admin/staff card-less
+    // bookings are 'confirmed', so they still block.
     supabase
       .from('bookings')
-      .select('start_time, duration_hours, racer_count, status, created_at')
+      .select('start_time, duration_hours, racer_count, status')
       .eq('session_date', date)
-      .in('status', ['confirmed', 'completed', 'partial_noshow', 'pending']),
+      .in('status', ['confirmed', 'completed', 'partial_noshow']),
   ])
 
   if (blocksRes.error || bookingsRes.error) {
@@ -44,17 +46,11 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const pendingCutoff = Date.now() - 30 * 60 * 1000
-  const bookings = (bookingsRes.data ?? [])
-    .filter(
-      (b) =>
-        b.status !== 'pending' || new Date(b.created_at).getTime() >= pendingCutoff
-    )
-    .map((b) => ({
-      startTime: b.start_time, // "HH:MM:SS"
-      durationHours: b.duration_hours,
-      racerCount: b.racer_count,
-    }))
+  const bookings = (bookingsRes.data ?? []).map((b) => ({
+    startTime: b.start_time, // "HH:MM:SS"
+    durationHours: b.duration_hours,
+    racerCount: b.racer_count,
+  }))
 
   return NextResponse.json({
     success: true,

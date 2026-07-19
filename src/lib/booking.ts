@@ -215,21 +215,25 @@ async function assertSeatsAvailable(
   sessionDate: string,
   startTime: string,
   durationHours: number,
-  racerCount: number
+  racerCount: number,
+  // When re-checking during an EDIT, exclude the booking being edited so it
+  // doesn't count its own (old) seats against itself.
+  excludeBookingId?: string
 ): Promise<void> {
+  // Only CONFIRMED reservations hold seats. A 'pending' booking is a customer
+  // mid-checkout who hasn't saved a card yet — it must NOT block others
+  // (whoever finishes first gets the slot). Note admin/staff card-less bookings
+  // are inserted 'confirmed', so they DO still block, as intended.
   const { data, error } = await supabase
     .from('bookings')
-    .select('start_time, duration_hours, racer_count, status, created_at')
+    .select('id, start_time, duration_hours, racer_count, status')
     .eq('session_date', sessionDate)
-    .in('status', ['confirmed', 'completed', 'partial_noshow', 'pending'])
+    .in('status', ['confirmed', 'completed', 'partial_noshow'])
   if (error) {
     throw new Error(`Seat availability check failed: ${error.message}`)
   }
-  const pendingCutoff = Date.now() - 30 * 60 * 1000
   const existing: SeatBooking[] = (data ?? [])
-    .filter(
-      (b) => b.status !== 'pending' || new Date(b.created_at).getTime() >= pendingCutoff
-    )
+    .filter((b) => b.id !== excludeBookingId)
     .map((b) => ({
       startTime: b.start_time,
       durationHours: b.duration_hours,
@@ -784,6 +788,10 @@ export interface InviteBookingInput {
   // Set false to put the booking on the books WITHOUT emailing the customer.
   // Ignored when there's no email to send to. Default true.
   sendCustomerEmail?: boolean
+  // Escape hatch: skip the seat-capacity check to deliberately overbook (e.g. a
+  // private event on all sims). Default false — staff bookings respect the 3
+  // sims like online, so a manual booking can't silently double-book.
+  allowOverbook?: boolean
 }
 
 export interface InviteBookingResult {
@@ -938,6 +946,32 @@ export async function createInviteBooking(
       .limit(1)
     if (dupRows && dupRows.length > 0) {
       return { bookingId: dupRows[0].id, customerId }
+    }
+  }
+
+  // Staff/manual bookings respect the 3 sims too, so two walk-ins can't silently
+  // double-book the same time. Runs AFTER the double-click dedup above (so a
+  // re-submit returns the existing booking instead of "already full"), and
+  // counts only CONFIRMED reservations (matches online). Pass allowOverbook to
+  // deliberately place a booking on an already-full slot (private event).
+  if (!input.allowOverbook) {
+    try {
+      await assertSeatsAvailable(
+        supabase,
+        input.sessionDate,
+        input.startTime,
+        input.durationHours,
+        input.racerCount
+      )
+    } catch (err) {
+      if (err instanceof AvailabilityBlockedError) {
+        throw new AvailabilityBlockedError(
+          `That time is already full — ${input.racerCount} racer${
+            input.racerCount > 1 ? 's' : ''
+          } won't fit alongside the bookings already on the 3 sims. Pick another time or fewer racers.`
+        )
+      }
+      throw err
     }
   }
 
@@ -1217,6 +1251,24 @@ export async function editBooking(
     throw new BookingEditError(
       `A ${booking.status} booking's date, time, racers, or price can't be changed — only its notes. Money and no-show status are already settled.`
     )
+  }
+
+  // ---- Seats: an edit that moves the booking or adds racers must still fit the
+  // 3 sims (excluding this booking's own seats). Prevents a silent overbook via
+  // edit. Only relevant when the schedule or racer count changed.
+  if (schedulingChanged || racerChanged) {
+    try {
+      await assertSeatsAvailable(supabase, newDate, newStart, newDuration, newRacerCount, bookingId)
+    } catch (err) {
+      if (err instanceof AvailabilityBlockedError) {
+        throw new BookingEditError(
+          `That time is full — ${newRacerCount} racer${
+            newRacerCount > 1 ? 's' : ''
+          } won't fit alongside the other bookings on the 3 sims.`
+        )
+      }
+      throw err
+    }
   }
 
   // ---- Recompute money server-side --------------------------------------
