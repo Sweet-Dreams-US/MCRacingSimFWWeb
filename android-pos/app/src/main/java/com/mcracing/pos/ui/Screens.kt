@@ -95,9 +95,7 @@ fun BookingsScreen(
     tomorrow: String,
     onRefresh: () -> Unit,
     onPick: (BookingDto) -> Unit,
-    onWalkIn: () -> Unit,
     onNewBooking: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     // Group by business day (the API rolls over at 7am, so late-night sessions
     // stay under "today"). ISO date strings compare lexicographically.
@@ -118,27 +116,11 @@ fun BookingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Bookings", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = ApexRed)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Gear → Stripe device settings (WiFi, screen timeout, passcode).
-                // Needed because our kiosk app disables the swipe-to-settings
-                // gesture; Stripe still asks for the admin passcode (07139).
-                TextButton(onClick = onOpenSettings) {
-                    Text("⚙", color = PitGray, fontSize = 22.sp)
-                }
-                OutlinedButton(onClick = onRefresh) { Text("Refresh") }
-            }
+            OutlinedButton(onClick = onRefresh) { Text("Refresh") }
         }
         Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onWalkIn,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = ApexRed),
-        ) { Text("Walk-in / new sale") }
-        Spacer(Modifier.height(8.dp))
-        // Put a session on the books now, take the money later.
+        // Put a session on the books now, take the money later. (Walk-in sales and
+        // device settings now live in the bottom nav — Sell and Settings.)
         OutlinedButton(
             onClick = onNewBooking,
             modifier = Modifier.fillMaxWidth(),
@@ -747,6 +729,16 @@ fun NewBookingScreen(
 
         Text("Day", color = PitGray, fontSize = 11.sp)
         Spacer(Modifier.height(4.dp))
+        // Always show the actual booking date in full — the chips below are just
+        // quick-sets, but a booking launched from the Schedule can be ANY day, so
+        // the date must never be a mystery the owner can't see or silently change.
+        Text(
+            bookingDateLabel(draft.date, today, tomorrow),
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             SelectChip(
                 selected = draft.date == today,
@@ -1013,6 +1005,274 @@ fun ResultScreen(
                 onClick = onDone,
                 colors = ButtonDefaults.buttonColors(containerColor = ApexRed),
             ) { Text(if (success) "Done" else "New Sale") }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bottom navigation — persistent tab bar shown on the Bookings + Schedule
+// "home" tabs so staff always know where they are and can reach any area in one
+// tap (no getting stranded mid-flow). Sell + Settings are actions that leave the
+// tabs; Bookings + Schedule are the selectable views.
+// ---------------------------------------------------------------------------
+@Composable
+fun ReaderBottomNav(
+    current: String, // "bookings" | "schedule"
+    onBookings: () -> Unit,
+    onSchedule: () -> Unit,
+    onSell: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    Column {
+        HorizontalDivider(color = Color(0xFF232323))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            NavTab("Bookings", current == "bookings", Modifier.weight(1f), onBookings)
+            NavTab("Schedule", current == "schedule", Modifier.weight(1f), onSchedule)
+            NavTab("Sell", false, Modifier.weight(1f), onSell)
+            NavTab("Settings", false, Modifier.weight(1f), onSettings)
+        }
+    }
+}
+
+@Composable
+private fun NavTab(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier = modifier.clickable(onClick = onClick).padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            label,
+            color = if (selected) ApexRed else PitGray,
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Schedule tab — a week strip (7 days with session counts + block dots) over a
+// day agenda (sessions + personal blocks for the selected day, time-ordered).
+// Read-at-a-glance so the owner can see the day's shape and where it's open;
+// tapping a session opens it in the Sale flow, and "Add booking" schedules one.
+// ---------------------------------------------------------------------------
+private sealed interface ScheduleItem {
+    val sort: Int
+    data class Booking(val b: BookingDto, override val sort: Int) : ScheduleItem
+    data class Block(val bl: BlockDto, override val sort: Int) : ScheduleItem
+}
+
+// Extended minutes on the noon->2am axis: pre-noon hours are the late-night tail
+// (+24h) so a 1 AM session sorts to the END of its business day. null = whole day.
+private fun extMinutes(time: String?): Int {
+    if (time.isNullOrBlank()) return -1
+    val parts = time.split(":")
+    val h = parts.getOrNull(0)?.toIntOrNull() ?: return -1
+    val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    val raw = h * 60 + m
+    return if (h < 12) raw + 24 * 60 else raw
+}
+
+private fun shiftDate(iso: String, days: Int): String =
+    java.time.LocalDate.parse(iso).plusDays(days.toLong()).toString()
+
+private fun weekRangeLabel(startIso: String, endIso: String): String {
+    val fmt = java.time.format.DateTimeFormatter.ofPattern("MMM d")
+    return "${java.time.LocalDate.parse(startIso).format(fmt)} – ${java.time.LocalDate.parse(endIso).format(fmt)}"
+}
+
+private fun fullDayLabel(iso: String, today: String): String {
+    if (iso == today) return "Today"
+    return java.time.LocalDate.parse(iso)
+        .format(java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d"))
+}
+
+// Full, unambiguous date for the Add-booking screen, e.g. "Today · Sun, Jul 19"
+// or "Sat, Aug 2". Never blank so the owner always sees which day they're booking.
+private fun bookingDateLabel(iso: String, today: String, tomorrow: String): String {
+    if (iso.isBlank()) return "—"
+    val full = java.time.LocalDate.parse(iso)
+        .format(java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d"))
+    return when (iso) {
+        today -> "Today · $full"
+        tomorrow -> "Tomorrow · $full"
+        else -> full
+    }
+}
+
+@Composable
+fun ScheduleScreen(
+    bookings: List<BookingDto>,
+    blocks: List<BlockDto>,
+    today: String,
+    onRefresh: () -> Unit,
+    onPickBooking: (BookingDto) -> Unit,
+    onAddBooking: (String) -> Unit,
+) {
+    // `today` is empty until the first bookings load resolves. Guard before any
+    // LocalDate.parse below (parse("") throws). Offer Refresh so a FAILED initial
+    // load isn't a dead-end spinner — the bottom nav is still visible too.
+    if (today.isBlank()) {
+        Column(
+            Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("Schedule not loaded yet.", color = PitGray)
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+        }
+        return
+    }
+    var weekStart by remember { mutableStateOf(today) }
+    var selected by remember { mutableStateOf(today) }
+    val days = (0..6).map { shiftDate(weekStart, it) }
+
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Schedule", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = ApexRed)
+            OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        // Week window nav.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The reader only holds today-forward data, so paging into the past
+            // would show real bookings as empty/"open". Gate it: no earlier than
+            // the current week.
+            OutlinedButton(
+                onClick = { weekStart = shiftDate(weekStart, -7); selected = weekStart },
+                enabled = weekStart > today,
+            ) { Text("‹") }
+            Text(
+                weekRangeLabel(days.first(), days.last()),
+                color = Color.White,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedButton(onClick = { weekStart = shiftDate(weekStart, 7); selected = weekStart }) { Text("›") }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        // Week strip: 7 tappable day cells.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (d in days) {
+                DayCell(
+                    date = d,
+                    selected = d == selected,
+                    isToday = d == today,
+                    sessionCount = bookings.count { it.sessionDate == d },
+                    hasBlock = blocks.any { it.blockDate == d },
+                    modifier = Modifier.weight(1f),
+                    onClick = { selected = d },
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+
+        val dayBookings = bookings.filter { it.sessionDate == selected }
+        val dayBlocks = blocks.filter { it.blockDate == selected }
+        val dayItems = buildList {
+            dayBookings.forEach { add(ScheduleItem.Booking(it, extMinutes(it.startTime))) }
+            dayBlocks.forEach { add(ScheduleItem.Block(it, extMinutes(it.startTime))) }
+        }.sortedBy { it.sort }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Text(fullDayLabel(selected, today), color = Color.White, fontWeight = FontWeight.Medium)
+            Text(
+                buildString {
+                    append("${dayBookings.size} session${if (dayBookings.size == 1) "" else "s"}")
+                    if (dayBlocks.isNotEmpty()) append(" · ${dayBlocks.size} block${if (dayBlocks.size == 1) "" else "s"}")
+                },
+                color = PitGray,
+                fontSize = 12.sp,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { onAddBooking(selected) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("+ Add booking on ${fullDayLabel(selected, today).lowercase()}") }
+        Spacer(Modifier.height(10.dp))
+
+        if (dayItems.isEmpty()) {
+            Text("Nothing booked — the whole day is open.", color = CompletedGreen)
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 4.dp),
+            ) {
+                items(dayItems) { item ->
+                    when (item) {
+                        is ScheduleItem.Booking -> BookingCard(item.b, today, onPickBooking)
+                        is ScheduleItem.Block -> BlockCard(item.bl)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DayCell(
+    date: String,
+    selected: Boolean,
+    isToday: Boolean,
+    sessionCount: Int,
+    hasBlock: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val d = java.time.LocalDate.parse(date)
+    val dow = d.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.US)
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) ApexRed else Color(0xFF141414),
+        ),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(dow, fontSize = 10.sp, color = if (selected) Color.White else PitGray)
+            Text(
+                d.dayOfMonth.toString(),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isToday && !selected) TelemetryCyan else Color.White,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (sessionCount > 0) {
+                    Text(
+                        sessionCount.toString(),
+                        fontSize = 10.sp,
+                        color = if (selected) Color.White else TelemetryCyan,
+                    )
+                }
+                if (hasBlock) {
+                    Text("●", fontSize = 8.sp, color = if (selected) Color.White else ApexRed)
+                }
+                if (sessionCount == 0 && !hasBlock) {
+                    Text("·", fontSize = 10.sp, color = PitGray)
+                }
+            }
         }
     }
 }

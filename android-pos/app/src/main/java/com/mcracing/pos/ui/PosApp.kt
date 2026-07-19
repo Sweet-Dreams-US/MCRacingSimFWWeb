@@ -3,6 +3,10 @@ package com.mcracing.pos.ui
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,7 +110,7 @@ data class BookingDraft(
     }
 }
 
-private enum class Stage { Bookings, Sale, NewBooking, CustomerConfirm, Processing, Result }
+private enum class Stage { Bookings, Schedule, Sale, NewBooking, CustomerConfirm, Processing, Result }
 
 @Composable
 fun PosApp() {
@@ -341,7 +345,54 @@ fun PosApp() {
         }
     }
 
-    when (stage) {
+    // Open a booking in the Sale flow — prefill the remaining balance (net of any
+    // online discount) so a partly-paid booking is one tap to finish, or the full
+    // discounted total if nothing's been paid. Shared by the Bookings list + Schedule.
+    fun openBookingSale(b: BookingDto) {
+        val remaining = b.remainingCents()
+        val prefill = if (remaining > 0) remaining else b.effectiveNetCents()
+        draft = SaleDraft(
+            amountText = "%.2f".format(prefill / 100.0),
+            description = "${if (b.sessionDate == today) "Today" else b.sessionDate} ${prettyTime(b.startTime)} — ${b.racerCount} racer(s), ${b.durationHours}h",
+            saleType = "booking_income",
+            customerId = b.customerId,
+            customerName = b.customerName,
+            bookingId = b.id,
+            receiptEmail = b.customerEmail,
+            sessionPriceCents = b.sessionPriceCents,
+            netPriceCents = b.netPriceCents,
+            discountAmountCents = b.discountAmountCents,
+            discountCode = b.discountCode,
+            paidCents = b.paidCents,
+            bookingStatus = b.status,
+            racers = b.racers,
+            today = today,
+        )
+        stage = Stage.Sale
+    }
+
+    // "Sell" — start a fresh walk-in sale (no booking attached).
+    fun startWalkInSale() {
+        draft = SaleDraft(today = today)
+        customerQuery = ""
+        customerHits = emptyList()
+        stage = Stage.Sale
+    }
+
+    // "Add booking — no sale yet" for a given day (standard 1 racer / 1 hour price).
+    fun openNewBooking(date: String) {
+        bookingDraft = BookingDraft(
+            date = date,
+            priceText = "%.2f".format(sessionPriceCents(date, 1, 1) / 100.0),
+        )
+        stage = Stage.NewBooking
+    }
+
+    // Tab shell: the active screen fills the space above a persistent bottom nav,
+    // which shows only on the two "home" tabs (Bookings / Schedule) — never mid-sale.
+    Column(Modifier.fillMaxSize()) {
+      Box(Modifier.weight(1f)) {
+        when (stage) {
         Stage.Bookings -> BookingsScreen(
             bookings = bookings,
             blocks = blocks,
@@ -349,47 +400,17 @@ fun PosApp() {
             today = today,
             tomorrow = tomorrow,
             onRefresh = { loadBookings() },
-            onOpenSettings = { openStripeSettings(context) },
-            onPick = { b ->
-                // Prefill the REMAINING balance (net of any online discount) so a
-                // partly-paid booking is one tap to finish; the discounted total
-                // if nothing's been paid yet.
-                val remaining = b.remainingCents()
-                val prefill = if (remaining > 0) remaining else b.effectiveNetCents()
-                draft = SaleDraft(
-                    amountText = "%.2f".format(prefill / 100.0),
-                    description = "${if (b.sessionDate == today) "Today" else b.sessionDate} ${prettyTime(b.startTime)} — ${b.racerCount} racer(s), ${b.durationHours}h",
-                    saleType = "booking_income",
-                    customerId = b.customerId,
-                    customerName = b.customerName,
-                    bookingId = b.id,
-                    receiptEmail = b.customerEmail,
-                    sessionPriceCents = b.sessionPriceCents,
-                    netPriceCents = b.netPriceCents,
-                    discountAmountCents = b.discountAmountCents,
-                    discountCode = b.discountCode,
-                    paidCents = b.paidCents,
-                    bookingStatus = b.status,
-                    racers = b.racers,
-                    today = today,
-                )
-                stage = Stage.Sale
-            },
-            onWalkIn = {
-                draft = SaleDraft(today = today)
-                customerQuery = ""
-                customerHits = emptyList()
-                stage = Stage.Sale
-            },
-            onNewBooking = {
-                // Default to the standard price for 1 racer / 1 hour today.
-                val d = today
-                bookingDraft = BookingDraft(
-                    date = d,
-                    priceText = "%.2f".format(sessionPriceCents(d, 1, 1) / 100.0),
-                )
-                stage = Stage.NewBooking
-            },
+            onPick = { b -> openBookingSale(b) },
+            onNewBooking = { openNewBooking(today) },
+        )
+
+        Stage.Schedule -> ScheduleScreen(
+            bookings = bookings,
+            blocks = blocks,
+            today = today,
+            onRefresh = { loadBookings() },
+            onPickBooking = { b -> openBookingSale(b) },
+            onAddBooking = { date -> openNewBooking(date) },
         )
 
         Stage.NewBooking -> NewBookingScreen(
@@ -470,5 +491,16 @@ fun PosApp() {
                 stage = Stage.Bookings
             },
         )
+        }
+      }
+      if (stage == Stage.Bookings || stage == Stage.Schedule) {
+        ReaderBottomNav(
+            current = if (stage == Stage.Schedule) "schedule" else "bookings",
+            onBookings = { stage = Stage.Bookings },
+            onSchedule = { stage = Stage.Schedule },
+            onSell = { startWalkInSale() },
+            onSettings = { openStripeSettings(context) },
+        )
+      }
     }
 }
