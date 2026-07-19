@@ -165,7 +165,7 @@ export default async function CampaignDetailPage({
             {campaign.cta_label && campaign.cta_url && (
               <div>
                 <p className="telemetry-text text-xs text-pit-gray uppercase tracking-wider">Button</p>
-                <p className="telemetry-text text-grid-white">
+                <p className="telemetry-text text-grid-white break-all">
                   {campaign.cta_label} → {campaign.cta_url}
                 </p>
               </div>

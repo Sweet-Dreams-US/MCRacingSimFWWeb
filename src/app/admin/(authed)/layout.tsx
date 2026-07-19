@@ -57,11 +57,18 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-asphalt text-grid-white">
+    // overflow-x-clip is a safety net against any child that would push the page
+    // wider than the phone screen. Unlike overflow-x-hidden it creates no scroll
+    // container, so sticky headers/toolbars inside pages keep working. Per-page
+    // wide content (tables, charts) still scrolls inside its own overflow-x-auto.
+    <div className="min-h-screen bg-asphalt text-grid-white overflow-x-clip">
       <AdminSidebar fullName={adminUser.full_name} role={adminUser.role} />
       {/* Push content right of the 16rem sidebar on desktop; clear the 56px
-          mobile top bar with pt-16 below lg. */}
-      <main className="lg:pl-64 pt-16 lg:pt-0 min-h-screen">{children}</main>
+          mobile top bar with pt-16 below lg. min-w-0 lets wide flex/grid
+          children shrink instead of forcing the page wider. */}
+      <main className="lg:pl-64 pt-16 lg:pt-0 min-h-screen min-w-0 overflow-x-clip">
+        {children}
+      </main>
     </div>
   )
 }

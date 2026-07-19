@@ -304,7 +304,7 @@ function BookingRowCard({ b }: { b: BookingRow }) {
         {/* Customer */}
         <div className="col-span-12 sm:col-span-4">
           <p className="telemetry-text text-grid-white">{customerName}</p>
-          <p className="telemetry-text text-xs text-pit-gray">{b.customer?.email}</p>
+          <p className="telemetry-text text-xs text-pit-gray break-all">{b.customer?.email}</p>
           {b.customer?.phone && (
             <p className="telemetry-text text-xs text-pit-gray">{b.customer.phone}</p>
           )}

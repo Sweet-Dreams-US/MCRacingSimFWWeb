@@ -136,7 +136,7 @@ export default function ContactInbox({ initial }: { initial: InquiryRow[] }) {
               </div>
 
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-                <a href={`mailto:${i.email}`} className="telemetry-text text-sm text-telemetry-cyan hover:underline">
+                <a href={`mailto:${i.email}`} className="telemetry-text text-sm text-telemetry-cyan hover:underline break-all">
                   {i.email}
                 </a>
                 {i.phone && (

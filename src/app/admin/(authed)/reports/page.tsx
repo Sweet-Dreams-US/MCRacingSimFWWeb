@@ -305,7 +305,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       </header>
 
       {/* ---- Headline stat cards ---- */}
-      <section className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           label="Gross Revenue"
           valueCents={grossRevenueCents}
@@ -386,6 +386,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           {revenueBySource.every((r) => r.cents === 0) ? (
             <EmptyRow message="No revenue this period." />
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-left">
               <tbody>
                 {revenueBySource.map((r) => (
@@ -406,6 +407,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </BreakdownCard>
 
@@ -418,6 +420,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           {revenueByMethod.every((m) => m.cents === 0) ? (
             <EmptyRow message="No income this period." />
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-left">
               <tbody>
                 {revenueByMethod.map((m) => (
@@ -439,6 +442,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </BreakdownCard>
 
@@ -451,6 +455,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           {expenseCategories.length === 0 ? (
             <EmptyRow message="No expenses this period." />
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-left">
               <tbody>
                 {expenseCategories.map((c) => (
@@ -473,6 +478,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </BreakdownCard>
 
@@ -485,6 +491,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           {payoutBreakdown.every((p) => p.cents === 0) ? (
             <EmptyRow message="No payouts this period." />
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-left">
               <tbody>
                 {payoutBreakdown.map((p) => (
@@ -502,6 +509,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </BreakdownCard>
       </div>
@@ -548,6 +556,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </div>
 
         {marketingActiveBrackets.length > 0 ? (
+          <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-white/10">
@@ -587,6 +596,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               ))}
             </tbody>
           </table>
+          </div>
         ) : (
           <p className="telemetry-text text-sm text-pit-gray italic">
             No payout — gross revenue is within the free band ($0 – $4,500).

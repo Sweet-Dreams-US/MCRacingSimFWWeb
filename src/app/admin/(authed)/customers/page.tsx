@@ -122,7 +122,7 @@ export default async function CustomersPage({ searchParams }: PageProps) {
           </p>
         </div>
       ) : (
-        <div className="bg-asphalt-dark border border-white/5">
+        <div className="bg-asphalt-dark border border-white/5 overflow-x-auto">
           <table className="w-full">
             <thead className="border-b border-white/10">
               <tr className="text-left">

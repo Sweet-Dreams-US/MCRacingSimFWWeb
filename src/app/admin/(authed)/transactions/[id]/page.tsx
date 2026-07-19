@@ -17,7 +17,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
       <span className="telemetry-text text-xs text-pit-gray uppercase tracking-wider shrink-0">
         {label}
       </span>
-      <span className="telemetry-text text-sm text-grid-white text-right break-words">{children}</span>
+      <span className="telemetry-text text-sm text-grid-white text-right break-words min-w-0">{children}</span>
     </div>
   )
 }

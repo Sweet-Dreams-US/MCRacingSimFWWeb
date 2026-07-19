@@ -108,7 +108,7 @@ export default async function BookingDetailPage({
           >
             ← Back to bookings
           </Link>
-          <h1 className="racing-headline text-3xl text-grid-white mt-2">
+          <h1 className="racing-headline text-3xl text-grid-white mt-2 break-all">
             {booking.id}
           </h1>
           <p className="telemetry-text text-sm text-pit-gray mt-1">
@@ -174,7 +174,7 @@ export default async function BookingDetailPage({
                 >
                   {customerName}
                 </Link>
-                <p className="telemetry-text text-sm text-pit-gray">{customer.email}</p>
+                <p className="telemetry-text text-sm text-pit-gray break-all">{customer.email}</p>
                 {customer.phone && (
                   <p className="telemetry-text text-sm text-pit-gray">{customer.phone}</p>
                 )}

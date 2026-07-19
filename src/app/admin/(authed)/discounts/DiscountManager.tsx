@@ -180,8 +180,8 @@ export default function DiscountManager({ initialCodes }: { initialCodes: Discou
             <p className="telemetry-text text-pit-gray">No codes yet.</p>
           </div>
         ) : (
-          <div className="bg-asphalt-dark border border-white/5">
-            <table className="w-full">
+          <div className="bg-asphalt-dark border border-white/5 overflow-x-auto">
+            <table className="w-full min-w-[640px]">
               <thead className="border-b border-white/10">
                 <tr className="text-left">
                   <th className="p-3 telemetry-text text-xs text-pit-gray uppercase tracking-wider">Code</th>

@@ -186,7 +186,7 @@ export default function CustomerAcquisitionCharts({ customers }: CustomerAcquisi
             Customer Source & Acquisition Channel Insights
           </h2>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4">
           <div className="border-l border-white/10 pl-4">
             <p className="telemetry-text text-xs text-pit-gray uppercase">Total Customers</p>
             <p className="racing-headline text-2xl text-grid-white">{totalCustomers}</p>
@@ -448,6 +448,7 @@ export default function CustomerAcquisitionCharts({ customers }: CustomerAcquisi
           <h3 className="racing-headline text-sm text-grid-white">Channel Comparison Grid</h3>
           <span className="telemetry-text text-[10px] text-pit-gray">HOVER ROWS TO HIGHLIGHT IN CHARTS</span>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-white/10 bg-white/[0.01]">
@@ -508,6 +509,7 @@ export default function CustomerAcquisitionCharts({ customers }: CustomerAcquisi
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

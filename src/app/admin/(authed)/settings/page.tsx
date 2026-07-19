@@ -61,7 +61,7 @@ export default async function SettingsPage() {
             For reference. Pricing, hours, and fees are configured in code — ask your developer to change them.
           </p>
         </div>
-        <div className="bg-asphalt-dark border border-white/5">
+        <div className="bg-asphalt-dark border border-white/5 overflow-x-auto">
           <table className="w-full">
             <tbody>
               {businessInfo.map(([label, value]) => (

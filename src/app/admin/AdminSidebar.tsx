@@ -263,9 +263,10 @@ export default function AdminSidebar({ fullName, role }: AdminSidebarProps) {
           </button>
         </div>
 
-        {/* Mobile drawer */}
+        {/* Mobile drawer — capped to the viewport height and scrollable so all
+            items + the user block stay reachable on a short phone screen. */}
         <div
-          className={`absolute top-full left-0 right-0 bg-asphalt-dark border-b border-white/10 transition-all duration-300 ${
+          className={`absolute top-full left-0 right-0 max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain bg-asphalt-dark border-b border-white/10 transition-all duration-300 ${
             isMobileOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
           }`}
         >

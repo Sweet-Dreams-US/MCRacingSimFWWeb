@@ -91,7 +91,7 @@ export default function NewPartyForm() {
           <label className={labelClass}>Deposit link (to share directly)</label>
           <input readOnly value={result.payUrl} className={inputClass} onFocus={(e) => e.target.select()} />
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <Link
             href="/admin/parties"
             className="racing-headline text-sm uppercase tracking-wider bg-apex-red hover:bg-apex-red-dark text-grid-white px-6 py-3 transition-colors"
