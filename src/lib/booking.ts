@@ -1039,14 +1039,29 @@ export async function createInviteBooking(
     throw new Error('Could not generate a unique booking ID — please try again.')
   }
 
-  // 3. Slot-1 racer.
-  const { error: racersError } = await supabase.from('booking_racers').insert({
-    booking_id: bookingId,
-    slot: 1,
-    name: fullName,
-    email: hasEmail ? emailLower : null,
-    phone: input.phone?.trim() || null,
-  })
+  // 3. One racer row per seat. Slot 1 is the named booker; the remaining seats
+  // are unnamed placeholders ("Racer 2"…) because admin/invite bookings don't
+  // collect per-racer names. Without these, a 2- or 3-racer booking would show
+  // only one racer and the no-show settle screen couldn't account for the rest.
+  const racerRows: {
+    booking_id: string
+    slot: number
+    name: string
+    email: string | null
+    phone: string | null
+  }[] = [
+    {
+      booking_id: bookingId,
+      slot: 1,
+      name: fullName,
+      email: hasEmail ? emailLower : null,
+      phone: input.phone?.trim() || null,
+    },
+  ]
+  for (let slot = 2; slot <= input.racerCount; slot++) {
+    racerRows.push({ booking_id: bookingId, slot, name: `Racer ${slot}`, email: null, phone: null })
+  }
+  const { error: racersError } = await supabase.from('booking_racers').insert(racerRows)
   if (racersError) {
     await supabase.from('bookings').delete().eq('id', bookingId)
     throw new Error(`Racer insert failed: ${racersError.message}`)
