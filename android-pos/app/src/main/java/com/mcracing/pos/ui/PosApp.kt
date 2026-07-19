@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcracing.pos.net.ApiClient
+import com.mcracing.pos.net.BlockDto
 import com.mcracing.pos.net.BookingActionRequest
 import com.mcracing.pos.net.BookingDto
 import com.mcracing.pos.net.CashPaymentRequest
@@ -116,6 +117,7 @@ fun PosApp() {
 
     var stage by remember { mutableStateOf(Stage.Bookings) }
     var bookings by remember { mutableStateOf<List<BookingDto>>(emptyList()) }
+    var blocks by remember { mutableStateOf<List<BlockDto>>(emptyList()) }
     var today by remember { mutableStateOf("") }
     var tomorrow by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -143,6 +145,7 @@ fun PosApp() {
             try {
                 val resp = ApiClient.service.bookings()
                 bookings = resp.bookings
+                blocks = resp.blocks
                 today = resp.today
                 tomorrow = resp.tomorrow
             } catch (_: Exception) {
@@ -341,6 +344,7 @@ fun PosApp() {
     when (stage) {
         Stage.Bookings -> BookingsScreen(
             bookings = bookings,
+            blocks = blocks,
             loading = loading,
             today = today,
             tomorrow = tomorrow,

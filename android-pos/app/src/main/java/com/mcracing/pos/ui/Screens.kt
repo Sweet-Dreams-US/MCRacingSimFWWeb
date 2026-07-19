@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mcracing.pos.net.BlockDto
 import com.mcracing.pos.net.BookingDto
 import com.mcracing.pos.net.CustomerHit
 import com.mcracing.pos.ui.theme.ApexRed
@@ -88,6 +89,7 @@ fun bookingStatusLabel(status: String): String = when (status) {
 @Composable
 fun BookingsScreen(
     bookings: List<BookingDto>,
+    blocks: List<BlockDto>,
     loading: Boolean,
     today: String,
     tomorrow: String,
@@ -102,6 +104,12 @@ fun BookingsScreen(
     val todayList = bookings.filter { it.sessionDate == today }
     val tomorrowList = bookings.filter { it.sessionDate == tomorrow }
     val upcomingList = bookings.filter { it.sessionDate > tomorrow }
+
+    // Blocks = personal appointments / closures for the same days. Shown flagged
+    // (red, not tappable) so staff don't try to sell that time.
+    val todayBlocks = blocks.filter { it.blockDate == today }
+    val tomorrowBlocks = blocks.filter { it.blockDate == tomorrow }
+    val upcomingBlocks = blocks.filter { it.blockDate > tomorrow }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -145,21 +153,24 @@ fun BookingsScreen(
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
                 item { SectionHeader("Today (${todayList.size})") }
-                if (todayList.isEmpty()) {
-                    item { Text("No bookings today.", color = PitGray) }
+                if (todayList.isEmpty() && todayBlocks.isEmpty()) {
+                    item { Text("Nothing on the schedule today.", color = PitGray) }
                 }
+                items(todayBlocks, key = { "block-${it.id}" }) { bl -> BlockCard(bl) }
                 items(todayList, key = { it.id }) { b -> BookingCard(b, today, onPick) }
 
                 item { Spacer(Modifier.height(8.dp)) }
                 item { SectionHeader("Tomorrow (${tomorrowList.size})") }
-                if (tomorrowList.isEmpty()) {
-                    item { Text("No bookings tomorrow.", color = PitGray) }
+                if (tomorrowList.isEmpty() && tomorrowBlocks.isEmpty()) {
+                    item { Text("Nothing on the schedule tomorrow.", color = PitGray) }
                 }
+                items(tomorrowBlocks, key = { "block-${it.id}" }) { bl -> BlockCard(bl) }
                 items(tomorrowList, key = { it.id }) { b -> BookingCard(b, today, onPick) }
 
-                if (upcomingList.isNotEmpty()) {
+                if (upcomingList.isNotEmpty() || upcomingBlocks.isNotEmpty()) {
                     item { Spacer(Modifier.height(8.dp)) }
                     item { SectionHeader("Upcoming (${upcomingList.size})") }
+                    items(upcomingBlocks, key = { "block-${it.id}" }) { bl -> BlockCard(bl) }
                     items(upcomingList, key = { it.id }) { b -> BookingCard(b, today, onPick) }
                 }
             }
@@ -241,6 +252,41 @@ private fun BookingCard(b: BookingDto, today: String, onPick: (BookingDto) -> Un
             } else {
                 Text("Paid in full", color = CompletedGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
+        }
+    }
+}
+
+// A staff-set availability block — NOT a sellable session, so the card is not
+// clickable and is tinted red so staff know that time is held (personal
+// appointment / closure). Whole-day blocks have null start/end.
+@Composable
+private fun BlockCard(bl: BlockDto) {
+    val wholeDay = bl.startTime.isNullOrBlank() || bl.endTime.isNullOrBlank()
+    val timeLabel =
+        if (wholeDay) "All day" else "${prettyTime(bl.startTime!!)} – ${prettyTime(bl.endTime!!)}"
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1416)),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    "🚫 BLOCKED — PERSONAL",
+                    color = ApexRed,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(timeLabel, color = ApexRed, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                bl.reason ?: "Unavailable",
+                color = Color.White,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text("Sims held off the booking calendar", color = PitGray, fontSize = 12.sp)
         }
     }
 }

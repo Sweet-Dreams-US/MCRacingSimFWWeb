@@ -975,6 +975,21 @@ export async function createInviteBooking(
     }
   }
 
+  // A booking can never be placed on a blocked-off (personal/closed) window —
+  // enforced UNCONDITIONALLY, even for allowOverbook private events. Overbooking
+  // is about squeezing extra racers onto the sims, not overriding the owner's
+  // personal appointment / closure; remove the block first if it no longer holds.
+  try {
+    await assertSlotNotBlocked(supabase, input.sessionDate, input.startTime, input.durationHours)
+  } catch (err) {
+    if (err instanceof AvailabilityBlockedError) {
+      throw new AvailabilityBlockedError(
+        'That time is blocked off on the availability calendar (personal / closed). Remove the block first.'
+      )
+    }
+    throw err
+  }
+
   // 2. Insert the confirmed, card-less booking under a human-friendly
   // MC-<NAME><MMDD> id, retrying with a numeric suffix on PK collision.
   const inviteRow = {
@@ -1265,6 +1280,19 @@ export async function editBooking(
           `That time is full — ${newRacerCount} racer${
             newRacerCount > 1 ? 's' : ''
           } won't fit alongside the other bookings on the 3 sims.`
+        )
+      }
+      throw err
+    }
+  }
+  if (schedulingChanged) {
+    // Can't move a booking onto a blocked-off (personal / closed) window.
+    try {
+      await assertSlotNotBlocked(supabase, newDate, newStart, newDuration)
+    } catch (err) {
+      if (err instanceof AvailabilityBlockedError) {
+        throw new BookingEditError(
+          'That time is blocked off on the availability calendar. Remove the block first.'
         )
       }
       throw err

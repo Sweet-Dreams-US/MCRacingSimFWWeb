@@ -58,6 +58,23 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Staff-set availability blocks (personal appointments / closures) for the
+  // same window. Sent as a separate array so the reader can show them flagged
+  // alongside bookings — the sims are held off the calendar during these.
+  // (Additive field: older app builds that don't read it simply ignore it.)
+  const { data: blockData } = await supabase
+    .from('availability_blocks')
+    .select('id, block_date, start_time, end_time, reason')
+    .gte('block_date', today)
+    .order('block_date', { ascending: true })
+  const blocks = (blockData ?? []).map((bl) => ({
+    id: bl.id,
+    blockDate: bl.block_date,
+    startTime: bl.start_time, // null = whole day
+    endTime: bl.end_time,
+    reason: bl.reason ?? null,
+  }))
+
   const bookings = (data ?? []).map((b) => {
     const c = Array.isArray(b.customer) ? b.customer[0] ?? null : b.customer
     const discountCents = b.discount_amount_cents ?? 0
@@ -89,5 +106,5 @@ export async function GET(request: NextRequest) {
     }
   })
 
-  return NextResponse.json({ bookings, today, tomorrow })
+  return NextResponse.json({ bookings, blocks, today, tomorrow })
 }

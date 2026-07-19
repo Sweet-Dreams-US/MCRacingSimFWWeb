@@ -46,8 +46,23 @@ data class BookingDto(
     fun effectiveNetCents(): Long = if (netPriceCents > 0) netPriceCents else sessionPriceCents
 }
 
+// A staff-set availability block (personal appointment / closure). The sims are
+// held off the booking calendar during this window; shown flagged on the
+// bookings screen so staff know NOT to sell that time. startTime/endTime are
+// null for a whole-day block.
+data class BlockDto(
+    val id: String,
+    val blockDate: String,
+    val startTime: String? = null,
+    val endTime: String? = null,
+    val reason: String? = null,
+)
+
 data class BookingsResponse(
     val bookings: List<BookingDto>,
+    // Additive field (older builds ignore it via Gson). Personal-appointment /
+    // closure blocks for the same window as the bookings.
+    val blocks: List<BlockDto> = emptyList(),
     val today: String,
     val tomorrow: String = "",
 )

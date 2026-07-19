@@ -262,6 +262,67 @@ export async function createBookingCalendarEvent(
   return response.data.id ?? null
 }
 
+/** Next calendar day for "YYYY-MM-DD" (Google all-day end.date is exclusive). */
+function nextDayISO(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Raw minutes-since-midnight for "HH:MM"/"HH:MM:SS" (no extended-minutes wrap). */
+function rawMinutes(time: string): number {
+  const [h = 0, m = 0] = time.split(':').map(Number)
+  return h * 60 + m
+}
+
+/**
+ * Create a Google Calendar event for an availability BLOCK — a staff-set
+ * "personal appointment" / closure, NOT a customer booking. Whole-day blocks
+ * (null times) become an all-day event; timed blocks span their window (with
+ * past-midnight handling). Distinct red color + a "Blocked" title so it never
+ * looks like a paying session. Returns the event id (or null if calendar is
+ * unconfigured). THROWS on real API failures — callers should .catch() it so a
+ * calendar hiccup never blocks the block itself.
+ */
+export async function createBlockCalendarEvent(input: {
+  blockId: string
+  blockDate: string
+  startTime: string | null // null (with endTime null) = whole day
+  endTime: string | null
+  reason: string | null
+}): Promise<string | null> {
+  const calendar = getCalendarClient()
+  if (!calendar) return null
+
+  const label = input.reason?.trim() || 'Unavailable'
+  const wholeDay = !input.startTime || !input.endTime
+
+  const event: calendar_v3.Schema$Event = {
+    summary: `🚫 Blocked — ${label}`,
+    description: 'Availability block (staff-set, not a customer booking). This time is closed to online booking.',
+    colorId: '11', // tomato/red — obviously not a booking
+    extendedProperties: { private: { block_id: input.blockId, source: 'block' } },
+  }
+
+  if (wholeDay) {
+    event.start = { date: input.blockDate }
+    event.end = { date: nextDayISO(input.blockDate) } // end.date is exclusive
+  } else {
+    const start = input.startTime as string
+    const end = input.endTime as string
+    // A block whose end wraps past midnight (e.g. 23:00 → 01:00) ends next day.
+    const endDate = rawMinutes(end) <= rawMinutes(start) ? nextDayISO(input.blockDate) : input.blockDate
+    event.start = toCalendarDateTime(input.blockDate, start)
+    event.end = toCalendarDateTime(endDate, end)
+  }
+
+  const response = await calendar.events.insert({
+    calendarId: getCalendarId(),
+    requestBody: event,
+  })
+  return response.data.id ?? null
+}
+
 /**
  * Update an existing booking calendar event (e.g. reschedule, status change).
  * Returns true on success, false if calendar isn't configured.

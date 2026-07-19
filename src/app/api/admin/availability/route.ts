@@ -8,6 +8,7 @@ import {
   windowsConflict,
   blockConflictsWithBooking,
 } from '@/lib/availability'
+import { createBlockCalendarEvent } from '@/lib/calendar'
 
 export const runtime = 'nodejs'
 
@@ -183,6 +184,27 @@ export async function POST(request: NextRequest) {
       { success: false, error: `Create failed: ${error?.message ?? 'unknown'}` },
       { status: 500 }
     )
+  }
+
+  // Mirror the block onto Google Calendar as a "🚫 Blocked" event and remember
+  // its id so we can remove it on delete. Best-effort — a calendar hiccup must
+  // never fail the block itself.
+  try {
+    const eventId = await createBlockCalendarEvent({
+      blockId: inserted.id,
+      blockDate,
+      startTime,
+      endTime,
+      reason: body.reason?.trim() || null,
+    })
+    if (eventId) {
+      await supabase
+        .from('availability_blocks')
+        .update({ google_calendar_event_id: eventId })
+        .eq('id', inserted.id)
+    }
+  } catch (err) {
+    console.error(`Block calendar event failed for ${inserted.id}:`, err)
   }
 
   return NextResponse.json({ success: true, id: inserted.id })

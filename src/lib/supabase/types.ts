@@ -57,6 +57,7 @@ export type Database = {
           created_at: string
           created_by_user_id: string | null
           end_time: string | null
+          google_calendar_event_id: string | null
           id: string
           reason: string | null
           start_time: string | null
@@ -66,6 +67,7 @@ export type Database = {
           created_at?: string
           created_by_user_id?: string | null
           end_time?: string | null
+          google_calendar_event_id?: string | null
           id?: string
           reason?: string | null
           start_time?: string | null
@@ -75,6 +77,7 @@ export type Database = {
           created_at?: string
           created_by_user_id?: string | null
           end_time?: string | null
+          google_calendar_event_id?: string | null
           id?: string
           reason?: string | null
           start_time?: string | null
