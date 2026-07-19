@@ -25,8 +25,14 @@ import {
   type TransactionType,
   type PaymentMethod,
 } from '@/lib/accounting'
+import { summarizeTransactions, bucketKey } from '@/lib/transaction-summary'
 
 const PAGE_SIZE = 50
+
+// Cap on the rollup fetch (matches the reports page). A tiny venue is nowhere
+// near this; if a filtered view ever exceeds it, the breakdown covers the
+// newest 10k rows and we say so.
+const SUMMARY_FETCH_CAP = 10000
 
 interface PageProps {
   searchParams: Promise<{
@@ -91,22 +97,46 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   if (to) dataQuery = dataQuery.lte('occurred_on', to)
   if (qTrim) dataQuery = dataQuery.ilike('description', `%${qTrim}%`)
 
-  const [{ count, error: countError }, { data: rows, error: dataError }] =
-    await Promise.all([
-      countQuery,
-      dataQuery
-        .order('occurred_on', { ascending: false })
-        .order('created_at', { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1),
-    ])
+  // Rollup query: the SAME filters, but the whole matching set (not just this
+  // page), only the columns we need to tally. Powers the by-month/week
+  // breakdown and the inline per-week dividers, so those totals reflect every
+  // matching transaction regardless of which page you're on.
+  let summaryQuery = supabase
+    .from('transactions')
+    .select('occurred_on, amount_cents')
+    .is('soft_deleted_at', null)
+  if (type) summaryQuery = summaryQuery.eq('type', type)
+  if (paymentMethod) summaryQuery = summaryQuery.eq('payment_method', paymentMethod)
+  if (from) summaryQuery = summaryQuery.gte('occurred_on', from)
+  if (to) summaryQuery = summaryQuery.lte('occurred_on', to)
+  if (qTrim) summaryQuery = summaryQuery.ilike('description', `%${qTrim}%`)
 
-  if (countError || dataError) {
+  const [
+    { count, error: countError },
+    { data: rows, error: dataError },
+    { data: summaryRows, error: summaryError },
+  ] = await Promise.all([
+    countQuery,
+    dataQuery
+      .order('occurred_on', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1),
+    summaryQuery
+      // Same ordering as the ledger so, in the (years-away) event the 10k cap
+      // is hit, the boundary is cut deterministically at a row edge rather than
+      // mid-date.
+      .order('occurred_on', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(SUMMARY_FETCH_CAP),
+  ])
+
+  if (countError || dataError || summaryError) {
     return (
       <div className="px-6 py-8 lg:px-10 lg:py-10 max-w-7xl mx-auto">
         <div className="bg-apex-red/10 border border-apex-red/30 p-4">
           <p className="telemetry-text text-apex-red">
             Failed to load transactions:{' '}
-            {countError?.message ?? dataError?.message}
+            {countError?.message ?? dataError?.message ?? summaryError?.message}
           </p>
         </div>
       </div>
@@ -116,6 +146,11 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
   const total = count ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const transactions = rows ?? []
+
+  // Roll the full filtered set into months → weeks for the breakdown panel and
+  // the inline per-week dividers in the ledger below.
+  const summary = summarizeTransactions(summaryRows ?? [])
+  const summaryCapped = (summaryRows?.length ?? 0) >= SUMMARY_FETCH_CAP
 
   // Build a "?...&page=N" link preserving existing filters.
   function pageHref(n: number): string {
@@ -128,6 +163,115 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
     if (n > 1) p.set('page', String(n))
     const qs = p.toString()
     return qs ? `?${qs}` : '?'
+  }
+
+  // Build the ledger body, inserting a per-week divider row whenever the
+  // (month, week) bucket changes as we walk this page newest-first. Each
+  // divider shows the FULL clipped-week total from the rollup (weekIndex), so
+  // it stays accurate even when a week is split across pages.
+  const ledgerNodes: JSX.Element[] = []
+  let prevBucket: string | null = null
+  for (const t of transactions) {
+    const key = bucketKey(t.occurred_on)
+    if (key !== prevBucket) {
+      const wt = summary.weekIndex.get(key)
+      ledgerNodes.push(
+        <tr
+          key={`wk-${key}`}
+          className="bg-asphalt-dark/80 border-y border-telemetry-cyan/20"
+        >
+          <td colSpan={5} className="px-4 py-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="flex-1 min-w-[140px] flex flex-wrap items-baseline gap-x-2">
+                <span className="telemetry-text text-xs text-telemetry-cyan uppercase tracking-wider">
+                  Week of {wt?.rangeLabel ?? formatDate(t.occurred_on)}
+                </span>
+                {wt && (
+                  <span className="telemetry-text text-[10px] text-pit-gray uppercase tracking-wider">
+                    whole-week total
+                  </span>
+                )}
+              </span>
+              {wt && (
+                <>
+                  <span className="telemetry-text text-[11px] text-pit-gray tabular-nums">
+                    {wt.count} txn{wt.count === 1 ? '' : 's'}
+                  </span>
+                  {wt.inCents > 0 && (
+                    <span className="telemetry-text text-[11px] text-green-400 tabular-nums">
+                      In {formatDollars(wt.inCents)}
+                    </span>
+                  )}
+                  {wt.outCents > 0 && (
+                    <span className="telemetry-text text-[11px] text-apex-red tabular-nums">
+                      Out {formatDollars(-wt.outCents)}
+                    </span>
+                  )}
+                  <span
+                    className={`telemetry-text text-xs font-semibold tabular-nums ${
+                      wt.netCents >= 0 ? 'text-green-400' : 'text-apex-red'
+                    }`}
+                  >
+                    Net {formatDollars(wt.netCents)}
+                  </span>
+                </>
+              )}
+            </div>
+          </td>
+        </tr>
+      )
+      prevBucket = key
+    }
+    const isPositive = t.amount_cents >= 0
+    ledgerNodes.push(
+      <tr
+        key={t.id}
+        className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.02]"
+      >
+        <td className="p-4">
+          <Link
+            href={`/admin/transactions/${t.id}`}
+            className="telemetry-text text-sm text-pit-gray hover:text-apex-red"
+          >
+            {formatDate(t.occurred_on)}
+          </Link>
+        </td>
+        <td className="p-4">
+          <Link
+            href={`/admin/transactions/${t.id}`}
+            className="telemetry-text text-sm text-grid-white hover:text-apex-red"
+          >
+            {formatTransactionType(t.type)}
+          </Link>
+        </td>
+        <td className="p-4 max-w-md">
+          <Link
+            href={`/admin/transactions/${t.id}`}
+            className="block telemetry-text text-sm text-grid-white hover:text-apex-red truncate"
+            title={t.description}
+          >
+            {t.description}
+          </Link>
+          {t.vendor && (
+            <p className="telemetry-text text-xs text-pit-gray truncate">
+              {t.vendor}
+            </p>
+          )}
+        </td>
+        <td className="p-4">
+          <PaymentMethodBadge method={t.payment_method} />
+        </td>
+        <td className="p-4 text-right">
+          <span
+            className={`telemetry-text text-sm font-semibold ${
+              isPositive ? 'text-green-400' : 'text-apex-red'
+            }`}
+          >
+            {formatDollars(t.amount_cents)}
+          </span>
+        </td>
+      </tr>
+    )
   }
 
   return (
@@ -161,6 +305,120 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
         initialQ={q}
       />
 
+      {/* Weekly / monthly breakdown — the digest above the raw ledger. Each
+          month is collapsible (native <details>); the newest is open. */}
+      {summary.months.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div>
+              <p className="telemetry-text text-xs text-telemetry-cyan uppercase tracking-widest mb-1">
+                // Weekly Breakdown
+              </p>
+              <h2 className="racing-headline text-xl lg:text-2xl text-grid-white">
+                By Month &amp; Week
+              </h2>
+            </div>
+            <p className="telemetry-text text-[10px] text-pit-gray uppercase tracking-wider">
+              Weeks run Mon–Sun · in / out / net
+              {summaryCapped && ' · newest 10k rows'}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {summary.months.map((m, i) => (
+              <details
+                key={`${m.year}-${m.month}`}
+                open={i === 0}
+                className="group bg-asphalt-dark border border-white/5 overflow-hidden"
+              >
+                <summary className="cursor-pointer list-none select-none px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02]">
+                  <span
+                    className="text-pit-gray text-[10px] transition-transform group-open:rotate-90"
+                    aria-hidden="true"
+                  >
+                    ▶
+                  </span>
+                  <span className="racing-headline text-base text-grid-white flex-1">
+                    {m.label}
+                  </span>
+                  <span className="hidden sm:inline telemetry-text text-xs text-pit-gray tabular-nums">
+                    {m.count} txn{m.count === 1 ? '' : 's'}
+                  </span>
+                  {m.inCents > 0 && (
+                    <span className="hidden md:inline telemetry-text text-xs text-green-400 tabular-nums">
+                      In {formatDollars(m.inCents)}
+                    </span>
+                  )}
+                  {m.outCents > 0 && (
+                    <span className="hidden md:inline telemetry-text text-xs text-apex-red tabular-nums">
+                      Out {formatDollars(-m.outCents)}
+                    </span>
+                  )}
+                  <span
+                    className={`telemetry-text text-sm font-semibold tabular-nums w-24 text-right ${
+                      m.netCents >= 0 ? 'text-green-400' : 'text-apex-red'
+                    }`}
+                  >
+                    {formatDollars(m.netCents)}
+                  </span>
+                </summary>
+                <div className="overflow-x-auto border-t border-white/10">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left bg-asphalt-dark/60">
+                        <th className="px-4 py-2 telemetry-text text-[10px] text-pit-gray uppercase tracking-wider font-normal">
+                          Week
+                        </th>
+                        <th className="px-4 py-2 telemetry-text text-[10px] text-pit-gray uppercase tracking-wider font-normal text-right">
+                          Txns
+                        </th>
+                        <th className="px-4 py-2 telemetry-text text-[10px] text-pit-gray uppercase tracking-wider font-normal text-right">
+                          In
+                        </th>
+                        <th className="px-4 py-2 telemetry-text text-[10px] text-pit-gray uppercase tracking-wider font-normal text-right">
+                          Out
+                        </th>
+                        <th className="px-4 py-2 telemetry-text text-[10px] text-pit-gray uppercase tracking-wider font-normal text-right">
+                          Net
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {m.weeks.map((w) => (
+                        <tr
+                          key={w.mondayISO}
+                          className="border-b border-white/5 last:border-b-0"
+                        >
+                          <td className="px-4 py-2 telemetry-text text-sm text-grid-white whitespace-nowrap">
+                            {w.rangeLabel}
+                          </td>
+                          <td className="px-4 py-2 telemetry-text text-xs text-pit-gray text-right tabular-nums">
+                            {w.count}
+                          </td>
+                          <td className="px-4 py-2 telemetry-text text-sm text-right tabular-nums text-green-400">
+                            {w.inCents > 0 ? formatDollars(w.inCents) : '—'}
+                          </td>
+                          <td className="px-4 py-2 telemetry-text text-sm text-right tabular-nums text-apex-red">
+                            {w.outCents > 0 ? formatDollars(-w.outCents) : '—'}
+                          </td>
+                          <td
+                            className={`px-4 py-2 telemetry-text text-sm text-right tabular-nums font-semibold ${
+                              w.netCents >= 0 ? 'text-green-400' : 'text-apex-red'
+                            }`}
+                          >
+                            {formatDollars(w.netCents)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
+      )}
+
       {transactions.length === 0 ? (
         <div className="bg-asphalt-dark border border-white/5 p-12 text-center">
           <p className="telemetry-text text-pit-gray">
@@ -189,60 +447,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                 </th>
               </tr>
             </thead>
-            <tbody>
-              {transactions.map((t) => {
-                const isPositive = t.amount_cents >= 0
-                return (
-                  <tr
-                    key={t.id}
-                    className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.02]"
-                  >
-                    <td className="p-4">
-                      <Link
-                        href={`/admin/transactions/${t.id}`}
-                        className="telemetry-text text-sm text-pit-gray hover:text-apex-red"
-                      >
-                        {formatDate(t.occurred_on)}
-                      </Link>
-                    </td>
-                    <td className="p-4">
-                      <Link
-                        href={`/admin/transactions/${t.id}`}
-                        className="telemetry-text text-sm text-grid-white hover:text-apex-red"
-                      >
-                        {formatTransactionType(t.type)}
-                      </Link>
-                    </td>
-                    <td className="p-4 max-w-md">
-                      <Link
-                        href={`/admin/transactions/${t.id}`}
-                        className="block telemetry-text text-sm text-grid-white hover:text-apex-red truncate"
-                        title={t.description}
-                      >
-                        {t.description}
-                      </Link>
-                      {t.vendor && (
-                        <p className="telemetry-text text-xs text-pit-gray truncate">
-                          {t.vendor}
-                        </p>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <PaymentMethodBadge method={t.payment_method} />
-                    </td>
-                    <td className="p-4 text-right">
-                      <span
-                        className={`telemetry-text text-sm font-semibold ${
-                          isPositive ? 'text-green-400' : 'text-apex-red'
-                        }`}
-                      >
-                        {formatDollars(t.amount_cents)}
-                      </span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
+            <tbody>{ledgerNodes}</tbody>
           </table>
         </div>
       )}
