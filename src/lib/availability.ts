@@ -55,6 +55,47 @@ export function isWholeDayBlocked(blocks: AvailabilityBlockWindow[]): boolean {
   return blocks.some((b) => b.startTime == null || b.endTime == null)
 }
 
+/** Half-open overlap of two extended-minute ranges: [aStart,aEnd) vs [bStart,bEnd). */
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart < bEnd && bStart < aEnd
+}
+
+/**
+ * True when two availability windows conflict. A null start/end means "whole
+ * day", which conflicts with everything (including another whole-day window).
+ * Used to forbid overlapping admin blocks.
+ */
+export function windowsConflict(a: AvailabilityBlockWindow, b: AvailabilityBlockWindow): boolean {
+  if (a.startTime == null || a.endTime == null) return true // A is whole-day
+  if (b.startTime == null || b.endTime == null) return true // B is whole-day
+  return rangesOverlap(
+    toExtendedMinutes(a.startTime),
+    toExtendedMinutes(a.endTime),
+    toExtendedMinutes(b.startTime),
+    toExtendedMinutes(b.endTime)
+  )
+}
+
+/**
+ * True when a block window overlaps a booking's occupied time range. A
+ * whole-day block covers every booking that day. Used to forbid a block that
+ * would collide with a live booking.
+ */
+export function blockConflictsWithBooking(
+  block: AvailabilityBlockWindow,
+  booking: SeatBooking
+): boolean {
+  if (block.startTime == null || block.endTime == null) return true // whole day
+  const bookStart = toExtendedMinutes(booking.startTime)
+  const bookEnd = bookStart + booking.durationHours * 60
+  return rangesOverlap(
+    toExtendedMinutes(block.startTime),
+    toExtendedMinutes(block.endTime),
+    bookStart,
+    bookEnd
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Seat capacity — the venue has a fixed number of sim seats (rigs). A time slot
 // is only "full" when the concurrent racers there would exceed capacity, so a

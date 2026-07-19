@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { getTimeSlots } from '@/lib/pricing'
 import {
   isSlotBlocked,
@@ -97,6 +97,9 @@ export default function TimeSlotPicker({
 }: TimeSlotPickerProps) {
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [loading, setLoading] = useState(false)
+  // Only the latest in-flight availability fetch is allowed to write state, so
+  // an interval/focus refetch can't clobber a newer param-change fetch.
+  const reqIdRef = useRef(0)
 
   // Memoize time slots so they don't cause re-renders
   const allTimeSlots = useMemo(() => getTimeSlots(), [])
@@ -161,37 +164,58 @@ export default function TimeSlotPicker({
   // Slots are computed locally (every operating-hours slot open), then admin
   // availability blocks, seat capacity, and the 90-minute online cutoff are
   // applied. The server re-checks all of this at create time.
+  //
+  // LIVE: availability is refetched when the tab regains focus/visibility and
+  // on a light interval, so a slot blocked or booked elsewhere updates without
+  // a manual reload. Background refreshes update silently (no spinner flash).
   useEffect(() => {
     if (!date) {
       setSlots([])
       return
     }
     let cancelled = false
-    setLoading(true)
-    // Show the local slots immediately, then refine once data arrives.
-    setSlots(applyCutoff(generateLocalSlots(), date))
 
-    fetch(`/api/booking/blocked-slots?date=${date}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled) return
+    const load = async (showSpinner: boolean) => {
+      const myReq = ++reqIdRef.current
+      if (showSpinner) setLoading(true)
+      try {
+        const res = await fetch(`/api/booking/blocked-slots?date=${date}`)
+        const data = res.ok ? await res.json() : null
+        if (cancelled || myReq !== reqIdRef.current) return // superseded
         const blocks: AvailabilityBlockWindow[] = data?.success ? data.blocks : []
         const bookings: SeatBooking[] = data?.success ? (data.bookings ?? []) : []
         const capacity: number = data?.success ? (data.capacity ?? DEFAULT_SEAT_CAPACITY) : DEFAULT_SEAT_CAPACITY
         const withBlocks = applyBlocks(generateLocalSlots(), blocks)
         const withCutoff = applyCutoff(withBlocks, date)
         setSlots(applySeats(withCutoff, bookings, capacity))
-      })
-      .catch(() => {
-        // Block fetch failing is non-fatal for the UI — the server re-checks
-        // blocks at create time, so a blocked slot still can't be booked.
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+      } catch {
+        // Non-fatal — the server re-checks blocks/seats at create time, so a
+        // stale-looking slot still can't actually be booked.
+      } finally {
+        if (!cancelled && showSpinner) setLoading(false)
+      }
+    }
+
+    // Render the local grid instantly, then refine with the first fetch.
+    setSlots(applyCutoff(generateLocalSlots(), date))
+    load(true)
+
+    const onFocus = () => load(false)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load(false)
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    // Poll only while the tab is visible so a left-open page never goes stale.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load(false)
+    }, 25000)
 
     return () => {
       cancelled = true
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.clearInterval(interval)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, duration, racerCount])

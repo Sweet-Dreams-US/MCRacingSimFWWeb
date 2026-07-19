@@ -5,9 +5,53 @@ import {
   isWholeDayBlocked,
   maxConcurrentRacers,
   seatsAvailableFor,
+  windowsConflict,
+  blockConflictsWithBooking,
   type AvailabilityBlockWindow,
   type SeatBooking,
 } from '../availability'
+
+describe('windowsConflict (no overlapping blocks)', () => {
+  const w = (startTime: string | null, endTime: string | null): AvailabilityBlockWindow => ({ startTime, endTime })
+
+  it('overlapping timed windows conflict', () => {
+    // The real 2026-07-19 bug: 1:30–3:30 vs the existing 2:00–3:00 block.
+    expect(windowsConflict(w('13:30', '15:30'), w('14:00', '15:00'))).toBe(true)
+  })
+  it('touching-but-not-overlapping windows do NOT conflict (half-open)', () => {
+    expect(windowsConflict(w('12:00', '13:00'), w('13:00', '14:00'))).toBe(false)
+  })
+  it('disjoint windows do not conflict', () => {
+    expect(windowsConflict(w('12:00', '13:00'), w('15:30', '16:30'))).toBe(false)
+  })
+  it('a whole-day window conflicts with anything (either side)', () => {
+    expect(windowsConflict(w(null, null), w('14:00', '15:00'))).toBe(true)
+    expect(windowsConflict(w('14:00', '15:00'), w(null, null))).toBe(true)
+    expect(windowsConflict(w(null, null), w(null, null))).toBe(true)
+  })
+  it('past-midnight windows conflict via extended minutes', () => {
+    // 11pm–1am vs 12am–1am overlap.
+    expect(windowsConflict(w('23:00', '01:00'), w('00:00', '01:00'))).toBe(true)
+  })
+})
+
+describe('blockConflictsWithBooking', () => {
+  const w = (startTime: string | null, endTime: string | null): AvailabilityBlockWindow => ({ startTime, endTime })
+  const bk = (startTime: string, durationHours: number): SeatBooking => ({ startTime, durationHours, racerCount: 2 })
+
+  it('the 07-19 case: a 1:30–3:30 block overlaps Mark Crosby 1–2pm', () => {
+    expect(blockConflictsWithBooking(w('13:30', '15:30'), bk('13:00', 1))).toBe(true)
+  })
+  it('a block that starts exactly when a booking ends does NOT conflict', () => {
+    expect(blockConflictsWithBooking(w('14:00', '15:00'), bk('13:00', 1))).toBe(false)
+  })
+  it('a whole-day block covers every booking', () => {
+    expect(blockConflictsWithBooking(w(null, null), bk('18:00', 1))).toBe(true)
+  })
+  it('a non-overlapping block leaves a booking alone', () => {
+    expect(blockConflictsWithBooking(w('16:00', '17:00'), bk('13:00', 1))).toBe(false)
+  })
+})
 
 // The venue runs noon -> 2am. Availability math uses "extended minutes":
 // hours before noon belong to the same session date's late-night tail (+24h).
