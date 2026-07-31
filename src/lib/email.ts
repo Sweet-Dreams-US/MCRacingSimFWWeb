@@ -19,7 +19,10 @@ import { createAdminClient } from './supabase/admin'
 // Config
 // ---------------------------------------------------------------------------
 
-const DEFAULT_FROM_EMAIL = 'MC Racing Sim <bookings@mcracingsimfortwayne.com>'
+// Fallback only — production sets RESEND_FROM_EMAIL (the Resend-verified
+// send.* subdomain). The domain here is the real site (mcracingfortwayne.com);
+// it was previously the nonexistent "mcracingsimfortwayne.com".
+const DEFAULT_FROM_EMAIL = 'MC Racing Sim <bookings@mcracingfortwayne.com>'
 const DEFAULT_OWNER_EMAIL = 'mcracingfortwayne@gmail.com'
 
 function getFromEmail(): string {
@@ -28,6 +31,36 @@ function getFromEmail(): string {
 
 export function getOwnerNotificationEmail(): string {
   return process.env.OWNER_NOTIFICATION_EMAIL || DEFAULT_OWNER_EMAIL
+}
+
+// Replies must go to a monitored mailbox: the apex domain has no MX records,
+// so replies to the from-address would bounce. Overridable via env.
+function getReplyToEmail(): string {
+  return process.env.RESEND_REPLY_TO_EMAIL || getOwnerNotificationEmail()
+}
+
+/**
+ * Crude-but-effective HTML → plain-text for the text/plain MIME part.
+ * Multipart bodies score better with spam filters than HTML-only, and
+ * text-mode clients get something readable.
+ */
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, '\n')
+    .replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '$2 ($1)')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +154,10 @@ export async function sendEmail(
       to,
       subject,
       html,
+      // Multipart (html + text) deliverability + a monitored reply address —
+      // the apex domain has no MX, so replying to the from-address bounces.
+      text: htmlToPlainText(html),
+      replyTo: getReplyToEmail(),
     })
 
     if (result.error) {

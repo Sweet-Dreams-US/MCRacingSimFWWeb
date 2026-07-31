@@ -26,6 +26,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
 import { onBookingCompleted } from '@/lib/booking'
 import { NO_SHOW_FEE_CENTS_PER_SEAT } from '@/lib/pricing'
+import { sendEmail, getOwnerNotificationEmail } from '@/lib/email'
+import {
+  noShowChargeSucceededEmail,
+  noShowChargeFailedAdminEmail,
+} from '@/lib/emails/templates'
 
 export const runtime = 'nodejs'
 
@@ -72,7 +77,7 @@ export async function POST(
   // ---- Fetch the booking -------------------------------------------------
   const { data: booking, error: bookingError } = await supabase
     .from('bookings')
-    .select('id, racer_count, stripe_payment_method_id, customer_id, no_show_fee_cents, status')
+    .select('id, racer_count, stripe_payment_method_id, customer_id, no_show_fee_cents, status, session_date')
     .eq('id', bookingId)
     .single()
 
@@ -285,6 +290,57 @@ export async function POST(
       stripe_charge_id: chargeRow.id,
       payment_method: 'stripe_online',
       created_by_user_id: adminCtx.admin.id,
+    })
+  }
+
+  // ---- Outcome emails (best-effort; sendEmail never throws) ---------------
+  // Success → receipt to the customer (they agreed to this exact fee at
+  // booking; the receipt heads off "what's this charge?" disputes).
+  // Failure / requires_action → urgent alert to the owner, since the fee now
+  // needs manual follow-up (retry from the booking page, call, or write off).
+  const { data: emailCustomer } = await supabase
+    .from('customers')
+    .select('first_name, last_name, email')
+    .eq('id', booking.customer_id)
+    .maybeSingle()
+
+  if (chargeStatus === 'succeeded' && emailCustomer?.email) {
+    const msg = noShowChargeSucceededEmail({
+      customerFirstName: emailCustomer.first_name || 'Racer',
+      bookingId,
+      amountCents: chargeAmountCents,
+      sessionDate: booking.session_date,
+    })
+    await sendEmail({
+      to: emailCustomer.email,
+      subject: msg.subject,
+      html: msg.html,
+      template: 'noshow_charge_succeeded',
+      relatedBookingId: bookingId,
+      relatedCustomerId: booking.customer_id,
+    })
+  } else if (chargeStatus !== 'succeeded') {
+    const msg = noShowChargeFailedAdminEmail({
+      bookingId,
+      customerName: emailCustomer
+        ? `${emailCustomer.first_name ?? ''} ${emailCustomer.last_name ?? ''}`.trim() || 'Unknown'
+        : 'Unknown',
+      customerEmail: emailCustomer?.email ?? '(no email on file)',
+      amountCents: chargeAmountCents,
+      declineCode,
+      failureMessage:
+        failureMessage ??
+        (chargeStatus === 'requires_action'
+          ? 'Card requires authentication (3DS) — cannot complete off-session'
+          : null),
+    })
+    await sendEmail({
+      to: getOwnerNotificationEmail(),
+      subject: msg.subject,
+      html: msg.html,
+      template: 'noshow_charge_failed_admin',
+      relatedBookingId: bookingId,
+      relatedCustomerId: booking.customer_id,
     })
   }
 

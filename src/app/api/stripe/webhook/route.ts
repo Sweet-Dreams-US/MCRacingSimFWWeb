@@ -81,19 +81,34 @@ export async function POST(request: NextRequest) {
     })
 
   if (insertError) {
-    // 23505 = unique_violation — we've seen this event before. Return 200
-    // so Stripe stops retrying.
     if (
       insertError.code === '23505' ||
       insertError.message?.includes('duplicate')
     ) {
-      return NextResponse.json({ received: true, duplicate: true })
+      // 23505 = unique_violation — we've SEEN this event before. But "seen"
+      // is not "processed": if the previous attempt 500'd mid-processing,
+      // processed_at is still NULL and this delivery is Stripe's retry of
+      // real, unfinished work. Returning 200 here without checking would
+      // permanently drop the event once Stripe stops retrying — so only
+      // short-circuit when the earlier attempt actually completed;
+      // otherwise fall through and process it now. (Handlers are idempotent
+      // — each guards on its own already-done state — so the rare race of
+      // two concurrent retries both reprocessing is safe.)
+      const { data: prior } = await supabase
+        .from('stripe_webhook_events')
+        .select('processed_at')
+        .eq('stripe_event_id', event.id)
+        .maybeSingle()
+      if (prior?.processed_at) {
+        return NextResponse.json({ received: true, duplicate: true })
+      }
+    } else {
+      // Other DB errors: return 500 so Stripe retries.
+      console.error(
+        `Failed to record webhook event ${event.id}: ${insertError.message}`
+      )
+      return NextResponse.json({ error: 'DB error' }, { status: 500 })
     }
-    // Other DB errors: return 500 so Stripe retries.
-    console.error(
-      `Failed to record webhook event ${event.id}: ${insertError.message}`
-    )
-    return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
   // ---- 3. Dispatch by event type ------------------------------------------
@@ -266,10 +281,6 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       // `.select('id')` so the receipt below can be logged against this exact
       // transaction (email_log.related_transaction_id), which is what lets the
       // admin panel and the reader show "receipt sent, to whom, when".
-      // NOTE: a failure here is still only logged, not thrown — throwing would
-      // 500, and the duplicate guard above returns 200 on Stripe's retry
-      // without checking processed_at, so the event would be dropped for good.
-      // Fixing that guard is a prerequisite for making this path throw.
       const { data: insertedTxn, error: txnInsertError } = await supabase
         .from('transactions')
         .insert({
@@ -290,8 +301,11 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
         .maybeSingle()
 
       if (txnInsertError) {
-        console.error(
-          `[webhook] Failed to record POS transaction for ${intent.id}: ${txnInsertError.message}`
+        // Throw → 500 → Stripe retries. Safe now: the duplicate guard checks
+        // processed_at, so the retry reprocesses instead of being swallowed —
+        // a captured payment can no longer silently miss the ledger.
+        throw new Error(
+          `Failed to record POS transaction for ${intent.id}: ${txnInsertError.message}`
         )
       }
       const posTransactionId = insertedTxn?.id ?? null
@@ -303,9 +317,9 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       // walk-up sales still send, carried by the deterministic event id).
       //
       // Runs via waitUntil — OFF the Stripe ACK path. This handler must ack
-      // fast (Stripe times out at 30s and retries; a duplicate hits the
-      // event-id guard and returns 200 without re-stamping processed_at), so
-      // the customer lookup + Meta send happen after we've responded.
+      // fast (Stripe times out at 30s and retries; a retry of an already-
+      // processed event short-circuits on the processed_at check), so the
+      // customer lookup + Meta send happen after we've responded.
       const posCustomerId = charge.customer_id
       const posBookingId = charge.booking_id
       const posIntentId = intent.id

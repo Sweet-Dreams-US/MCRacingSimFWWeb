@@ -454,7 +454,7 @@ export function noShowChargeSucceededEmail(
 
     ${noticeBox(
       'Want to Reschedule?',
-      `We'd love to see you on track. Book a new session anytime at <a href="https://mcracingsimfortwayne.com" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingsimfortwayne.com</a> or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a>.`
+      `We'd love to see you on track. Book a new session anytime at <a href="https://www.mcracingfortwayne.com/book" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a> or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a>.`
     )}
 
     ${divider()}
@@ -926,7 +926,7 @@ export function sessionThankYouEmail(
 
     ${noticeBox(
       'Come back and beat your time',
-      `Book your next session anytime at <a href="https://www.mcracingfortwayne.com/booking" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a> or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a>.`
+      `Book your next session anytime at <a href="https://www.mcracingfortwayne.com/book" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a> or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a>.`
     )}
 
     ${divider()}
@@ -978,7 +978,7 @@ export function firstTimerThankYouEmail(
       `Share <strong style="color:${COLOR.gridWhite};">${escapeHtml(referralCode)}</strong> with your crew. Each friend gets <strong style="color:${COLOR.gridWhite};">50% off</strong> a session (up to 2 hours). Good for up to <strong style="color:${COLOR.gridWhite};">3 friends</strong> / 6 discounted hours total. They just enter it at checkout when they book online.`
     )}
 
-    ${p(`Want to come back yourself? Book anytime at <a href="https://www.mcracingfortwayne.com/booking" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a>.`)}
+    ${p(`Want to come back yourself? Book anytime at <a href="https://www.mcracingfortwayne.com/book" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com</a>.`)}
 
     ${divider()}
 

@@ -9,6 +9,8 @@ import Stripe from 'stripe'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
+import { sendEmail } from '@/lib/email'
+import { noShowChargeSucceededEmail } from '@/lib/emails/templates'
 
 export const runtime = 'nodejs'
 
@@ -175,6 +177,35 @@ export async function POST(
       payment_method: 'stripe_online',
       created_by_user_id: adminCtx.admin.id,
     })
+
+    // Receipt to the customer — same email the first-attempt path sends, so a
+    // successfully retried fee doesn't arrive silently. Best-effort.
+    const { data: emailCustomer } = await supabase
+      .from('customers')
+      .select('first_name, email')
+      .eq('id', booking.customer_id)
+      .maybeSingle()
+    const { data: bookingRow } = await supabase
+      .from('bookings')
+      .select('session_date')
+      .eq('id', bookingId)
+      .maybeSingle()
+    if (emailCustomer?.email) {
+      const msg = noShowChargeSucceededEmail({
+        customerFirstName: emailCustomer.first_name || 'Racer',
+        bookingId,
+        amountCents: prevCharge.amount_cents,
+        sessionDate: bookingRow?.session_date ?? '',
+      })
+      await sendEmail({
+        to: emailCustomer.email,
+        subject: msg.subject,
+        html: msg.html,
+        template: 'noshow_charge_succeeded',
+        relatedBookingId: bookingId,
+        relatedCustomerId: booking.customer_id,
+      })
+    }
   }
 
   return NextResponse.json({
