@@ -30,10 +30,12 @@ export function metaTrack(
   event: string,
   data?: Record<string, unknown>,
   eventId?: string
-): void {
+): boolean {
   if (typeof window !== 'undefined' && typeof window.fbq === 'function') {
     window.fbq('track', event, data ?? {}, eventId ? { eventID: eventId } : undefined)
+    return true // dispatched (fbq queues even before the library finishes loading)
   }
+  return false // fbq not ready yet (or SSR) — caller may retry
 }
 
 /**
@@ -45,12 +47,58 @@ export function MetaEventOnMount(props: {
   event: string
   data?: Record<string, unknown>
   eventId?: string
+  // When true (and an eventId is given), also guard against a browser REFRESH
+  // in the same tab, keyed by eventId — so reloading e.g. the booking
+  // confirmation page never re-fires the conversion. The useRef alone only
+  // covers React strict-mode's double-invoke within a single mount.
+  once?: boolean
 }) {
   const fired = useRef(false)
   useEffect(() => {
     if (fired.current) return
-    fired.current = true
-    metaTrack(props.event, props.data, props.eventId)
+
+    const key = props.once && props.eventId ? `mp_fired_${props.eventId}` : null
+    // Durable refresh guard: only skip if a PRIOR mount actually dispatched this
+    // event this session (the key is written after a confirmed dispatch below).
+    if (key) {
+      try {
+        if (sessionStorage.getItem(key)) {
+          fired.current = true
+          return
+        }
+      } catch {
+        // sessionStorage blocked (private mode) — no durable guard; Meta still
+        // dedupes by eventId, so a resend is harmless.
+      }
+    }
+
+    // On a HARD page load (e.g. a 3DS return_url redirect to the confirmation
+    // page) the afterInteractive Pixel snippet may not have defined window.fbq
+    // yet when this effect runs. Retry briefly until it's ready, then fire ONCE.
+    // Crucially we mark "fired" only AFTER a real dispatch, so a no-op never
+    // burns the durable guard (which would otherwise suppress the self-healing
+    // refresh and permanently drop the browser Pixel).
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tryFire = () => {
+      if (fired.current) return
+      if (metaTrack(props.event, props.data, props.eventId)) {
+        fired.current = true
+        if (key) {
+          try {
+            sessionStorage.setItem(key, '1')
+          } catch {
+            /* ignore */
+          }
+        }
+        return
+      }
+      if (attempts++ < 30) timer = setTimeout(tryFire, 100) // up to ~3s, then give up
+    }
+    tryFire()
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return null

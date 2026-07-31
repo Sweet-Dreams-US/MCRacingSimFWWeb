@@ -415,6 +415,7 @@ export type Database = {
           email_complained_at: string | null
           first_name: string
           how_heard: string | null
+          attributed_source: string | null
           id: string
           last_name: string
           last_visit_at: string | null
@@ -438,6 +439,7 @@ export type Database = {
           email_complained_at?: string | null
           first_name: string
           how_heard?: string | null
+          attributed_source?: string | null
           id?: string
           last_name: string
           last_visit_at?: string | null
@@ -461,6 +463,7 @@ export type Database = {
           email_complained_at?: string | null
           first_name?: string
           how_heard?: string | null
+          attributed_source?: string | null
           id?: string
           last_name?: string
           last_visit_at?: string | null
@@ -872,6 +875,54 @@ export type Database = {
         }
         Relationships: []
       }
+      mc_bookings: {
+        Row: {
+          id: string
+          created_at: string
+          booking_datetime: string | null
+          business: string
+          channel: string
+          racers: number | null
+          duration_hours: number | null
+          amount: number | null
+          deposit_paid: number | null
+          is_membership: boolean
+          customer_ref: string | null
+          attributed_source: string | null
+          notes: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          booking_datetime?: string | null
+          business?: string
+          channel: string
+          racers?: number | null
+          duration_hours?: number | null
+          amount?: number | null
+          deposit_paid?: number | null
+          is_membership?: boolean
+          customer_ref?: string | null
+          attributed_source?: string | null
+          notes?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          booking_datetime?: string | null
+          business?: string
+          channel?: string
+          racers?: number | null
+          duration_hours?: number | null
+          amount?: number | null
+          deposit_paid?: number | null
+          is_membership?: boolean
+          customer_ref?: string | null
+          attributed_source?: string | null
+          notes?: string | null
+        }
+        Relationships: []
+      }
       party_bookings: {
         Row: {
           id: string
@@ -1147,7 +1198,16 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      mc_revenue_by_source: {
+        Row: {
+          attributed_source: string | null
+          month: string | null
+          bookings: number | null
+          revenue: number | null
+          deposits_collected: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

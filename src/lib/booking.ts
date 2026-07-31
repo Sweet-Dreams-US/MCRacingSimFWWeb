@@ -36,6 +36,8 @@ import {
 import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
 import { sendMetaEvent } from './meta/capi'
+import { toAttributionSource } from './attribution'
+import { recordMcBooking } from './mc-bookings'
 import {
   inviteBookingEmail,
   inviteHoldCardEmail,
@@ -332,6 +334,9 @@ export async function createBooking(
         phone: input.customer.phone || null,
         birthday: input.customer.birthday || null,
         how_heard: input.customer.howHeard || null,
+        // Normalized marketing attribution (structured) alongside the legacy
+        // free-text how_heard, for revenue-by-source reporting.
+        attributed_source: toAttributionSource(input.customer.howHeard),
         marketing_opt_in: input.marketingOptIn,
         waiver_signed_at: nowIso,
         source: 'booking',
@@ -602,13 +607,23 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
     ? booking.customer[0]
     : booking.customer
 
-  // Meta CAPI — a confirmed booking is a Schedule (appointment booked). Only the
-  // winner of the pending→confirmed race fires it, so a redelivered webhook
-  // can't double-count; the deterministic event_id (sched_<bookingId>) also
-  // dedupes against the browser Pixel fired on the confirmation page. This runs
+  // Meta CAPI — a confirmed booking is a Schedule (appointment booked).
+  //
+  // ONLINE ONLY. This webhook path also confirms require-card ADMIN invites
+  // (source='admin'), which are staff-entered and must NEVER be reported to Meta
+  // as conversions — doing so poisons ad optimization. So we gate on
+  // booking.source === 'online' (the discriminator for a genuine self-serve
+  // booking). Card-less admin invites never reach here (no SetupIntent).
+  //
+  // Only the winner of the pending→confirmed race fires it, so a redelivered
+  // webhook can't double-count; the deterministic event_id (sched_<bookingId>)
+  // also dedupes against the browser Pixel fired on the confirmation page. Runs
   // in the webhook, away from the browser, so we match on hashed PII only —
   // still a strong signal via email + phone + external_id.
-  if (wonConfirmRace && customer) {
+  if (wonConfirmRace && customer && booking.source === 'online') {
+    // Real committed total = session price minus any discount (pre-tax).
+    const bookingValue =
+      Math.max(0, booking.session_price_cents - (booking.discount_amount_cents ?? 0)) / 100
     await sendMetaEvent({
       eventName: 'Schedule',
       eventId: `sched_${bookingId}`,
@@ -622,12 +637,37 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
         externalId: booking.customer_id,
       },
       customData: {
-        value: booking.session_price_cents / 100,
+        value: bookingValue,
         currency: 'USD',
         content_name: 'Sim Racing Session',
         content_category: 'booking',
-        num_items: booking.racer_count,
+        num_racers: booking.racer_count,
+        duration_hours: booking.duration_hours,
+        is_membership: false, // no membership model yet; always false for now
       },
+    })
+  }
+
+  // Unified reporting ledger (mc_bookings) — record every completed ONLINE
+  // booking as channel='online'. Best-effort + never throws (recordMcBooking
+  // swallows its own errors), so it can't affect the confirm/payment flow.
+  // attributed_source is backfilled from the customer inside recordMcBooking.
+  // Staff bookings (source='admin') are logged separately via the admin action.
+  if (wonConfirmRace && booking.source === 'online') {
+    const netCents = Math.max(0, booking.session_price_cents - (booking.discount_amount_cents ?? 0))
+    await recordMcBooking({
+      channel: 'online',
+      // Pin the session's wall-clock to UTC so the reporting view's
+      // date_trunc('month', …) always buckets under the session_date, regardless
+      // of the DB server timezone (a naive value could roll a late-night,
+      // month-boundary session into the next month).
+      bookingDatetime: `${booking.session_date}T${toHHMM(booking.start_time)}:00Z`,
+      racers: booking.racer_count,
+      durationHours: booking.duration_hours,
+      amountCents: netCents,
+      depositCents: null, // online booking collects $0 (card-on-file only)
+      customerId: booking.customer_id,
+      notes: `Booking ${bookingId}`,
     })
   }
 

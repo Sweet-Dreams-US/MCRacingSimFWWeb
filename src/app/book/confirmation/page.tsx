@@ -43,7 +43,8 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
     .select(
       `
       id, session_date, start_time, end_time, duration_hours, racer_count,
-      session_price_cents, no_show_fee_cents, stripe_payment_method_id, status,
+      session_price_cents, no_show_fee_cents, discount_amount_cents, source,
+      stripe_payment_method_id, status,
       customer:customers(first_name, email)
     `
     )
@@ -59,22 +60,36 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
     : booking.customer
   const greetingName = name || customer?.first_name || ''
   const cardOnFile = Boolean(booking.stripe_payment_method_id)
+  // A conversion is ONLY a genuine self-serve online booking. Staff/admin
+  // bookings (source='admin' — phone, walk-in, or an admin card-hold invite)
+  // must never be reported to Meta or they poison ad optimization. The Pixel is
+  // effectively online-only by construction (staff bookings don't land here),
+  // but we gate explicitly so a future flow can't accidentally leak.
+  const isOnlineBooking = booking.source === 'online'
+  // Real committed total = session price minus any discount (pre-tax; tax is
+  // added in person at the venue). Never hardcoded.
+  const bookingValue =
+    Math.max(0, booking.session_price_cents - (booking.discount_amount_cents ?? 0)) / 100
 
   return (
     <main className="min-h-screen bg-asphalt pt-24 pb-16 px-4">
-      {/* Meta Pixel Schedule — fires once in the browser, deduped against the
-          server-side CAPI Schedule via the shared sched_<id> event id. Only
-          when a card actually landed (real confirmation), never for a pending. */}
-      {cardOnFile && (
+      {/* Meta Pixel Schedule — fires once per browser session (durable `once`
+          guard, refresh-safe), deduped against the server-side CAPI Schedule via
+          the shared sched_<id> event id. Only for a real ONLINE confirmation
+          with a card on file — never a pending, never a staff booking. */}
+      {cardOnFile && isOnlineBooking && (
         <MetaEventOnMount
           event="Schedule"
           eventId={`sched_${booking.id}`}
+          once
           data={{
-            value: booking.session_price_cents / 100,
+            value: bookingValue,
             currency: 'USD',
             content_name: 'Sim Racing Session',
             content_category: 'booking',
-            num_items: booking.racer_count,
+            num_racers: booking.racer_count,
+            duration_hours: booking.duration_hours,
+            is_membership: false,
           }}
         />
       )}

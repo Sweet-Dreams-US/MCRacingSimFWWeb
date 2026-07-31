@@ -21,6 +21,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { Json } from '@/lib/supabase/types'
 import { businessDateEastern } from '@/lib/business-day'
 import { sendMetaEvent, metaContextFromRequest } from '@/lib/meta/capi'
+import { toAttributionSource } from '@/lib/attribution'
 import { waitUntil } from '@vercel/functions'
 
 interface CheckinBody {
@@ -51,6 +52,8 @@ export async function POST(request: NextRequest) {
     const email = body.email?.trim() ?? ''
     const emailLower = email.toLowerCase()
     const howHeard = body.howDidYouHear?.trim() ?? ''
+    // Structured marketing attribution (normalized to the canonical list).
+    const attributedSource = toAttributionSource(howHeard)
     const marketingOptIn = body.marketingOptIn === true
     const bookingId = body.bookingId?.trim() ?? ''
     const slotRaw = body.slot
@@ -110,6 +113,7 @@ export async function POST(request: NextRequest) {
           birthday?: string
           phone?: string
           how_heard?: string
+          attributed_source?: string
           marketing_opt_in?: boolean
           waiver_signed_at: string
           waiver_form_data: Json
@@ -122,6 +126,8 @@ export async function POST(request: NextRequest) {
         if (birthday) update.birthday = birthday
         if (phone) update.phone = phone
         if (howHeard) update.how_heard = howHeard
+        // Refresh structured attribution when they gave one this visit.
+        if (attributedSource) update.attributed_source = attributedSource
         if (marketingOptIn) update.marketing_opt_in = true
 
         const { error: updateError } = await supabase
@@ -150,6 +156,7 @@ export async function POST(request: NextRequest) {
           phone: phone || null,
           birthday: birthday || null,
           how_heard: howHeard || null,
+          attributed_source: attributedSource,
           marketing_opt_in: marketingOptIn,
           source: isLinkedBooking ? 'checkin' : 'walk_in',
           waiver_signed_at: now,
