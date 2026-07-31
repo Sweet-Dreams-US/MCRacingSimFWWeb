@@ -625,6 +625,7 @@ export type Database = {
           id: string
           related_booking_id: string | null
           related_customer_id: string | null
+          related_transaction_id: string | null
           resend_message_id: string | null
           sent_at: string
           status: string
@@ -638,6 +639,7 @@ export type Database = {
           id?: string
           related_booking_id?: string | null
           related_customer_id?: string | null
+          related_transaction_id?: string | null
           resend_message_id?: string | null
           sent_at?: string
           status?: string
@@ -651,6 +653,7 @@ export type Database = {
           id?: string
           related_booking_id?: string | null
           related_customer_id?: string | null
+          related_transaction_id?: string | null
           resend_message_id?: string | null
           sent_at?: string
           status?: string

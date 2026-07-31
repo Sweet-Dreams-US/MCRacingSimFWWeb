@@ -12,6 +12,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
 import { getActiveReader, processOnReader } from '@/lib/terminal'
 import { computeTaxCents } from '@/lib/tax'
+import { findOrCreateCustomerIdByEmail } from '@/lib/customers'
 
 export const runtime = 'nodejs'
 
@@ -68,12 +69,21 @@ export async function POST(request: NextRequest) {
   // Resolve the Stripe customer + receipt email (if a customer was selected)
   let stripeCustomerId: string | undefined
   let receiptEmail = body.receiptEmail?.trim() || undefined
+  let customerId = body.customerId?.trim() || null
 
-  if (body.customerId) {
+  // A walk-in who gives an email but isn't in the system yet gets linked
+  // (find-or-create) so the webhook has a customer to mail the receipt to —
+  // parity with the reader's create_payment_intent route. Without this, a
+  // walk-in card sale records customer_id: null and no receipt is ever sent.
+  if (!customerId && receiptEmail) {
+    customerId = await findOrCreateCustomerIdByEmail(supabase, receiptEmail)
+  }
+
+  if (customerId) {
     const { data: customer } = await supabase
       .from('customers')
       .select('id, email, first_name, last_name, stripe_customer_id')
-      .eq('id', body.customerId)
+      .eq('id', customerId)
       .maybeSingle()
 
     if (customer) {
@@ -123,7 +133,7 @@ export async function POST(request: NextRequest) {
         source: 'pos',
         sale_type: body.type,
         booking_id: body.bookingId ?? '',
-        supabase_customer_id: body.customerId ?? '',
+        supabase_customer_id: customerId ?? '',
         admin_user_id: adminCtx.admin.id,
         subtotal_cents: String(subtotalCents),
         tax_cents: String(taxCents),
@@ -137,7 +147,7 @@ export async function POST(request: NextRequest) {
   await supabase.from('stripe_charges').insert({
     stripe_payment_intent_id: intent.id,
     booking_id: body.bookingId || null,
-    customer_id: body.customerId || null,
+    customer_id: customerId,
     amount_cents: chargeCents,
     currency: 'usd',
     status: 'pending',

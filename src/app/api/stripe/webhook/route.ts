@@ -263,20 +263,38 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       // RC car racing upsell portion (pre-tax), already inside finalAmount.
       const posRcCents = Number(intent.metadata?.rc_cents) || 0
 
-      await supabase.from('transactions').insert({
-        type: saleType,
-        amount_cents: finalAmount, // total captured, incl. tax + tip — positive (money in)
-        tip_cents: tipCents, // tip portion broken out for staff tip-outs
-        tax_cents: posTaxCents, // sales tax portion broken out for remittance
-        rc_cents: posRcCents, // RC car racing portion (not simulator revenue)
-        occurred_on: todayEastern,
-        description: `${intent.description || 'In-person sale (Terminal)'}${tipNote}`,
-        booking_id: charge.booking_id,
-        customer_id: charge.customer_id,
-        stripe_charge_id: charge.id,
-        payment_method: 'stripe_terminal',
-        created_by_user_id: intent.metadata.admin_user_id || null,
-      })
+      // `.select('id')` so the receipt below can be logged against this exact
+      // transaction (email_log.related_transaction_id), which is what lets the
+      // admin panel and the reader show "receipt sent, to whom, when".
+      // NOTE: a failure here is still only logged, not thrown — throwing would
+      // 500, and the duplicate guard above returns 200 on Stripe's retry
+      // without checking processed_at, so the event would be dropped for good.
+      // Fixing that guard is a prerequisite for making this path throw.
+      const { data: insertedTxn, error: txnInsertError } = await supabase
+        .from('transactions')
+        .insert({
+          type: saleType,
+          amount_cents: finalAmount, // total captured, incl. tax + tip — positive (money in)
+          tip_cents: tipCents, // tip portion broken out for staff tip-outs
+          tax_cents: posTaxCents, // sales tax portion broken out for remittance
+          rc_cents: posRcCents, // RC car racing portion (not simulator revenue)
+          occurred_on: todayEastern,
+          description: `${intent.description || 'In-person sale (Terminal)'}${tipNote}`,
+          booking_id: charge.booking_id,
+          customer_id: charge.customer_id,
+          stripe_charge_id: charge.id,
+          payment_method: 'stripe_terminal',
+          created_by_user_id: intent.metadata.admin_user_id || null,
+        })
+        .select('id')
+        .maybeSingle()
+
+      if (txnInsertError) {
+        console.error(
+          `[webhook] Failed to record POS transaction for ${intent.id}: ${txnInsertError.message}`
+        )
+      }
+      const posTransactionId = insertedTxn?.id ?? null
 
       // Meta CAPI — money captured at the counter is a Purchase. Lives inside
       // the no-transaction-yet guard, so a redelivered webhook can't double-
@@ -296,6 +314,10 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
       const posDesc = intent.description || 'In-person sale'
       const posOccurredOn = todayEastern
       const posSaleType = saleType
+      // The address the payment was actually taken against. Set by the reader /
+      // web POS at intent creation, so it reflects the PAYER even if the linked
+      // customer row is someone else (e.g. a split on another person's booking).
+      const posReceiptEmail = intent.receipt_email || null
       waitUntil(
         (async () => {
           // One customer lookup, reused for the Meta event + the receipt email.
@@ -333,16 +355,26 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
             },
           })
 
-          // Branded receipt + thank-you to the customer selected at the POS.
+          // Branded receipt + thank-you to whoever paid. Prefer the intent's
+          // receipt_email (the address entered at the point of sale) over the
+          // linked customer's, so a split-tender charge on someone else's
+          // booking still reaches the payer rather than the booker.
           // Guarded once-per-charge by the enclosing `if (!count)`. Off the ACK
           // path (waitUntil) so a slow email never delays the Stripe response.
-          if (cust?.email) {
+          const receiptTo = posReceiptEmail || cust?.email || null
+          if (receiptTo) {
             const { sendEmail } = await import('@/lib/email')
             const { transactionReceiptEmail } = await import('@/lib/emails/templates')
             const { formatTransactionType } = await import('@/lib/accounting')
             const { taxRateLabel } = await import('@/lib/tax')
+            // Only greet by name when we're mailing that customer's own
+            // address — otherwise we'd address the payer by the booker's name.
+            const nameMatchesRecipient =
+              cust?.email != null &&
+              cust.email.toLowerCase() === receiptTo.toLowerCase()
             const { subject, html } = transactionReceiptEmail({
-              customerFirstName: cust.first_name || 'racer',
+              customerFirstName:
+                (nameMatchesRecipient ? cust?.first_name : null) || 'racer',
               description: posDesc,
               amountCents: posAmount,
               taxCents: posTaxCents,
@@ -353,12 +385,13 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
               taxRateLabel: posTaxCents > 0 ? taxRateLabel() : undefined,
             })
             await sendEmail({
-              to: cust.email,
+              to: receiptTo,
               subject,
               html,
               template: 'transaction_receipt',
               relatedBookingId: posBookingId,
               relatedCustomerId: posCustomerId,
+              relatedTransactionId: posTransactionId,
             })
           }
         })()

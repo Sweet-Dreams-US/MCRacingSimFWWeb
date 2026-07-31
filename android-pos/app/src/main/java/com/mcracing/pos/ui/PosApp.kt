@@ -24,6 +24,11 @@ import com.mcracing.pos.net.CashPaymentRequest
 import com.mcracing.pos.net.CreateBookingRequest
 import com.mcracing.pos.net.CustomerHit
 import com.mcracing.pos.net.RacerDto
+import com.google.gson.Gson
+import com.mcracing.pos.net.ReceiptDto
+import com.mcracing.pos.net.SendReceiptRequest
+import com.mcracing.pos.net.SendReceiptResponse
+import retrofit2.HttpException
 import com.mcracing.pos.terminal.TerminalManager
 import com.stripe.stripeterminal.external.models.ConnectionStatus
 import kotlinx.coroutines.delay
@@ -112,6 +117,46 @@ data class BookingDraft(
 
 private enum class Stage { Bookings, Schedule, Sale, NewBooking, CustomerConfirm, Processing, Result }
 
+/**
+ * Receipt state for the sale just completed, shown on the result screen.
+ *
+ * A card sale's transaction row is written asynchronously by the Stripe
+ * webhook, so right after the tap we only hold a PaymentIntent id and the
+ * backend reports `pending`. We poll briefly, then show what actually went out
+ * — and let staff send one on the spot if nothing did.
+ */
+data class ReceiptState(
+    /**
+     * Identifies the sale this state belongs to. The polling coroutine outlives
+     * the result screen (the scope is the app's, not the screen's), so every
+     * write is guarded on the seq still matching — otherwise a slow poll from
+     * the previous customer lands in the next customer's state and can show, or
+     * email, the wrong person's receipt.
+     */
+    val seq: Long = 0L,
+    val loading: Boolean = false,
+    val pending: Boolean = false,
+    /** Polling ran out of attempts while the sale was still unrecorded. */
+    val gaveUp: Boolean = false,
+    val receipts: List<ReceiptDto> = emptyList(),
+    val sending: Boolean = false,
+    val error: String? = null,
+    val justSentTo: String? = null,
+    /** Handles used to identify the sale to the backend. */
+    val transactionId: String? = null,
+    val paymentIntentId: String? = null,
+    val bookingId: String? = null,
+    /** Address suggested in the send box (what was typed at the point of sale). */
+    val suggestedEmail: String? = null,
+) {
+    /** A receipt that actually left (not failed/skipped). */
+    fun sentReceipt(): ReceiptDto? =
+        receipts.firstOrNull { it.template == "transaction_receipt" && !it.failed }
+
+    /** We can identify the sale, so the send buttons will work. */
+    fun canSend(): Boolean = transactionId != null || paymentIntentId != null || bookingId != null
+}
+
 @Composable
 fun PosApp() {
     val scope = rememberCoroutineScope()
@@ -130,17 +175,145 @@ fun PosApp() {
     var resultTitle by remember { mutableStateOf("") }
     var resultAmount by remember { mutableStateOf(0L) }
     var resultMessage by remember { mutableStateOf("") }
+    var receipt by remember { mutableStateOf(ReceiptState()) }
+    // Monotonic sale counter — see ReceiptState.seq.
+    var saleSeq by remember { mutableStateOf(0L) }
     var customerQuery by remember { mutableStateOf("") }
     var customerHits by remember { mutableStateOf<List<CustomerHit>>(emptyList()) }
     var recentCheckins by remember { mutableStateOf<List<CustomerHit>>(emptyList()) }
     var bookingDraft by remember { mutableStateOf(BookingDraft()) }
 
-    fun showResult(success: Boolean, title: String, amountCents: Long = 0L, message: String = "") {
+    /**
+     * One look at what's been emailed for this sale. Returns true when polling
+     * should stop — either it's settled, or this sale has been superseded.
+     */
+    suspend fun fetchReceipts(seq: Long): Boolean {
+        if (receipt.seq != seq) return true // a newer sale owns the state now
+        val resp = try {
+            ApiClient.service.receipts(
+                receipt.transactionId,
+                receipt.paymentIntentId,
+                receipt.bookingId,
+            )
+        } catch (_: Exception) {
+            return false
+        }
+        if (receipt.seq != seq) return true // superseded while we were in flight
+        receipt = receipt.copy(
+            loading = false,
+            pending = resp.pending,
+            receipts = resp.receipts,
+            transactionId = resp.transactionId ?: receipt.transactionId,
+        )
+        // Settled once the sale is recorded AND something has actually gone out.
+        return !resp.pending && resp.receipts.isNotEmpty()
+    }
+
+    /**
+     * Poll briefly after a sale. A card charge is recorded by the Stripe webhook
+     * and the receipt is mailed from a background task, so the first look is
+     * often empty — that's normal, not "no receipt". Give it a few seconds
+     * before saying anything definitive.
+     */
+    fun pollReceipts(seq: Long) {
+        scope.launch {
+            repeat(6) { attempt ->
+                if (fetchReceipts(seq)) return@launch
+                if (attempt < 5) delay(1500)
+            }
+            if (receipt.seq != seq) return@launch
+            // Out of attempts. If the sale still isn't recorded we genuinely
+            // don't know — say so rather than claiming no receipt was sent.
+            receipt = receipt.copy(loading = false, gaveUp = receipt.pending)
+        }
+    }
+
+    /** Re-check on demand, after polling gave up. */
+    fun refreshReceipts() {
+        val seq = receipt.seq
+        receipt = receipt.copy(loading = true, gaveUp = false)
+        pollReceipts(seq)
+    }
+
+    /** Send / re-send from the result screen. Blank email = the address on file. */
+    fun sendReceipt(email: String, kind: String) {
+        val seq = receipt.seq
+        receipt = receipt.copy(sending = true, error = null, justSentTo = null)
+        scope.launch {
+            val resp = try {
+                ApiClient.service.sendReceipt(
+                    SendReceiptRequest(
+                        transactionId = receipt.transactionId,
+                        paymentIntentId = receipt.paymentIntentId,
+                        bookingId = receipt.bookingId,
+                        email = email.trim().ifBlank { null },
+                        kind = kind,
+                    )
+                )
+            } catch (e: HttpException) {
+                // Retrofit throws on any non-2xx, so the backend's actionable
+                // message ("this sale isn't recorded yet", "no email address for
+                // this sale") would otherwise be lost and staff would be told
+                // the connection is down. Recover it from the error body.
+                try {
+                    Gson().fromJson(
+                        e.response()?.errorBody()?.string(),
+                        SendReceiptResponse::class.java,
+                    )
+                } catch (_: Exception) {
+                    null
+                }
+            } catch (_: Exception) {
+                null
+            }
+            if (receipt.seq != seq) return@launch
+            if (resp != null && resp.success) {
+                receipt = receipt.copy(
+                    sending = false,
+                    justSentTo = resp.sentTo,
+                    error = null,
+                    gaveUp = false,
+                    transactionId = resp.transactionId ?: receipt.transactionId,
+                )
+                fetchReceipts(seq) // reflect it in the list straight away
+            } else {
+                receipt = receipt.copy(
+                    sending = false,
+                    error = resp?.error ?: "Couldn't send the receipt. Check the connection.",
+                )
+            }
+        }
+    }
+
+    fun showResult(
+        success: Boolean,
+        title: String,
+        amountCents: Long = 0L,
+        message: String = "",
+        transactionId: String? = null,
+        paymentIntentId: String? = null,
+        bookingId: String? = null,
+        suggestedEmail: String? = null,
+    ) {
         resultSuccess = success
         resultTitle = title
         resultAmount = amountCents
         resultMessage = message
+        val identifiable = transactionId != null || paymentIntentId != null || bookingId != null
+        // New sale = new seq, which invalidates any still-running poll from the
+        // previous customer.
+        saleSeq += 1
+        val seq = saleSeq
+        receipt = ReceiptState(
+            seq = seq,
+            loading = success && identifiable,
+            transactionId = transactionId,
+            paymentIntentId = paymentIntentId,
+            bookingId = bookingId,
+            suggestedEmail = suggestedEmail,
+        )
         stage = Stage.Result
+        if (success && identifiable) pollReceipts(seq)
     }
 
     fun loadBookings() {
@@ -214,9 +387,10 @@ fun PosApp() {
             val card = total - cash
 
             // 1. Record the cash portion (if any).
+            var cashTxnId: String? = null
             if (cash > 0) {
                 val cashTax = if (card > 0) 0L else tax // all-cash → tax lives here
-                val cashOk = try {
+                val cashResp = try {
                     ApiClient.service.cashPayment(
                         CashPaymentRequest(
                             bookingId = draft.bookingId,
@@ -231,19 +405,27 @@ fun PosApp() {
                             // on a split it rides with the card leg instead.
                             rcCents = if (card > 0) 0L else draft.rcCents,
                         )
-                    ).success
+                    )
                 } catch (_: Exception) {
-                    false
+                    null
                 }
-                if (!cashOk) {
+                if (cashResp == null || !cashResp.success) {
                     showResult(false, "Couldn't record cash")
                     return@launch
                 }
+                cashTxnId = cashResp.transactionId
             }
 
             // 2. Nothing left for the card → it was an all-cash sale.
             if (card <= 0) {
-                showResult(true, "Cash recorded", cash)
+                showResult(
+                    true,
+                    "Cash recorded",
+                    cash,
+                    transactionId = cashTxnId,
+                    bookingId = draft.bookingId,
+                    suggestedEmail = draft.receiptEmail,
+                )
                 return@launch
             }
 
@@ -266,6 +448,11 @@ fun PosApp() {
                         true,
                         if (cash > 0) "Split payment approved" else "Payment approved",
                         result.amountCents + cash, // card (incl. tip) + cash collected
+                        // The card leg's receipt is the one the customer gets;
+                        // look it up by its PaymentIntent.
+                        paymentIntentId = result.paymentIntentId,
+                        bookingId = draft.bookingId,
+                        suggestedEmail = draft.receiptEmail,
                     )
                 is TerminalManager.SaleResult.Failure ->
                     showResult(
@@ -282,7 +469,7 @@ fun PosApp() {
     fun recordCash() {
         stage = Stage.Processing
         scope.launch {
-            val ok = try {
+            val resp = try {
                 ApiClient.service.cashPayment(
                     CashPaymentRequest(
                         bookingId = draft.bookingId,
@@ -293,13 +480,23 @@ fun PosApp() {
                         saleType = draft.saleType,
                         rcCents = draft.rcCents,
                     )
-                ).success
+                )
             } catch (_: Exception) {
-                false
+                null
             }
             // Show the taxed total actually recorded (backend adds tax to the subtotal).
-            if (ok) showResult(true, "Cash recorded", draft.subtotalCents() + computeTaxCents(draft.subtotalCents()))
-            else showResult(false, "Couldn't record cash")
+            if (resp != null && resp.success) {
+                showResult(
+                    true,
+                    "Cash recorded",
+                    draft.subtotalCents() + computeTaxCents(draft.subtotalCents()),
+                    transactionId = resp.transactionId,
+                    bookingId = draft.bookingId,
+                    suggestedEmail = draft.receiptEmail,
+                )
+            } else {
+                showResult(false, "Couldn't record cash")
+            }
         }
     }
 
@@ -483,10 +680,14 @@ fun PosApp() {
             title = resultTitle,
             amountCents = resultAmount,
             message = resultMessage,
+            receipt = receipt,
+            onSendReceipt = { email, kind -> sendReceipt(email, kind) },
+            onRefreshReceipts = { refreshReceipts() },
             onDone = {
                 draft = SaleDraft()
                 customerQuery = ""
                 customerHits = emptyList()
+                receipt = ReceiptState()
                 loadBookings()
                 stage = Stage.Bookings
             },

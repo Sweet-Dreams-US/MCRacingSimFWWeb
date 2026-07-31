@@ -20,6 +20,7 @@ import {
   formatDate,
   formatDollars,
   formatTransactionType,
+  GROSS_INCOME_TYPES,
   isValidPaymentMethod,
   isValidTransactionType,
   type TransactionType,
@@ -129,6 +130,23 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
       .order('created_at', { ascending: false })
       .limit(SUMMARY_FETCH_CAP),
   ])
+
+  // Which of the rows on THIS page already had a receipt emailed. One extra
+  // query scoped to the visible ids — so the ledger can flag money-in sales
+  // whose customer never got anything.
+  const pageIds = (rows ?? []).map((r) => r.id)
+  const receiptedIds = new Set<string>()
+  if (pageIds.length > 0) {
+    const { data: sentRows } = await supabase
+      .from('email_log')
+      .select('related_transaction_id')
+      .in('related_transaction_id', pageIds)
+      .eq('template', 'transaction_receipt')
+      .in('status', ['sent', 'delivered', 'opened', 'clicked'])
+    for (const r of sentRows ?? []) {
+      if (r.related_transaction_id) receiptedIds.add(r.related_transaction_id)
+    }
+  }
 
   if (countError || dataError || summaryError) {
     return (
@@ -257,6 +275,21 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
               {t.vendor}
             </p>
           )}
+          {/* Receipt state — only rows that actually warrant a customer receipt.
+              Gating on `isPositive` alone would flag cash-drawer deposits and
+              adjustments too, and a badge that cries wolf on half the ledger
+              trains staff to ignore it. Makes a real sale whose customer got
+              nothing visible at a glance instead of needing the detail page. */}
+          {GROSS_INCOME_TYPES.includes(t.type) &&
+            (receiptedIds.has(t.id) ? (
+              <p className="telemetry-text text-xs text-green-400/80 mt-0.5">
+                ✓ Receipt sent
+              </p>
+            ) : (
+              <p className="telemetry-text text-xs text-amber-400/80 mt-0.5">
+                No receipt
+              </p>
+            ))}
         </td>
         <td className="p-4">
           <PaymentMethodBadge method={t.payment_method} />

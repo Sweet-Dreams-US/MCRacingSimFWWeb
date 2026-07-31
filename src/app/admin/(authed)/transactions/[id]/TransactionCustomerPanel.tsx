@@ -29,6 +29,10 @@ export default function TransactionCustomerPanel({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Hit[]>([])
 
+  // Optional one-off recipient — for when the payer isn't the customer on file
+  // (a split, a gift, or simply a typo in the stored address).
+  const [overrideEmail, setOverrideEmail] = useState('')
+
   async function search(q: string) {
     setQuery(q)
     if (q.trim().length < 2) {
@@ -78,17 +82,24 @@ export default function TransactionCustomerPanel({
       const res = await fetch(`/api/admin/transactions/${transactionId}/email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind }),
+        body: JSON.stringify({ kind, email: overrideEmail.trim() || null }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || 'Send failed')
       setMsg(`${kind === 'thankyou' ? 'Thank-you' : 'Receipt'} sent to ${data.sentTo}.`)
+      setOverrideEmail('')
+      // Re-render the server component so the Receipts list above picks up the
+      // row we just wrote — otherwise the operator sends and sees no change.
+      router.refresh()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Send failed')
     } finally {
       setBusy(false)
     }
   }
+
+  // Sending needs somewhere to send: a stored address or a typed one.
+  const canSend = Boolean(customer?.email || overrideEmail.trim())
 
   return (
     <div className="bg-asphalt-dark border border-white/5 p-5 space-y-4">
@@ -106,54 +117,67 @@ export default function TransactionCustomerPanel({
       )}
 
       {customer ? (
-        <div className="space-y-4">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <p className="telemetry-text text-grid-white font-medium">{customer.name}</p>
-              <p className="telemetry-text text-xs text-pit-gray">
-                {customer.email || 'No email on file'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => connect(null)}
-              disabled={busy}
-              className="telemetry-text text-xs text-pit-gray hover:text-apex-red disabled:opacity-40"
-            >
-              Detach
-            </button>
-          </div>
-
-          {/* Resend actions — need an email on file */}
-          <div className="flex gap-2 flex-wrap border-t border-white/5 pt-4">
-            <button
-              type="button"
-              onClick={() => resend('receipt')}
-              disabled={busy || !customer.email}
-              className="telemetry-text text-sm uppercase tracking-wider bg-telemetry-cyan/15 text-telemetry-cyan border border-telemetry-cyan/40 hover:bg-telemetry-cyan/25 disabled:opacity-40 px-4 py-2.5"
-            >
-              {busy ? '…' : 'Resend Receipt'}
-            </button>
-            <button
-              type="button"
-              onClick={() => resend('thankyou')}
-              disabled={busy || !customer.email}
-              className="telemetry-text text-sm uppercase tracking-wider bg-white/5 text-grid-white border border-white/15 hover:bg-white/10 disabled:opacity-40 px-4 py-2.5"
-            >
-              {busy ? '…' : 'Resend Thank-You'}
-            </button>
-          </div>
-          {!customer.email && (
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <p className="telemetry-text text-grid-white font-medium">{customer.name}</p>
             <p className="telemetry-text text-xs text-pit-gray">
-              This customer has no email on file, so emails can&apos;t be sent.
+              {customer.email || 'No email on file'}
             </p>
-          )}
+          </div>
+          <button
+            type="button"
+            onClick={() => connect(null)}
+            disabled={busy}
+            className="telemetry-text text-xs text-pit-gray hover:text-apex-red disabled:opacity-40"
+          >
+            Detach
+          </button>
         </div>
       ) : (
         <p className="telemetry-text text-sm text-pit-gray">
-          No customer connected. Link one to enable receipts &amp; thank-you emails.
+          No customer connected. Link one below, or send to a one-off address.
         </p>
       )}
+
+      {/* Send actions. Deliberately NOT gated on a connected customer — a
+          walk-in who paid cash may never be in the system, and staff still
+          need to get them a receipt. A typed address wins over the stored one. */}
+      <div className="border-t border-white/5 pt-4 space-y-3">
+        <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider">
+          Send to
+        </label>
+        <input
+          type="email"
+          value={overrideEmail}
+          onChange={(e) => setOverrideEmail(e.target.value)}
+          placeholder={customer?.email || 'name@email.com'}
+          className="composer-input w-full"
+        />
+        <p className="telemetry-text text-xs text-pit-gray">
+          {customer?.email
+            ? `Leave blank to send to ${customer.email}.`
+            : 'No address on file — enter one to send.'}
+        </p>
+
+        <div className="flex gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => resend('receipt')}
+            disabled={busy || !canSend}
+            className="telemetry-text text-sm uppercase tracking-wider bg-telemetry-cyan/15 text-telemetry-cyan border border-telemetry-cyan/40 hover:bg-telemetry-cyan/25 disabled:opacity-40 px-4 py-2.5"
+          >
+            {busy ? '…' : 'Send Receipt'}
+          </button>
+          <button
+            type="button"
+            onClick={() => resend('thankyou')}
+            disabled={busy || !canSend}
+            className="telemetry-text text-sm uppercase tracking-wider bg-white/5 text-grid-white border border-white/15 hover:bg-white/10 disabled:opacity-40 px-4 py-2.5"
+          >
+            {busy ? '…' : 'Send Thank-You'}
+          </button>
+        </div>
+      </div>
 
       {/* Connect / change: search picker + optional booking-customer shortcut */}
       <div className="border-t border-white/5 pt-4 space-y-3">

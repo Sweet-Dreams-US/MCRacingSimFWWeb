@@ -149,6 +149,40 @@ data class ActionResponse(
     val transactionId: String? = null,
 )
 
+// ---- Receipts ---------------------------------------------------------------
+
+/** One receipt/thank-you already emailed for a sale. */
+data class ReceiptDto(
+    val toEmail: String,
+    val template: String,   // "transaction_receipt" | "session_thankyou"
+    val status: String,     // "sent" | "delivered" | "failed" | "skipped" | ...
+    val sentAt: String,
+    val failed: Boolean = false,
+)
+
+data class ReceiptsResponse(
+    val transactionId: String? = null,
+    // True while the Stripe webhook hasn't recorded the sale yet — the reader
+    // polls until this clears rather than reporting "no receipt" too early.
+    val pending: Boolean = false,
+    val receipts: List<ReceiptDto> = emptyList(),
+)
+
+data class SendReceiptRequest(
+    val transactionId: String? = null,
+    val paymentIntentId: String? = null,
+    val bookingId: String? = null,
+    val email: String? = null,
+    val kind: String = "receipt", // "receipt" | "thankyou"
+)
+
+data class SendReceiptResponse(
+    val success: Boolean = false,
+    val error: String? = null,
+    val sentTo: String? = null,
+    val transactionId: String? = null,
+)
+
 // ---- Retrofit service -------------------------------------------------------
 
 interface BackendService {
@@ -186,6 +220,22 @@ interface BackendService {
     /** "Add booking — no sale yet": put a session on the books, charge later. */
     @POST("create_booking/")
     suspend fun createBooking(@Body body: CreateBookingRequest): CreateBookingResponse
+
+    /**
+     * Receipts already emailed for a sale. Identify it by whichever handle the
+     * reader holds — after a card sale that's only the PaymentIntent id, since
+     * the transaction row is written asynchronously by the Stripe webhook.
+     */
+    @GET("receipts/")
+    suspend fun receipts(
+        @Query("transactionId") transactionId: String? = null,
+        @Query("paymentIntentId") paymentIntentId: String? = null,
+        @Query("bookingId") bookingId: String? = null,
+    ): ReceiptsResponse
+
+    /** Send or re-send a receipt / thank-you from the reader. */
+    @POST("send_receipt/")
+    suspend fun sendReceipt(@Body body: SendReceiptRequest): SendReceiptResponse
 }
 
 // ---- Client -----------------------------------------------------------------

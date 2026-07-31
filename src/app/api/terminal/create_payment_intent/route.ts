@@ -79,8 +79,36 @@ export async function POST(request: NextRequest) {
   // receipt + build long-term history — same as the web POS.
   let receiptEmail = body.receiptEmail?.trim() || undefined
   let customerId = body.customerId?.trim() || null
-  if (!customerId && receiptEmail) {
-    customerId = await findOrCreateCustomerIdByEmail(supabase, receiptEmail)
+
+  // Bind the charge to whoever is actually PAYING, not to whoever booked.
+  //
+  // The reader's "split by person" button sets the racer's email but leaves
+  // draft.customerId on the booking owner. Without this, stripe_charges.
+  // customer_id stays the booker, and the webhook mails that booker the receipt
+  // for a session someone else paid for — the customer never sees it, while
+  // Resend reports delivered (and often clicked, by the booker).
+  //
+  // Rule: when an explicit receipt email disagrees with the linked customer's
+  // email, the typed email wins and we re-resolve the customer from it. Booking
+  // attribution is untouched — that rides on booking_id, not customer_id.
+  if (receiptEmail) {
+    const typed = receiptEmail.toLowerCase()
+    let linkedEmail: string | null = null
+    if (customerId) {
+      const { data: linked } = await supabase
+        .from('customers')
+        .select('email')
+        .eq('id', customerId)
+        .maybeSingle()
+      linkedEmail = linked?.email?.toLowerCase() ?? null
+    }
+    // Re-point only on a genuine disagreement between two known addresses. If
+    // the linked customer simply has no email on file we keep the link — the
+    // webhook still falls back to the PaymentIntent's receipt_email.
+    if (!customerId || (linkedEmail !== null && linkedEmail !== typed)) {
+      customerId =
+        (await findOrCreateCustomerIdByEmail(supabase, receiptEmail)) ?? customerId
+    }
   }
 
   let stripeCustomerId: string | undefined

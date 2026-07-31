@@ -36,8 +36,8 @@ android {
         applicationId = "com.mcracing.pos"
         minSdk = 28
         targetSdk = 35
-        versionCode = 11
-        versionName = "2.0"
+        versionCode = 12
+        versionName = "2.1"
 
         // Backend base URL (Next.js) + device key, injected at build time.
         buildConfigField(
@@ -89,6 +89,9 @@ dependencies {
     // --- Networking to our backend ---
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    // Directly imported (not just via converter-gson) to parse error bodies off
+    // non-2xx responses, so the backend's message reaches staff.
+    implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 

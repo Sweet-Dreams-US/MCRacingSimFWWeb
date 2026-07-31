@@ -48,6 +48,9 @@ export default function PosClient({
   const [customerQuery, setCustomerQuery] = useState('')
   const [hits, setHits] = useState<CustomerHit[]>([])
   const [selected, setSelected] = useState<CustomerHit | null>(null)
+  // Free-text receipt address for a walk-in who isn't in the system. Overrides
+  // the selected customer's email when both are present (the payer wins).
+  const [receiptEmail, setReceiptEmail] = useState('')
 
   // Booking selector
   const [bookings, setBookings] = useState<BookingHit[]>([])
@@ -134,6 +137,8 @@ export default function PosClient({
     }
     setCustomerQuery('')
     setHits([])
+    // Don't carry a previous sale's typed address onto this booking.
+    setReceiptEmail('')
   }
 
   // Detach the booking link only. Used when the linked booking no longer matches
@@ -177,7 +182,9 @@ export default function PosClient({
           // Only link a booking when this is actually a session payment, so a
           // walk-in/other sale can't carry a stale booking_id into accounting.
           bookingId: saleType === 'booking_income' ? bookingId.trim() || null : null,
-          receiptEmail: selected?.email || null,
+          // Typed address wins over the selected customer's — staff type it
+          // precisely when the payer isn't the person on the booking.
+          receiptEmail: receiptEmail.trim() || selected?.email || null,
         }),
       })
       const data = await res.json()
@@ -247,6 +254,7 @@ export default function PosClient({
     setCustomerQuery('')
     setSelected(null)
     setHits([])
+    setReceiptEmail('')
     setSaleType('in_person_sale')
     setSelectedBooking(null)
     setPrefillCents(null)
@@ -296,8 +304,17 @@ export default function PosClient({
         )}
         <p className="telemetry-text text-sm text-pit-gray">
           Charged{selected ? <> to {selected.name}</> : null}.
-          {selected?.email ? ` Receipt sent to ${selected.email}.` : ''}
         </p>
+        {receiptEmail.trim() || selected?.email ? (
+          <p className="telemetry-text text-sm text-pit-gray">
+            Receipt sent to{' '}
+            <span className="text-grid-white">{receiptEmail.trim() || selected?.email}</span>.
+          </p>
+        ) : (
+          <p className="telemetry-text text-sm text-amber-400">
+            No receipt sent — no email was captured for this sale.
+          </p>
+        )}
         <button type="button" onClick={resetForm} className="btn-primary">
           New Sale
         </button>
@@ -499,6 +516,32 @@ export default function PosClient({
                   </div>
                 )}
               </div>
+            )}
+          </div>
+
+          {/* Receipt email — the only way a walk-in who isn't in the system
+              gets a receipt. Sending is driven by this address, not by whether
+              a customer happens to be selected. */}
+          <div>
+            <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-2">
+              Receipt email{' '}
+              <span className="text-pit-gray/60">
+                {selected?.email ? '(overrides the customer above)' : '(no email = no receipt)'}
+              </span>
+            </label>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="off"
+              value={receiptEmail}
+              onChange={(e) => setReceiptEmail(e.target.value)}
+              placeholder={selected?.email || 'name@email.com'}
+              className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none"
+            />
+            {!receiptEmail.trim() && !selected?.email && (
+              <p className="telemetry-text text-xs text-amber-400 mt-2">
+                No receipt will be sent for this sale.
+              </p>
             )}
           </div>
         </div>

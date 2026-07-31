@@ -53,6 +53,8 @@ import com.mcracing.pos.ui.theme.TelemetryCyan
 fun centsToDollars(cents: Long): String = "$%.2f".format(cents / 100.0)
 
 val CompletedGreen = Color(0xFF4ADE80)
+/** Needs-attention amber — e.g. a completed sale that sent no receipt. */
+val WarnAmber = Color(0xFFFBBF24)
 private val DoneCardBg = Color(0xFF141414)
 
 fun prettyTime(t: String): String {
@@ -484,7 +486,17 @@ fun SaleScreen(
                 OutlinedButton(
                     onClick = {
                         onAmountChange("%.2f".format(share / 100.0))
-                        if (!r.email.isNullOrBlank()) onEmailChange(r.email)
+                        // Charge THIS racer, not the booker. Clearing the
+                        // customer stops the draft asserting the booking owner
+                        // as the payer; the server then find-or-creates the
+                        // customer from this email, so the receipt reaches
+                        // whoever actually paid. Only when we have an email —
+                        // without one, keeping the booker link beats an
+                        // unattributed charge.
+                        if (!r.email.isNullOrBlank()) {
+                            onEmailChange(r.email)
+                            onClearCustomer()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -977,17 +989,48 @@ fun ResultScreen(
     title: String,
     amountCents: Long,
     message: String,
+    receipt: ReceiptState,
+    onSendReceipt: (email: String, kind: String) -> Unit,
+    onRefreshReceipts: () -> Unit,
     onDone: () -> Unit,
 ) {
-    // On success, auto-return to the bookings list after a few seconds so staff
-    // don't have to tap "New Sale" between customers. Failures wait for a tap.
-    if (success) {
-        LaunchedEffect(Unit) {
-            delay(3000)
+    // Staff can type an address the customer gives at the counter. Seeded with
+    // whatever was entered on the sale screen.
+    var email by remember(receipt.seq) {
+        mutableStateOf(receipt.suggestedEmail.orEmpty())
+    }
+
+    val sent = receipt.sentReceipt()
+    val settled = !receipt.loading && !receipt.pending
+    val hasReceiptPanel = success && receipt.canSend()
+    val untouched = email == receipt.suggestedEmail.orEmpty()
+
+    // Auto-return rules:
+    //  - Results with no receipt dimension (booking completed / cancelled) go
+    //    back on a timer as they always did, so the reader never sits parked on
+    //    a dead confirmation screen.
+    //  - A real sale returns only once we KNOW a receipt went out. If none did,
+    //    hold the screen — this is the moment staff can still capture an
+    //    address, and the point is to stop sales leaving without a receipt.
+    //  - Any interaction (typing, sending) cancels the countdown so it can't
+    //    navigate away mid-edit.
+    val autoDismiss = success &&
+        receipt.justSentTo == null &&
+        !receipt.sending &&
+        untouched &&
+        (!hasReceiptPanel || (settled && sent != null))
+
+    if (autoDismiss) {
+        LaunchedEffect(sent?.toEmail) {
+            delay(4000)
             onDone()
         }
     }
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+
+    Box(
+        Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.Center,
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(if (success) "✓" else "✕", fontSize = 64.sp, color = if (success) CompletedGreen else ApexRed)
             Spacer(Modifier.height(12.dp))
@@ -1000,7 +1043,78 @@ fun ResultScreen(
                 Spacer(Modifier.height(8.dp))
                 Text(message, color = PitGray)
             }
-            Spacer(Modifier.height(28.dp))
+
+            if (hasReceiptPanel) {
+                Spacer(Modifier.height(20.dp))
+                HorizontalDivider(color = Color(0xFF232323))
+                Spacer(Modifier.height(16.dp))
+
+                // ---- Receipt status ------------------------------------------
+                // Order matters: "gave up" must beat "still checking", and both
+                // must beat "none sent" — claiming no receipt was sent when we
+                // simply never got an answer would send staff chasing ghosts.
+                when {
+                    receipt.justSentTo != null ->
+                        Text("✓ Receipt sent to ${receipt.justSentTo}", color = CompletedGreen)
+                    sent != null ->
+                        Text("✓ Receipt emailed to ${sent.toEmail}", color = CompletedGreen)
+                    receipt.gaveUp -> {
+                        Text("Couldn't confirm the receipt yet", color = WarnAmber)
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(onClick = onRefreshReceipts) {
+                            Text("Check again", color = TelemetryCyan, fontSize = 13.sp)
+                        }
+                    }
+                    !settled ->
+                        Text("Checking receipt…", color = PitGray)
+                    else ->
+                        Text("No receipt sent for this sale", color = WarnAmber)
+                }
+
+                receipt.error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = ApexRed, fontSize = 13.sp)
+                }
+
+                // ---- Send / re-send ------------------------------------------
+                // Shown whenever nothing has gone out yet, and also after a
+                // successful send so a typo can be corrected on the spot.
+                Spacer(Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text(if (sent != null) "Send to another address" else "Receipt email") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = KeyboardType.Email
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { onSendReceipt(email, "receipt") },
+                        enabled = !receipt.sending && (email.isNotBlank() || sent != null),
+                        colors = ButtonDefaults.buttonColors(containerColor = TelemetryCyan),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            when {
+                                receipt.sending -> "Sending…"
+                                sent != null -> "Resend"
+                                else -> "Send receipt"
+                            }
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { onSendReceipt(email, "thankyou") },
+                        enabled = !receipt.sending && (email.isNotBlank() || sent != null),
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Thank-you") }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
             Button(
                 onClick = onDone,
                 colors = ButtonDefaults.buttonColors(containerColor = ApexRed),

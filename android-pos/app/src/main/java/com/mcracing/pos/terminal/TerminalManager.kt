@@ -120,7 +120,13 @@ object TerminalManager {
     // --- Payment: create (backend) → collect+confirm (device) → capture ------
 
     sealed class SaleResult {
-        data class Success(val amountCents: Long) : SaleResult()
+        /**
+         * @param paymentIntentId carried back so the UI can look up (and re-send)
+         *   the receipt for this sale. The transaction row is written
+         *   asynchronously by the Stripe webhook, so the PaymentIntent is the
+         *   only handle the reader holds at this point.
+         */
+        data class Success(val amountCents: Long, val paymentIntentId: String) : SaleResult()
         data class Failure(val message: String) : SaleResult()
     }
 
@@ -171,7 +177,7 @@ object TerminalManager {
             val captured = ApiClient.service.capturePaymentIntent(
                 CapturePaymentRequest(created.paymentIntentId)
             )
-            SaleResult.Success(captured.amountCents ?: amountCents)
+            SaleResult.Success(captured.amountCents ?: amountCents, created.paymentIntentId)
         } catch (e: TerminalException) {
             SaleResult.Failure(e.errorMessage)
         } catch (e: Exception) {

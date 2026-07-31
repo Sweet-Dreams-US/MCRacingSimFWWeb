@@ -3,10 +3,14 @@
 // cash for part or all of a booking. Writes a transaction to the same books the
 // web POS uses. Device-key auth.
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isDeviceAuthorized } from '@/lib/device-auth'
 import { findOrCreateCustomerIdByEmail } from '@/lib/customers'
-import { computeTaxCents } from '@/lib/tax'
+import { computeTaxCents, taxRateLabel } from '@/lib/tax'
+import { sendEmail } from '@/lib/email'
+import { transactionReceiptEmail } from '@/lib/emails/templates'
+import { formatTransactionType } from '@/lib/accounting'
 
 export const runtime = 'nodejs'
 
@@ -86,6 +90,8 @@ export async function POST(request: NextRequest) {
     totalCents = subtotalCents + taxCents
   }
 
+  const occurredOn = getTodayEastern()
+
   const { data: inserted, error } = await supabase
     .from('transactions')
     .insert({
@@ -93,7 +99,7 @@ export async function POST(request: NextRequest) {
       amount_cents: totalCents,
       tax_cents: taxCents,
       rc_cents: Math.max(0, Math.round(body.rcCents ?? 0)), // RC car racing portion
-      occurred_on: getTodayEastern(),
+      occurred_on: occurredOn,
       description,
       payment_method: 'cash',
       booking_id: bookingId,
@@ -106,6 +112,61 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: `Insert failed: ${error?.message ?? 'unknown'}` },
       { status: 500 }
+    )
+  }
+
+  // Receipt. There is no PaymentIntent on this path, so Stripe can't send one —
+  // if we don't mail it here, a cash customer gets nothing at all. Prefer the
+  // address typed on the reader, falling back to the linked customer's.
+  // Fire-and-forget via waitUntil so the reader isn't held up; sendEmail never
+  // throws and logs every attempt to email_log.
+  const receiptEmail = (body.receiptEmail ?? '').trim() || null
+  if (receiptEmail || customerId) {
+    const linkedCustomerId = customerId
+    const transactionId = inserted.id
+    waitUntil(
+      (async () => {
+        let firstName: string | null = null
+        let linkedEmail: string | null = null
+        if (linkedCustomerId) {
+          const { data: cust } = await supabase
+            .from('customers')
+            .select('email, first_name')
+            .eq('id', linkedCustomerId)
+            .maybeSingle()
+          firstName = cust?.first_name ?? null
+          linkedEmail = cust?.email ?? null
+        }
+
+        const to = receiptEmail || linkedEmail
+        if (!to) return
+
+        // Only greet by name when mailing that customer's own address.
+        const nameMatches =
+          linkedEmail != null && linkedEmail.toLowerCase() === to.toLowerCase()
+
+        const { subject, html } = transactionReceiptEmail({
+          customerFirstName: (nameMatches ? firstName : null) || 'racer',
+          description,
+          amountCents: totalCents,
+          taxCents,
+          tipCents: 0, // no tipping on a cash payment
+          occurredOn,
+          paymentMethodLabel: 'Cash',
+          typeLabel: formatTransactionType(type),
+          taxRateLabel: taxCents > 0 ? taxRateLabel() : undefined,
+        })
+
+        await sendEmail({
+          to,
+          subject,
+          html,
+          template: 'transaction_receipt',
+          relatedBookingId: bookingId,
+          relatedCustomerId: linkedCustomerId,
+          relatedTransactionId: transactionId,
+        })
+      })()
     )
   }
 

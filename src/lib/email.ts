@@ -57,6 +57,13 @@ export interface SendEmailParams {
   template: string
   relatedBookingId?: string | null
   relatedCustomerId?: string | null
+  /**
+   * The transaction this email is about (receipts / thank-yous). Lets the admin
+   * panel and the on-reader POS answer "was a receipt sent for THIS sale, and to
+   * what address?" — related_customer_id is too coarse, since one customer has
+   * many transactions.
+   */
+  relatedTransactionId?: string | null
 }
 
 /**
@@ -71,8 +78,15 @@ export interface SendEmailParams {
 export async function sendEmail(
   params: SendEmailParams
 ): Promise<string | null> {
-  const { to, subject, html, template, relatedBookingId, relatedCustomerId } =
-    params
+  const {
+    to,
+    subject,
+    html,
+    template,
+    relatedBookingId,
+    relatedCustomerId,
+    relatedTransactionId,
+  } = params
 
   const fromEmail = getFromEmail()
   const supabase = createAdminClient()
@@ -92,6 +106,7 @@ export async function sendEmail(
       error: 'Resend not configured',
       related_booking_id: relatedBookingId ?? null,
       related_customer_id: relatedCustomerId ?? null,
+      related_transaction_id: relatedTransactionId ?? null,
     })
     if (logError) {
       console.error(`[email] Failed to log skipped email: ${logError.message}`)
@@ -120,6 +135,7 @@ export async function sendEmail(
         error: errMsg,
         related_booking_id: relatedBookingId ?? null,
         related_customer_id: relatedCustomerId ?? null,
+        related_transaction_id: relatedTransactionId ?? null,
       })
       if (logError) {
         console.error(
@@ -140,6 +156,7 @@ export async function sendEmail(
       resend_message_id: messageId,
       related_booking_id: relatedBookingId ?? null,
       related_customer_id: relatedCustomerId ?? null,
+      related_transaction_id: relatedTransactionId ?? null,
     })
     if (logError) {
       // Don't fail the call — Resend already accepted the message.
@@ -159,6 +176,7 @@ export async function sendEmail(
       error: errMsg,
       related_booking_id: relatedBookingId ?? null,
       related_customer_id: relatedCustomerId ?? null,
+      related_transaction_id: relatedTransactionId ?? null,
     })
     if (logError) {
       console.error(
