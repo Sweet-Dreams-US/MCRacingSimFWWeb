@@ -194,6 +194,17 @@ export default async function BookingDetailPage({
             <h2 className="racing-headline text-lg text-grid-white mb-4">
               Racers <span className="text-pit-gray">({racers.length})</span>
             </h2>
+            {/* Per-head share of the session price (pre-tax) — general tracking
+                for "who covered what" when one person pays for the group. */}
+            {racers.length > 1 && booking.session_price_cents > 0 && (
+              <p className="telemetry-text text-xs text-pit-gray mb-3">
+                Session {formatDollars(booking.session_price_cents)} ÷ {racers.length} racers ={' '}
+                <span className="text-grid-white">
+                  {formatDollars(Math.round(booking.session_price_cents / racers.length))}
+                </span>{' '}
+                per racer (pre-tax)
+              </p>
+            )}
             <div className="space-y-3">
               {racers.map(
                 (r: {

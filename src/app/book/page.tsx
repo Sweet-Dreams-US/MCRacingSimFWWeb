@@ -148,6 +148,43 @@ export default function BookPage() {
         </div>
       </section>
 
+      {/* ================= FASTEST LAP CHALLENGE ================= */}
+      <section className="px-4 pt-4 pb-2">
+        <div className="max-w-5xl mx-auto relative overflow-hidden card-dark border-telemetry-cyan/40 p-6 sm:p-8">
+          <div className="absolute inset-0 checkered-pattern opacity-[0.05] pointer-events-none" />
+          <div className="relative flex flex-col md:flex-row md:items-center gap-6">
+            <div className="flex-1">
+              <p className="telemetry-text text-xs text-telemetry-cyan uppercase tracking-[0.25em] mb-2">
+                ⚡ Limited-Time Special
+              </p>
+              <h2 className="racing-headline text-2xl sm:text-3xl text-grid-white mb-2">
+                Fastest Lap <span className="text-apex-red">Challenge</span> — 20% Off
+              </h2>
+              <p className="telemetry-text text-sm sm:text-base text-pit-gray max-w-xl">
+                Book a session just to chase the city leaderboard&apos;s fastest lap. Beat
+                the time on the board and your name goes up. Code{' '}
+                <span className="text-grid-white font-bold tracking-widest">FASTESTLAP</span>{' '}
+                takes <span className="text-grid-white font-bold">20% off any session</span>.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 md:items-end">
+              <a
+                href="/book?code=FASTESTLAP#book"
+                className="btn-primary text-center px-8 py-4 whitespace-nowrap"
+              >
+                Book With 20% Off
+              </a>
+              <a
+                href="/leaderboard"
+                className="telemetry-text text-sm text-telemetry-cyan hover:text-telemetry-cyan-glow text-center md:text-right"
+              >
+                See the time to beat →
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ================= BOOKING FORM ================= */}
       <section id="book" className="scroll-mt-24 px-4 py-12">
         <div className="max-w-6xl mx-auto">

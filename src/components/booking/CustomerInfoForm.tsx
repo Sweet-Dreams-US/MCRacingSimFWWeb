@@ -1,5 +1,7 @@
 'use client'
 
+import EmailSuggestInput, { type PrefillCustomer } from '@/components/EmailSuggestInput'
+
 interface CustomerInfo {
   firstName: string
   lastName: string
@@ -20,6 +22,7 @@ const howHeardOptions = [
   'Facebook',
   'Instagram',
   'TikTok',
+  'Radio',
   'Friend/Family',
   'Drove By',
   'Event/Show',
@@ -99,10 +102,21 @@ export default function CustomerInfoForm({ value, onChange, errors }: CustomerIn
             <label className="block telemetry-text text-xs text-pit-gray mb-1">
               Email <span className="text-apex-red">*</span>
             </label>
-            <input
-              type="email"
+            <EmailSuggestInput
               value={value.email}
-              onChange={(e) => handleChange('email', e.target.value)}
+              onChange={(email) => handleChange('email', email)}
+              // Returning customer picked their email → fill whatever they
+              // haven't typed yet (never clobber fields they already filled).
+              onPickCustomer={(c: PrefillCustomer) =>
+                onChange({
+                  ...value,
+                  email: value.email,
+                  firstName: value.firstName || c.firstName || '',
+                  lastName: value.lastName || c.lastName || '',
+                  phone: value.phone || c.phone || '',
+                  birthday: value.birthday || c.birthday || '',
+                })
+              }
               className={`w-full bg-asphalt border ${
                 errors?.email ? 'border-apex-red' : 'border-white/20'
               } px-3 py-2 text-white telemetry-text focus:border-telemetry-cyan focus:outline-none placeholder:text-pit-gray`}

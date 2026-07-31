@@ -172,6 +172,28 @@ export default function CityLeaderboard({ boards }: { boards: PublicBoard[] }) {
             </div>
           </div>
         )}
+
+        {/* Fastest Lap Challenge — book-to-beat-the-board special */}
+        <div className="mt-10 card-dark border-apex-red/40 p-6 sm:p-8 text-center">
+          <p className="telemetry-text text-xs text-telemetry-cyan uppercase tracking-[0.25em] mb-2">
+            ⚡ Fastest Lap Challenge
+          </p>
+          <h3 className="racing-headline text-2xl text-grid-white mb-2">
+            Think you&apos;re <span className="text-apex-red">faster</span>?
+          </h3>
+          <p className="telemetry-text text-sm text-pit-gray max-w-xl mx-auto mb-5">
+            Book a session just to chase the top of this board — code{' '}
+            <span className="text-grid-white font-bold tracking-widest">FASTESTLAP</span> takes{' '}
+            <span className="text-grid-white font-bold">20% off any session</span>. Beat the
+            time and your name goes up.
+          </p>
+          <a
+            href="/book?code=FASTESTLAP#book"
+            className="btn-primary inline-block px-8 py-4"
+          >
+            Book the Challenge — 20% Off
+          </a>
+        </div>
       </div>
     </section>
   )

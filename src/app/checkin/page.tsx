@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Button from '@/components/Button'
+import EmailSuggestInput from '@/components/EmailSuggestInput'
 import SectionDivider from '@/components/SectionDivider'
 
 function CheckinContent() {
@@ -134,6 +135,7 @@ function CheckinContent() {
     'Facebook',
     'Instagram',
     'TikTok',
+    'Radio',
     'Friend/Family',
     'Drive By',
     'Event/Fair',
@@ -331,10 +333,22 @@ function CheckinContent() {
                     <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-2">
                       Email
                     </label>
-                    <input
-                      type="email"
+                    <EmailSuggestInput
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      onChange={(email) => setFormData((prev) => ({ ...prev, email }))}
+                      // Returning customer picked their email → prefill anything
+                      // they haven't typed yet and show the welcome banner.
+                      onPickCustomer={(c) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          firstName: prev.firstName || c.firstName || '',
+                          lastName: prev.lastName || c.lastName || '',
+                          phone: prev.phone || c.phone || '',
+                          birthday: prev.birthday || c.birthday || '',
+                        }))
+                        setWelcomeName(c.firstName || '')
+                        setLookupStatus('found')
+                      }}
                       className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors"
                       placeholder="racer@email.com"
                     />

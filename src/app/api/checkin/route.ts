@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Json } from '@/lib/supabase/types'
+import { businessDateEastern } from '@/lib/business-day'
 import { sendMetaEvent, metaContextFromRequest } from '@/lib/meta/capi'
 import { waitUntil } from '@vercel/functions'
 
@@ -185,6 +186,67 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ---- Walk-in: auto-attach the waiver to today's booking ----------------
+    // A friend on someone else's booking usually signs at the kiosk with no
+    // bookingId. If TODAY's schedule (7am business-day rollover) has a racer
+    // slot with the same name that hasn't signed yet, stamp it — so the
+    // booking shows who actually signed (and gains their contact info) instead
+    // of a permanently-unsigned name. Best-effort: any failure here never
+    // fails the check-in, the customer's own waiver is already saved above.
+    let linkedBookingId: string | null = null
+    if (!isLinkedBooking) {
+      try {
+        const businessDate = businessDateEastern()
+        const fullName = `${firstName} ${lastName}`.replace(/\s+/g, ' ').trim().toLowerCase()
+
+        const { data: todaysBookings } = await supabase
+          .from('bookings')
+          .select('id, start_time')
+          .eq('session_date', businessDate)
+          .in('status', ['confirmed', 'completed', 'partial_noshow'])
+          .order('start_time', { ascending: true })
+
+        const ids = (todaysBookings ?? []).map((b) => b.id)
+        if (ids.length > 0) {
+          const { data: slots } = await supabase
+            .from('booking_racers')
+            .select('booking_id, slot, name, email, phone')
+            .in('booking_id', ids)
+            .is('waiver_signed_at', null)
+
+          // Earliest-starting booking wins if the same name appears twice.
+          const match = (slots ?? [])
+            .filter(
+              (s) => s.name.replace(/\s+/g, ' ').trim().toLowerCase() === fullName
+            )
+            .sort((a, b) => ids.indexOf(a.booking_id) - ids.indexOf(b.booking_id))[0]
+
+          if (match) {
+            const patch: {
+              waiver_signed_at: string
+              waiver_form_data: Json
+              email?: string
+              phone?: string
+            } = { waiver_signed_at: now, waiver_form_data: waiverFormData }
+            // Fill contact info the booker left blank — never overwrite.
+            if (email && !match.email) patch.email = email
+            if (phone && !match.phone) patch.phone = phone
+
+            const { error: linkError } = await supabase
+              .from('booking_racers')
+              .update(patch)
+              .eq('booking_id', match.booking_id)
+              .eq('slot', match.slot)
+
+            if (!linkError) linkedBookingId = match.booking_id
+            else console.error('Check-in: walk-in auto-link update failed:', linkError)
+          }
+        }
+      } catch (err) {
+        console.error('Check-in: walk-in auto-link failed (waiver already saved):', err)
+      }
+    }
+
     // Meta CAPI — a completed waiver/check-in is a CompleteRegistration.
     // Two modes, two treatments:
     //   • Linked booking (racer signs remotely from the SMS /checkin?bookingId
@@ -219,6 +281,8 @@ export async function POST(request: NextRequest) {
       customerId,
       isReturning,
       firstName,
+      // Booking this walk-in waiver was auto-attached to (null if none matched).
+      linkedBookingId,
     })
   } catch (error) {
     console.error('Check-in API error:', error)
