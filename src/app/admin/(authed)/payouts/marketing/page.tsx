@@ -9,7 +9,6 @@
 // Server component — all data is fetched once on the server with the admin
 // client (so we don't have to wrestle with RLS for read-only display).
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { BracketBreakdown } from '@/lib/payouts'
@@ -480,25 +479,24 @@ function HistorySection({
                         <StatusBadge paid={row.paid} />
                       </Td>
                       <Td align="right">
+                        {/* No drill-in detail route exists for a calculation, so
+                            there's no "View" link here. (A disabled one used to
+                            live here with an onClick handler — that CRASHED the
+                            whole page, since this is a Server Component and a
+                            function prop can't be serialized to a Client
+                            Component like next/link.) */}
                         <div className="flex items-center justify-end gap-3">
-                          <Link
-                            href={`/admin/payouts/marketing/${row.id}`}
-                            className="telemetry-text text-xs text-telemetry-cyan uppercase tracking-wider hover:text-telemetry-cyan-glow"
-                            // Detail page not built yet — link is here so the
-                            // route is reserved for a future drill-in view.
-                            aria-disabled="true"
-                            tabIndex={-1}
-                            onClick={(e) => e.preventDefault()}
-                          >
-                            View
-                          </Link>
-                          {!row.paid && isOwner && (
+                          {!row.paid && isOwner ? (
                             <MarkPaidButton
                               calculationId={row.id}
                               periodLabel={periodLabel}
                               payoutLabel={payoutLabel}
                               variant="compact"
                             />
+                          ) : (
+                            <span className="telemetry-text text-xs text-pit-gray">
+                              —
+                            </span>
                           )}
                         </div>
                       </Td>
