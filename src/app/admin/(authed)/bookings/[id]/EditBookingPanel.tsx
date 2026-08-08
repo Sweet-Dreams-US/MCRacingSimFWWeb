@@ -6,7 +6,7 @@
 // pattern: local state, fetch, then router.refresh() to re-render the server page.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { calculatePrice } from '@/lib/pricing'
+import { calculatePrice, LARGE_GROUP_RACERS } from '@/lib/pricing'
 
 interface Props {
   bookingId: string
@@ -180,6 +180,11 @@ export default function EditBookingPanel(props: Props) {
             onChange={(e) => setRacerCount(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
             className="composer-input"
           />
+          {racerCount >= LARGE_GROUP_RACERS && (
+            <p className="telemetry-text text-xs text-amber-400 mt-1.5">
+              ⚠ {racerCount} racers — double-check that&apos;s not a typo.
+            </p>
+          )}
         </div>
       </div>
 

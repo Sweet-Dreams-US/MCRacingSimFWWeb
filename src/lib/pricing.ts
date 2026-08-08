@@ -19,6 +19,13 @@ export type RacerCount = number
 export const SIM_COUNT = 3
 export const EXTRA_RACER_RATE_PER_HOUR = 10 // dollars, per racer past the 3rd
 
+/**
+ * Group size that gets a "did you mean that?" confirm before it's booked.
+ * There's no hard cap, so this is the guard against a fat-fingered 50 — which
+ * would quietly hold the whole venue and quote a four-figure session.
+ */
+export const LARGE_GROUP_RACERS = 10
+
 const WEEKDAY_PRICES: Record<SeatedRacers, Record<Duration, number>> = {
   1: { 1: 45, 2: 85, 3: 115 },
   2: { 1: 90, 2: 160, 3: 220 },

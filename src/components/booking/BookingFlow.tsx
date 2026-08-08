@@ -14,7 +14,13 @@ import { metaTrack } from '@/components/MetaPixel'
 import WaiverSection from './WaiverSection'
 import PriceSummary from './PriceSummary'
 import CardSetupForm from './CardSetupForm'
-import { calculatePrice, calculateNoShowFeeCents, formatDateLong } from '@/lib/pricing'
+import {
+  calculatePrice,
+  calculateNoShowFeeCents,
+  formatDateLong,
+  LARGE_GROUP_RACERS,
+  SIM_COUNT,
+} from '@/lib/pricing'
 
 // Stripe.js is heavy; load lazily on demand. Returns a Promise<Stripe | null>.
 // We resolve it once at module scope so we don't redownload Stripe.js on
@@ -94,6 +100,10 @@ export default function BookingFlow() {
   const [waiverAccepted, setWaiverAccepted] = useState(false)
   const [noShowConsentAccepted, setNoShowConsentAccepted] = useState(false)
   const [marketingOptIn, setMarketingOptIn] = useState(false)
+  // Unusually large groups get an explicit "yes, that's right" before booking —
+  // there's no hard cap, so this catches a fat-fingered count that would
+  // otherwise hold the whole venue and quote a huge session.
+  const [bigGroupAck, setBigGroupAck] = useState(false)
 
   // Discount code (entered on the review step, validated server-side before it
   // sticks). `appliedDiscount` holds the accepted code + the cents it takes off.
@@ -352,7 +362,13 @@ export default function BookingFlow() {
     setDiscountError(null)
   }
 
+  const needsBigGroupAck = racerCount >= LARGE_GROUP_RACERS && !bigGroupAck
+
   const handleSubmit = async () => {
+    // Belt-and-braces: the Continue button is already disabled until the big
+    // group is acknowledged, so this only catches a programmatic call.
+    if (needsBigGroupAck) return
+
     setSubmitting(true)
     setError(null)
 
@@ -484,7 +500,15 @@ export default function BookingFlow() {
             <h3 className="racing-headline text-2xl text-grid-white">
               1. Session <span className="text-apex-red">Setup</span>
             </h3>
-            <RacerCountSelector value={racerCount} onChange={setRacerCount} />
+            <RacerCountSelector
+              value={racerCount}
+              onChange={(n) => {
+                // Changing the count invalidates any previous "yes, that many"
+                // acknowledgement, so a new large number is confirmed again.
+                setBigGroupAck(false)
+                setRacerCount(n)
+              }}
+            />
             <DurationSelector value={duration} onChange={setDuration} />
           </div>
 
@@ -744,6 +768,28 @@ export default function BookingFlow() {
                 </p>
               </div>
 
+              {/* Soft confirm for an unusually large group — no hard cap exists,
+                  so this is what stops a typo'd count from booking the venue. */}
+              {!cardSetup && needsBigGroupAck && (
+                <div className="mb-4 p-4 border border-amber-500/50 bg-amber-500/10">
+                  <p className="telemetry-text text-sm text-amber-400 font-bold mb-1">
+                    That&apos;s a big group — {racerCount} racers. Is that right?
+                  </p>
+                  <p className="telemetry-text text-xs text-pit-gray mb-3 leading-relaxed">
+                    All {racerCount} of you would share the {SIM_COUNT} simulators and take
+                    turns, and the booking holds the whole place for your time slot. If that
+                    number isn&apos;t right, hit Edit Booking and change it.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setBigGroupAck(true)}
+                    className="px-5 py-2.5 border border-amber-500 text-amber-400 telemetry-text text-sm hover:bg-amber-500/10 transition-colors"
+                  >
+                    Yes — {racerCount} racers is correct
+                  </button>
+                </div>
+              )}
+
               {!cardSetup && (
                 <div className="flex gap-4">
                   <button
@@ -761,7 +807,7 @@ export default function BookingFlow() {
                   <button
                     type="button"
                     onClick={handleSubmit}
-                    disabled={submitting}
+                    disabled={submitting || needsBigGroupAck}
                     className="flex-1 px-8 py-3 bg-apex-red text-white racing-headline hover:bg-apex-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {submitting ? (

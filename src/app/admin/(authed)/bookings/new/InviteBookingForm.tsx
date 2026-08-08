@@ -5,7 +5,7 @@
 // (collected in person) and warns on closed days.
 import { useState } from 'react'
 import Link from 'next/link'
-import { calculatePrice, getDayType, formatPrice } from '@/lib/pricing'
+import { calculatePrice, getDayType, formatPrice, LARGE_GROUP_RACERS } from '@/lib/pricing'
 
 type Unit = 1 | 2 | 3
 
@@ -289,6 +289,11 @@ export default function InviteBookingForm() {
               }
               className="composer-input"
             />
+            {racerCount >= LARGE_GROUP_RACERS && (
+              <p className="telemetry-text text-xs text-amber-400 mt-1.5">
+                ⚠ {racerCount} racers — double-check that&apos;s not a typo.
+              </p>
+            )}
           </div>
         </div>
 
