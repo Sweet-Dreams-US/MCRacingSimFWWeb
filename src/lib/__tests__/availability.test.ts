@@ -5,11 +5,41 @@ import {
   isWholeDayBlocked,
   maxConcurrentRacers,
   seatsAvailableFor,
+  seatsUsedBy,
   windowsConflict,
   blockConflictsWithBooking,
   type AvailabilityBlockWindow,
   type SeatBooking,
 } from '../availability'
+
+describe('oversized groups share the sims', () => {
+  it('a booking never holds more seats than there are sims', () => {
+    expect(seatsUsedBy(1)).toBe(1)
+    expect(seatsUsedBy(3)).toBe(3)
+    expect(seatsUsedBy(6)).toBe(3)
+  })
+
+  it('a 5-racer group still fits an empty slot (they rotate)', () => {
+    // Without the clamp this returns false — 5 > capacity 3 — and a big group
+    // could never be booked at all.
+    expect(seatsAvailableFor([], '18:00', 2, 5)).toBe(true)
+  })
+
+  it('a 5-racer group takes the whole venue, blocking everyone else', () => {
+    const big: SeatBooking[] = [{ startTime: '18:00', durationHours: 2, racerCount: 5 }]
+    expect(maxConcurrentRacers(big, '18:00', 1)).toBe(3)
+    expect(seatsAvailableFor(big, '18:00', 1, 1)).toBe(false)
+    // ...but the slot after it is free again.
+    expect(seatsAvailableFor(big, '20:00', 1, 3)).toBe(true)
+  })
+
+  it('an existing big booking does not overcount against capacity', () => {
+    // A 1-racer add-on next to a 5-racer booking must still be refused, not
+    // crash the math by reporting occupancy 5 against a capacity of 3.
+    const big: SeatBooking[] = [{ startTime: '12:00', durationHours: 1, racerCount: 8 }]
+    expect(maxConcurrentRacers(big, '12:00', 1)).toBe(3)
+  })
+})
 
 describe('windowsConflict (no overlapping blocks)', () => {
   const w = (startTime: string | null, endTime: string | null): AvailabilityBlockWindow => ({ startTime, endTime })

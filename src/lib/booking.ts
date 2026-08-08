@@ -55,7 +55,8 @@ export interface CreateBookingInput {
   sessionDate: string // "YYYY-MM-DD"
   startTime: string // "HH:MM" 24-hour
   durationHours: 1 | 2 | 3
-  racerCount: 1 | 2 | 3
+  /** Any size — racers past the 3 sims take turns (see pricing.ts SIM_COUNT). */
+  racerCount: number
 
   // Primary racer / customer
   customer: {
@@ -452,7 +453,15 @@ export async function createBooking(
   // 4. Insert one row per racer (slot 1 = primary, slots 2+ = friends).
   // Slot 1 (the booker) signed the waiver during booking → stamp it. Friends
   // sign at check-in.
-  const racerRows = [
+  const named = input.additionalRacers.slice(0, Math.max(0, input.racerCount - 1))
+  const racerRows: {
+    booking_id: string
+    slot: number
+    name: string
+    email: string | null
+    phone: string | null
+    waiver_signed_at?: string
+  }[] = [
     {
       booking_id: bookingId,
       slot: 1,
@@ -461,7 +470,7 @@ export async function createBooking(
       phone: input.customer.phone || null,
       waiver_signed_at: nowIso,
     },
-    ...input.additionalRacers.slice(0, input.racerCount - 1).map((r, i) => ({
+    ...named.map((r, i) => ({
       booking_id: bookingId,
       slot: i + 2,
       name: r.name,
@@ -469,6 +478,12 @@ export async function createBooking(
       phone: r.phone || null,
     })),
   ]
+  // Big groups only name the first few racers online — pad the rest as
+  // placeholders so the row count always equals racer_count (otherwise the
+  // Racers list and the no-show settle screen come up short).
+  for (let slot = named.length + 2; slot <= input.racerCount; slot++) {
+    racerRows.push({ booking_id: bookingId, slot, name: `Racer ${slot}`, email: null, phone: null })
+  }
 
   const { error: racersError } = await supabase
     .from('booking_racers')
@@ -682,7 +697,7 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
         sessionDate: booking.session_date,
         startTime: booking.start_time,
         durationHours: booking.duration_hours as 1 | 2 | 3,
-        racerCount: booking.racer_count as 1 | 2 | 3,
+        racerCount: booking.racer_count,
         sessionPriceCents: booking.session_price_cents,
         noShowFeeCents: booking.no_show_fee_cents,
         source: booking.source,
@@ -814,7 +829,8 @@ export interface InviteBookingInput {
   sessionDate: string // "YYYY-MM-DD"
   startTime: string // "HH:MM" 24-hour
   durationHours: 1 | 2 | 3
-  racerCount: 1 | 2 | 3
+  /** Any size — racers past the 3 sims take turns (see pricing.ts SIM_COUNT). */
+  racerCount: number
   notes?: string
   createdByUserId?: string | null
   // When true, the invite requires the customer to save a no-show card before
@@ -1232,7 +1248,7 @@ export interface EditBookingInput {
   sessionDate?: string // "YYYY-MM-DD"
   startTime?: string // "HH:MM"
   durationHours?: 1 | 2 | 3
-  racerCount?: 1 | 2 | 3
+  racerCount?: number
   // Manual override of the session price in cents. undefined = recompute from
   // the matrix; a number = use exactly this (POS-style override). Never trust
   // a client price except through this explicit field.
@@ -1291,7 +1307,7 @@ export async function editBooking(
   const newDate = input.sessionDate ?? booking.session_date
   const newStart = toHHMM(input.startTime ?? booking.start_time)
   const newDuration = (input.durationHours ?? booking.duration_hours) as 1 | 2 | 3
-  const newRacerCount = (input.racerCount ?? booking.racer_count) as 1 | 2 | 3
+  const newRacerCount = input.racerCount ?? booking.racer_count
 
   // ---- Validate (reject bad input with a clean 400, never let it hit the DB) ---
   // Bound the shapes tightly: a loose regex would pass "29:00" / "2026-13-45"

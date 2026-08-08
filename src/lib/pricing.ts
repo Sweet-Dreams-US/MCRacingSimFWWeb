@@ -4,18 +4,44 @@
 // Monday: Closed
 
 type Duration = 1 | 2 | 3
-type RacerCount = 1 | 2 | 3
+/** Racers on the matrix — one per sim. Beyond this, see EXTRA_RACER_RATE. */
+type SeatedRacers = 1 | 2 | 3
+/** Any racer count on a booking. 1–3 fill the sims; extras rotate through them. */
+export type RacerCount = number
 
-const WEEKDAY_PRICES: Record<RacerCount, Record<Duration, number>> = {
+/**
+ * The venue has 3 sims, so the price matrix tops out at 3 racers. A bigger group
+ * still books the same 3 rigs and takes turns, so each racer beyond the third is
+ * a flat add-on per hour rather than a full seat price.
+ *
+ * Must match SIM_COUNT / EXTRA_RACER_RATE in android-pos/.../ui/Pricing.kt.
+ */
+export const SIM_COUNT = 3
+export const EXTRA_RACER_RATE_PER_HOUR = 10 // dollars, per racer past the 3rd
+
+const WEEKDAY_PRICES: Record<SeatedRacers, Record<Duration, number>> = {
   1: { 1: 45, 2: 85, 3: 115 },
   2: { 1: 90, 2: 160, 3: 220 },
   3: { 1: 130, 2: 245, 3: 340 },
 }
 
-const WEEKEND_PRICES: Record<RacerCount, Record<Duration, number>> = {
+const WEEKEND_PRICES: Record<SeatedRacers, Record<Duration, number>> = {
   1: { 1: 50, 2: 95, 3: 135 },
   2: { 1: 100, 2: 180, 3: 250 },
   3: { 1: 140, 2: 275, 3: 365 },
+}
+
+/** Racers charged the flat hourly add-on (everyone past the 3rd). */
+export function extraRacers(racerCount: RacerCount): number {
+  return Math.max(0, Math.floor(racerCount) - SIM_COUNT)
+}
+
+/** Dollar add-on for the extra racers over the whole session. */
+export function extraRacerChargeDollars(
+  racerCount: RacerCount,
+  duration: Duration
+): number {
+  return extraRacers(racerCount) * EXTRA_RACER_RATE_PER_HOUR * duration
 }
 
 export function isWeekend(date: Date | string): boolean {
@@ -37,7 +63,13 @@ export function calculatePrice(
 ): { price: number; isWeekend: boolean } {
   const weekend = isWeekend(date)
   const priceMatrix = weekend ? WEEKEND_PRICES : WEEKDAY_PRICES
-  const price = priceMatrix[racerCount][duration]
+
+  // Up to 3 racers price straight off the matrix. Past that the group is still
+  // on the same 3 sims (taking turns), so each additional racer is the flat
+  // hourly add-on on top of the full 3-racer rate.
+  const seated = Math.min(Math.max(Math.floor(racerCount), 1), SIM_COUNT) as SeatedRacers
+  const price =
+    priceMatrix[seated][duration] + extraRacerChargeDollars(racerCount, duration)
 
   return { price, isWeekend: weekend }
 }
@@ -104,8 +136,13 @@ export function formatDateLong(dateStr: string): string {
 
 export const NO_SHOW_FEE_CENTS_PER_SEAT = 2000 // $20.00
 
+/**
+ * Charged per SIM SEAT held, not per racer — a no-show only ever costs the
+ * venue the 3 rigs, so a 5-racer group's fee caps at 3 × $20 = $60.
+ */
 export function calculateNoShowFeeCents(racerCount: RacerCount): number {
-  return racerCount * NO_SHOW_FEE_CENTS_PER_SEAT
+  const seatsHeld = Math.min(Math.max(Math.floor(racerCount), 1), SIM_COUNT)
+  return seatsHeld * NO_SHOW_FEE_CENTS_PER_SEAT
 }
 
 export function formatNoShowFee(racerCount: RacerCount): string {

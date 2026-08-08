@@ -795,12 +795,47 @@ fun NewBookingScreen(
         Text("Racers", color = PitGray, fontSize = 11.sp)
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (1..3).forEach { r ->
+            (1..SIM_COUNT).forEach { r ->
                 SelectChip(
                     selected = draft.racers == r,
                     label = "$r racer${if (r > 1) "s" else ""}",
                     onClick = { onChange(retime(draft.copy(racers = r), priceIsStandard)) },
                 )
+            }
+            // Bigger group — everyone shares the sims. Tapping adds one more.
+            SelectChip(
+                selected = draft.racers > SIM_COUNT,
+                label = if (draft.racers > SIM_COUNT) "${draft.racers} racers" else "${SIM_COUNT + 1}+",
+                onClick = {
+                    val next =
+                        if (draft.racers > SIM_COUNT) draft.racers + 1 else SIM_COUNT + 1
+                    onChange(retime(draft.copy(racers = next), priceIsStandard))
+                },
+            )
+        }
+        if (draft.racers > SIM_COUNT) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        onChange(retime(draft.copy(racers = draft.racers - 1), priceIsStandard))
+                    },
+                ) { Text("−") }
+                Text(
+                    "${draft.racers} racers · +$${EXTRA_RACER_RATE_PER_HOUR}/hr each past $SIM_COUNT",
+                    color = PitGray,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(
+                    onClick = {
+                        onChange(retime(draft.copy(racers = draft.racers + 1), priceIsStandard))
+                    },
+                ) { Text("+") }
             }
         }
         Spacer(Modifier.height(8.dp))

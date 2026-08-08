@@ -23,7 +23,7 @@ interface TimeSlot {
 interface TimeSlotPickerProps {
   date: string | null
   duration: 1 | 2 | 3
-  racerCount: 1 | 2 | 3
+  racerCount: number
   value: string | null
   onChange: (time: string) => void
 }

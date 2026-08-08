@@ -1,11 +1,20 @@
 'use client'
 
-import { calculatePrice, calculateNoShowFeeCents, formatDate, getDayType } from '@/lib/pricing'
+import {
+  calculatePrice,
+  calculateNoShowFeeCents,
+  formatDate,
+  getDayType,
+  extraRacers,
+  extraRacerChargeDollars,
+  SIM_COUNT,
+  EXTRA_RACER_RATE_PER_HOUR,
+} from '@/lib/pricing'
 
 interface PriceSummaryProps {
   date: string | null
   duration: 1 | 2 | 3
-  racerCount: 1 | 2 | 3
+  racerCount: number
   startTime: string | null
 }
 
@@ -22,6 +31,8 @@ export default function PriceSummary({ date, duration, racerCount, startTime }: 
 
   const { price, isWeekend } = calculatePrice(date, duration, racerCount)
   const dayType = getDayType(date)
+  const extras = extraRacers(racerCount)
+  const extraCharge = extraRacerChargeDollars(racerCount, duration)
 
   // Calculate end time
   let endTime = ''
@@ -85,6 +96,24 @@ export default function PriceSummary({ date, duration, racerCount, startTime }: 
       </div>
 
       <div className="border-t border-white/10 pt-4 space-y-3">
+        {/* Big groups: show where the number comes from, so the flat add-on for
+            racers past the sims doesn't look like a surprise markup. */}
+        {extras > 0 && (
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <p className="telemetry-text text-xs text-pit-gray">
+                {SIM_COUNT}-racer session ({duration}h)
+              </p>
+              <p className="telemetry-text text-xs text-grid-white">${price - extraCharge}</p>
+            </div>
+            <div className="flex justify-between items-center">
+              <p className="telemetry-text text-xs text-pit-gray">
+                +{extras} extra racer{extras > 1 ? 's' : ''} × ${EXTRA_RACER_RATE_PER_HOUR}/hr
+              </p>
+              <p className="telemetry-text text-xs text-grid-white">${extraCharge}</p>
+            </div>
+          </div>
+        )}
         <div className="flex justify-between items-center">
           <p className="telemetry-text text-pit-gray">Session Price</p>
           <p className="racing-headline text-4xl text-apex-red">${price}</p>
@@ -99,7 +128,7 @@ export default function PriceSummary({ date, duration, racerCount, startTime }: 
           <p className="telemetry-text text-xs text-pit-gray leading-relaxed">
             We save your card at booking but only charge it if you no-show
             (<span className="text-grid-white">${(calculateNoShowFeeCents(racerCount) / 100).toFixed(0)}</span>{' '}
-            — $20 per seat). Cancel 24+ hours in advance for free.
+            — $20 per sim held, max {SIM_COUNT}). Cancel 24+ hours in advance for free.
           </p>
         </div>
       </div>

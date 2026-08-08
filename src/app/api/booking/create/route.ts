@@ -58,9 +58,11 @@ export async function POST(request: NextRequest) {
     if (![1, 2, 3].includes(durationHours)) {
       return badRequest('duration must be 1, 2, or 3')
     }
+    // Any group size is allowed — racers past the 3 sims take turns and are
+    // billed the flat hourly add-on (see EXTRA_RACER_RATE_PER_HOUR).
     const racerCount = Number(body.numberOfRacers)
-    if (![1, 2, 3].includes(racerCount)) {
-      return badRequest('numberOfRacers must be 1, 2, or 3')
+    if (!Number.isInteger(racerCount) || racerCount < 1) {
+      return badRequest('numberOfRacers must be a whole number of 1 or more')
     }
 
     // ---- Collect additional racers (slots 2 + 3) ----------------------------
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest) {
       sessionDate: body.sessionDate,
       startTime: body.startTime,
       durationHours: durationHours as 1 | 2 | 3,
-      racerCount: racerCount as 1 | 2 | 3,
+      racerCount,
       customer: {
         firstName: body.firstName,
         lastName: body.lastName,

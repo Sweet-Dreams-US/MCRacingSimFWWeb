@@ -75,7 +75,7 @@ export default function BookingFlow() {
   const addToCartFired = useRef(false)
 
   // Booking state
-  const [racerCount, setRacerCount] = useState<1 | 2 | 3>(1)
+  const [racerCount, setRacerCount] = useState<number>(1)
   const [duration, setDuration] = useState<1 | 2 | 3>(1)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedTime, setSelectedTime] = useState<string | null>(null)
@@ -199,7 +199,9 @@ export default function BookingFlow() {
     if (racerCount === 1) return true
 
     const errors: { [key: number]: Partial<Record<keyof AdditionalRacer, string>> } = {}
-    const racersToValidate = racerCount - 1
+    // Only the racers we actually collect names for. Without the clamp a group
+    // bigger than the form would index past the array and crash on .name.
+    const racersToValidate = Math.min(racerCount - 1, additionalRacers.length)
 
     for (let i = 0; i < racersToValidate; i++) {
       const racer = additionalRacers[i]
@@ -537,12 +539,23 @@ export default function BookingFlow() {
               errors={customerErrors}
             />
             {racerCount > 1 && (
-              <AdditionalRacerForm
-                racerCount={racerCount as 2 | 3}
-                racers={additionalRacers}
-                onChange={setAdditionalRacers}
-                errors={racerErrors}
-              />
+              <>
+                {/* Names are collected for the first 3 racers (the sims). A
+                    bigger group's extras are added as placeholders and sign the
+                    waiver at the front desk — no point typing 8 names here. */}
+                <AdditionalRacerForm
+                  racerCount={Math.min(racerCount, 3) as 2 | 3}
+                  racers={additionalRacers}
+                  onChange={setAdditionalRacers}
+                  errors={racerErrors}
+                />
+                {racerCount > 3 && (
+                  <p className="telemetry-text text-xs text-telemetry-cyan">
+                    Your other {racerCount - 3} racer{racerCount - 3 > 1 ? 's' : ''} can sign
+                    the waiver at the front desk when you arrive — no need to list everyone now.
+                  </p>
+                )}
+              </>
             )}
           </div>
 

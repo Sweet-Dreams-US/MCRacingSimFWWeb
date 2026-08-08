@@ -38,7 +38,8 @@ export default function InviteBookingForm() {
   const [sessionDate, setSessionDate] = useState('')
   const [startTime, setStartTime] = useState('18:00')
   const [durationHours, setDurationHours] = useState<Unit>(1)
-  const [racerCount, setRacerCount] = useState<Unit>(1)
+  // Any size — racers past the 3 sims rotate through them (flat hourly add-on).
+  const [racerCount, setRacerCount] = useState<number>(1)
   const [notes, setNotes] = useState('')
   const [requireCard, setRequireCard] = useState(false)
   // Blank = use the standard racers×hours price for the date.
@@ -276,15 +277,18 @@ export default function InviteBookingForm() {
             <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">
               Racers
             </label>
-            <select
+            {/* Free number entry — a group bigger than the 3 sims takes turns
+                and is priced with the flat per-hour add-on. */}
+            <input
+              type="number"
+              min={1}
+              step={1}
               value={racerCount}
-              onChange={(e) => setRacerCount(parseInt(e.target.value, 10) as Unit)}
+              onChange={(e) =>
+                setRacerCount(Math.max(1, Math.floor(Number(e.target.value) || 1)))
+              }
               className="composer-input"
-            >
-              <option value={1}>1 racer</option>
-              <option value={2}>2 racers</option>
-              <option value={3}>3 racers</option>
-            </select>
+            />
           </div>
         </div>
 

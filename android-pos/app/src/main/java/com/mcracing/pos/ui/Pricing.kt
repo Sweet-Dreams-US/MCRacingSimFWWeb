@@ -27,10 +27,22 @@ fun isWeekend(isoDate: String): Boolean {
     }
 }
 
-/** Session price in cents for (date, racers 1-3, hours 1-3), 0 if out of range. */
+// The venue has 3 sims, so the matrix tops out at 3 racers. A bigger group books
+// the same rigs and takes turns, so each racer past the third is a flat add-on
+// per hour. MUST match SIM_COUNT / EXTRA_RACER_RATE_PER_HOUR in src/lib/pricing.ts.
+const val SIM_COUNT = 3
+const val EXTRA_RACER_RATE_PER_HOUR = 10 // dollars
+
+/**
+ * Session price in cents for (date, any racer count >= 1, hours 1-3).
+ * Returns 0 only when `hours` is out of range.
+ */
 fun sessionPriceCents(isoDate: String, racers: Int, hours: Int): Long {
     val matrix = if (isWeekend(isoDate)) WEEKEND else WEEKDAY
-    val dollars = matrix[racers]?.get(hours) ?: return 0L
+    val seated = racers.coerceIn(1, SIM_COUNT)
+    val base = matrix[seated]?.get(hours) ?: return 0L
+    val extras = (racers - SIM_COUNT).coerceAtLeast(0)
+    val dollars = base + extras * EXTRA_RACER_RATE_PER_HOUR * hours
     return dollars.toLong() * 100L
 }
 

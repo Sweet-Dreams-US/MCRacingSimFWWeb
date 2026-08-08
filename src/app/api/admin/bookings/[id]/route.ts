@@ -51,7 +51,9 @@ export async function PATCH(
   if (body.sessionDate !== undefined) input.sessionDate = body.sessionDate
   if (body.startTime !== undefined) input.startTime = body.startTime
   if (body.durationHours !== undefined) input.durationHours = Number(body.durationHours) as 1 | 2 | 3
-  if (body.racerCount !== undefined) input.racerCount = Number(body.racerCount) as 1 | 2 | 3
+  if (body.racerCount !== undefined) {
+    input.racerCount = Math.max(1, Math.floor(Number(body.racerCount) || 1))
+  }
   if (body.notes !== undefined) input.notes = body.notes
   // priceOverrideCents: null clears the override (auto-calc), a number sets it,
   // undefined leaves pricing to recompute from the matrix.

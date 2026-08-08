@@ -15,7 +15,7 @@ interface BookingCalendarProps {
   value: string | null
   onChange: (date: string) => void
   duration: 1 | 2 | 3
-  racerCount: 1 | 2 | 3
+  racerCount: number
 }
 
 export default function BookingCalendar({ value, onChange, duration, racerCount }: BookingCalendarProps) {

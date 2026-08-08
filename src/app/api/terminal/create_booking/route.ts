@@ -31,6 +31,12 @@ function asUnit(v: unknown, fallback: 1 | 2 | 3): 1 | 2 | 3 {
   return n === 1 || n === 2 || n === 3 ? n : fallback
 }
 
+/** Racer count — any whole number >= 1 (extras rotate through the sims). */
+function asRacerCount(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? Math.floor(v) : NaN
+  return Number.isInteger(n) && n >= 1 ? n : fallback
+}
+
 export async function POST(request: NextRequest) {
   if (!isDeviceAuthorized(request)) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
@@ -89,7 +95,7 @@ export async function POST(request: NextRequest) {
       sessionDate,
       startTime,
       durationHours: asUnit(body.durationHours, 1),
-      racerCount: asUnit(body.racerCount, 1),
+      racerCount: asRacerCount(body.racerCount, 1),
       priceCents:
         typeof body.priceCents === 'number' && body.priceCents >= 0
           ? Math.round(body.priceCents)

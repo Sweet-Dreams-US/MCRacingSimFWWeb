@@ -6,6 +6,10 @@ import {
   calculatePrice,
   calculateNoShowFeeCents,
   NO_SHOW_FEE_CENTS_PER_SEAT,
+  extraRacers,
+  extraRacerChargeDollars,
+  SIM_COUNT,
+  EXTRA_RACER_RATE_PER_HOUR,
 } from '../pricing'
 
 // Reference dates (noon-anchored so weekday is unambiguous):
@@ -59,5 +63,44 @@ describe('no-show fee', () => {
     expect(NO_SHOW_FEE_CENTS_PER_SEAT).toBe(2000)
     expect(calculateNoShowFeeCents(1)).toBe(2000)
     expect(calculateNoShowFeeCents(3)).toBe(6000)
+  })
+
+  it('caps at the sim count — a no-show only ever costs the 3 rigs', () => {
+    expect(calculateNoShowFeeCents(4)).toBe(6000)
+    expect(calculateNoShowFeeCents(8)).toBe(6000)
+  })
+})
+
+describe('groups larger than the sims', () => {
+  const THU = '2026-07-02' // weekday: 3 racers = 130 (1h) / 245 (2h)
+  const SAT = '2026-07-04' // weekend: 3 racers = 140 (1h) / 275 (2h)
+
+  it('counts only the racers past the sims as extras', () => {
+    expect(extraRacers(3)).toBe(0)
+    expect(extraRacers(4)).toBe(1)
+    expect(extraRacers(7)).toBe(4)
+  })
+
+  it('charges the flat add-on per extra racer per hour', () => {
+    expect(extraRacerChargeDollars(3, 2)).toBe(0)
+    expect(extraRacerChargeDollars(4, 1)).toBe(EXTRA_RACER_RATE_PER_HOUR)
+    // 2 extras over 3 hours
+    expect(extraRacerChargeDollars(5, 3)).toBe(2 * EXTRA_RACER_RATE_PER_HOUR * 3)
+  })
+
+  it('adds the extras on top of the full 3-racer rate (weekday)', () => {
+    expect(calculatePrice(THU, 1, 4).price).toBe(130 + 10)
+    expect(calculatePrice(THU, 2, 5).price).toBe(245 + 2 * 10 * 2)
+  })
+
+  it('adds the extras on top of the full 3-racer rate (weekend)', () => {
+    expect(calculatePrice(SAT, 1, 6).price).toBe(140 + 3 * 10)
+    expect(calculatePrice(SAT, 2, 4).price).toBe(275 + 1 * 10 * 2)
+  })
+
+  it('leaves 1–3 racers priced exactly as before', () => {
+    expect(calculatePrice(THU, 1, 3).price).toBe(130)
+    expect(calculatePrice(SAT, 2, 2).price).toBe(180)
+    expect(SIM_COUNT).toBe(3)
   })
 })

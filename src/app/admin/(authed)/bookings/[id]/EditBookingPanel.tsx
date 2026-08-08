@@ -60,7 +60,7 @@ export default function EditBookingPanel(props: Props) {
   const [durationHours, setDurationHours] = useState<1 | 2 | 3>(
     props.durationHours as 1 | 2 | 3
   )
-  const [racerCount, setRacerCount] = useState<1 | 2 | 3>(props.racerCount as 1 | 2 | 3)
+  const [racerCount, setRacerCount] = useState<number>(props.racerCount)
   const [notes, setNotes] = useState(props.notes ?? '')
 
   // Auto price for the currently-selected params (dollars from the matrix).
@@ -170,15 +170,16 @@ export default function EditBookingPanel(props: Props) {
         </div>
         <div>
           <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">Racers</label>
-          <select
+          {/* Free number entry — groups bigger than the 3 sims rotate through
+              them and are priced with the flat per-hour add-on. */}
+          <input
+            type="number"
+            min={1}
+            step={1}
             value={racerCount}
-            onChange={(e) => setRacerCount(Number(e.target.value) as 1 | 2 | 3)}
+            onChange={(e) => setRacerCount(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
             className="composer-input"
-          >
-            <option value={1}>1 racer</option>
-            <option value={2}>2 racers</option>
-            <option value={3}>3 racers</option>
-          </select>
+          />
         </div>
       </div>
 

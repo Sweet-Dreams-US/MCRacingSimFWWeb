@@ -113,6 +113,19 @@ export interface SeatBooking {
 }
 
 /**
+ * Sim seats a booking actually holds. Groups larger than the sim count take
+ * turns on the same rigs, so a 5-racer booking occupies 3 seats — the whole
+ * venue — not 5. Without this clamp a big group would exceed capacity against
+ * itself and could never be booked at all.
+ */
+export function seatsUsedBy(
+  racerCount: number,
+  capacity: number = DEFAULT_SEAT_CAPACITY
+): number {
+  return Math.min(Math.max(Math.floor(racerCount), 0), capacity)
+}
+
+/**
  * Peak number of concurrently-booked seats during [startTime, +durationHours).
  * Occupancy is piecewise-constant and only jumps up at an existing booking's
  * start, so the peak is found by sampling at the candidate start plus every
@@ -121,7 +134,8 @@ export interface SeatBooking {
 export function maxConcurrentRacers(
   existing: SeatBooking[],
   startTime: string,
-  durationHours: number
+  durationHours: number,
+  capacity: number = DEFAULT_SEAT_CAPACITY
 ): number {
   const candStart = toExtendedMinutes(startTime)
   const candEnd = candStart + durationHours * 60
@@ -138,14 +152,16 @@ export function maxConcurrentRacers(
     for (const b of existing) {
       const s = toExtendedMinutes(b.startTime)
       const e = s + b.durationHours * 60
-      if (s <= t && t < e) occ += b.racerCount
+      // Count SEATS held, not heads — an oversized group still fills only the
+      // sims it can physically occupy.
+      if (s <= t && t < e) occ += seatsUsedBy(b.racerCount, capacity)
     }
     if (occ > peak) peak = occ
   }
   return peak
 }
 
-/** True when `racerCount` more seats fit at this slot without exceeding capacity. */
+/** True when `racerCount` more racers fit at this slot without exceeding capacity. */
 export function seatsAvailableFor(
   existing: SeatBooking[],
   startTime: string,
@@ -153,5 +169,9 @@ export function seatsAvailableFor(
   racerCount: number,
   capacity: number = DEFAULT_SEAT_CAPACITY
 ): boolean {
-  return maxConcurrentRacers(existing, startTime, durationHours) + racerCount <= capacity
+  return (
+    maxConcurrentRacers(existing, startTime, durationHours, capacity) +
+      seatsUsedBy(racerCount, capacity) <=
+    capacity
+  )
 }

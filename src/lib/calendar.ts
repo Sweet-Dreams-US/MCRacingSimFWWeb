@@ -106,7 +106,7 @@ export interface CreateBookingCalendarEventInput {
   sessionDate: string   // "YYYY-MM-DD"
   startTime: string     // "HH:MM" 24-hour
   durationHours: 1 | 2 | 3
-  racerCount: 1 | 2 | 3
+  racerCount: number
   sessionPriceCents: number
   noShowFeeCents: number
   source?: BookingSource
