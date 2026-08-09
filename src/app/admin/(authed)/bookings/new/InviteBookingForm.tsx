@@ -39,7 +39,10 @@ export default function InviteBookingForm() {
   const [startTime, setStartTime] = useState('18:00')
   const [durationHours, setDurationHours] = useState<Unit>(1)
   // Any size — racers past the 3 sims rotate through them (flat hourly add-on).
-  const [racerCount, setRacerCount] = useState<number>(1)
+  // Held as TEXT so the field can be emptied while typing (coercing a blank
+  // straight to 1 meant clearing "1" to type "2" produced "12").
+  const [racerCountText, setRacerCountText] = useState<string>('1')
+  const racerCount = Math.max(1, Math.floor(Number(racerCountText) || 1))
   const [notes, setNotes] = useState('')
   const [requireCard, setRequireCard] = useState(false)
   // Blank = use the standard racers×hours price for the date.
@@ -283,10 +286,11 @@ export default function InviteBookingForm() {
               type="number"
               min={1}
               step={1}
-              value={racerCount}
-              onChange={(e) =>
-                setRacerCount(Math.max(1, Math.floor(Number(e.target.value) || 1)))
-              }
+              value={racerCountText}
+              onChange={(e) => setRacerCountText(e.target.value.replace(/[^0-9]/g, ''))}
+              onBlur={() => {
+                if (!racerCountText.trim()) setRacerCountText('1')
+              }}
               className="composer-input"
             />
             {racerCount >= LARGE_GROUP_RACERS && (

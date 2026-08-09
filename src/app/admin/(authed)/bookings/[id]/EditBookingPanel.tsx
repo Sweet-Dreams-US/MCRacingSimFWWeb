@@ -60,7 +60,11 @@ export default function EditBookingPanel(props: Props) {
   const [durationHours, setDurationHours] = useState<1 | 2 | 3>(
     props.durationHours as 1 | 2 | 3
   )
-  const [racerCount, setRacerCount] = useState<number>(props.racerCount)
+  // Held as TEXT so the field can be emptied while typing. Coercing straight to
+  // a number forced a blank back to 1, so clearing "1" to type "2" produced
+  // "12" — you could only ever get 1, 11, 12...
+  const [racerCountText, setRacerCountText] = useState<string>(String(props.racerCount))
+  const racerCount = Math.max(1, Math.floor(Number(racerCountText) || 1))
   const [notes, setNotes] = useState(props.notes ?? '')
 
   // Auto price for the currently-selected params (dollars from the matrix).
@@ -176,8 +180,11 @@ export default function EditBookingPanel(props: Props) {
             type="number"
             min={1}
             step={1}
-            value={racerCount}
-            onChange={(e) => setRacerCount(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+            value={racerCountText}
+            onChange={(e) => setRacerCountText(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={() => {
+              if (!racerCountText.trim()) setRacerCountText('1')
+            }}
             className="composer-input"
           />
           {racerCount >= LARGE_GROUP_RACERS && (

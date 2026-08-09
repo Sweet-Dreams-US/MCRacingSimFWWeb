@@ -74,18 +74,22 @@ const ONLINE_CUTOFF_MINUTES = 90
 function isSlotWithinCutoff(slotDate: string, slotTime: string): boolean {
   const [slotYear, slotMonth, slotDay] = slotDate.split('-').map(Number)
   const eastern = getEasternWallClockMinutes(new Date())
-
-  // If the slot is on a future day in Eastern, it's never within cutoff.
-  // (Treating "future day" via Date.UTC comparison — both sides use Eastern
-  // wall-clock components as if UTC, so the comparison is stable.)
-  const slotEpoch = Date.UTC(slotYear, slotMonth - 1, slotDay, 0, 0)
-  const easternEpoch = Date.UTC(eastern.year, eastern.month - 1, eastern.day, 0, 0)
-  if (slotEpoch > easternEpoch) return false
-  if (slotEpoch < easternEpoch) return true // past — also not bookable
-
-  // Same day — compare wall-clock minutes
   const slotMinutes = parseSlotTimeToMinutes(slotTime)
-  return slotMinutes - eastern.minutes < ONLINE_CUTOFF_MINUTES
+
+  // The session day runs noon -> 2am, so a slot before noon (12:00–1:30 AM) is
+  // the late-night TAIL of its session date and physically happens on the NEXT
+  // calendar day. Without this offset those slots read as minute-of-day 0–90,
+  // which is always "in the past" — so every night after 1:30 AM the midnight
+  // slots were permanently greyed out and looked like an un-removable block.
+  const dayOffset = slotMinutes < 12 * 60 ? 1 : 0
+
+  // Both sides are built from Eastern wall-clock components as if they were
+  // UTC, so the difference is a true wall-clock difference. Date.UTC normalizes
+  // the day/minute overflow (month and year roll correctly).
+  const slotEpoch = Date.UTC(slotYear, slotMonth - 1, slotDay + dayOffset, 0, slotMinutes)
+  const nowEpoch = Date.UTC(eastern.year, eastern.month - 1, eastern.day, 0, eastern.minutes)
+
+  return slotEpoch - nowEpoch < ONLINE_CUTOFF_MINUTES * 60_000
 }
 
 export default function TimeSlotPicker({

@@ -309,12 +309,6 @@ export default function BookingFlow() {
     if (easternHour === 24) easternHour = 0
     const easternMinutes = easternHour * 60 + get('minute')
 
-    const [slotYear, slotMonth, slotDay] = selectedDate.split('-').map(Number)
-    const slotEpoch = Date.UTC(slotYear, slotMonth - 1, slotDay, 0, 0)
-    const easternEpoch = Date.UTC(get('year'), get('month') - 1, get('day'), 0, 0)
-    if (slotEpoch > easternEpoch) return false
-    if (slotEpoch < easternEpoch) return true
-
     const [t, period] = selectedTime.split(' ')
     const [hStr, mStr] = t.split(':')
     let h = parseInt(hStr, 10)
@@ -322,7 +316,15 @@ export default function BookingFlow() {
     if (period === 'PM' && h !== 12) h += 12
     if (period === 'AM' && h === 12) h = 0
     const slotMinutes = h * 60 + m
-    return slotMinutes - easternMinutes < 90
+
+    // Mirrors TimeSlotPicker.isSlotWithinCutoff — a pre-noon slot is the
+    // late-night tail of its session date and lands on the NEXT calendar day.
+    const dayOffset = slotMinutes < 12 * 60 ? 1 : 0
+    const [slotYear, slotMonth, slotDay] = selectedDate.split('-').map(Number)
+    const slotEpoch = Date.UTC(slotYear, slotMonth - 1, slotDay + dayOffset, 0, slotMinutes)
+    const nowEpoch = Date.UTC(get('year'), get('month') - 1, get('day'), 0, easternMinutes)
+
+    return slotEpoch - nowEpoch < 90 * 60_000
   }
 
   // Validate + price a discount code against the current session. The server
