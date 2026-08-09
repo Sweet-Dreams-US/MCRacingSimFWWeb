@@ -82,7 +82,7 @@ export default function BookingFlow() {
 
   // Booking state
   const [racerCount, setRacerCount] = useState<number>(1)
-  const [duration, setDuration] = useState<1 | 2 | 3>(1)
+  const [duration, setDuration] = useState<number>(1)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedTime, setSelectedTime] = useState<string | null>(null)
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({

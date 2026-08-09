@@ -19,6 +19,7 @@ import {
   calculatePrice,
   calculateNoShowFeeCents,
   isMonday,
+  isValidDuration,
 } from './pricing'
 import { createBookingCalendarEvent, resyncBookingCalendarEvent } from './calendar'
 import {
@@ -54,7 +55,8 @@ export interface CreateBookingInput {
   // Session details
   sessionDate: string // "YYYY-MM-DD"
   startTime: string // "HH:MM" 24-hour
-  durationHours: 1 | 2 | 3
+  /** Session length in hours — any half-hour step from 1 to 3. */
+  durationHours: number
   /** Any size — racers past the 3 sims take turns (see pricing.ts SIM_COUNT). */
   racerCount: number
 
@@ -696,7 +698,7 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
         customerPhone: customer.phone,
         sessionDate: booking.session_date,
         startTime: booking.start_time,
-        durationHours: booking.duration_hours as 1 | 2 | 3,
+        durationHours: Number(booking.duration_hours),
         racerCount: booking.racer_count,
         sessionPriceCents: booking.session_price_cents,
         noShowFeeCents: booking.no_show_fee_cents,
@@ -828,7 +830,8 @@ export interface InviteBookingInput {
   phone?: string
   sessionDate: string // "YYYY-MM-DD"
   startTime: string // "HH:MM" 24-hour
-  durationHours: 1 | 2 | 3
+  /** Session length in hours — any half-hour step from 1 to 3. */
+  durationHours: number
   /** Any size — racers past the 3 sims take turns (see pricing.ts SIM_COUNT). */
   racerCount: number
   notes?: string
@@ -1247,7 +1250,7 @@ export class BookingEditError extends Error {
 export interface EditBookingInput {
   sessionDate?: string // "YYYY-MM-DD"
   startTime?: string // "HH:MM"
-  durationHours?: 1 | 2 | 3
+  durationHours?: number
   racerCount?: number
   // Manual override of the session price in cents. undefined = recompute from
   // the matrix; a number = use exactly this (POS-style override). Never trust
@@ -1306,7 +1309,7 @@ export async function editBooking(
   // TIME "HH:MM:SS"; normalize everything to "HH:MM".
   const newDate = input.sessionDate ?? booking.session_date
   const newStart = toHHMM(input.startTime ?? booking.start_time)
-  const newDuration = (input.durationHours ?? booking.duration_hours) as 1 | 2 | 3
+  const newDuration = Number(input.durationHours ?? booking.duration_hours)
   const newRacerCount = input.racerCount ?? booking.racer_count
 
   // ---- Validate (reject bad input with a clean 400, never let it hit the DB) ---
@@ -1318,8 +1321,13 @@ export async function editBooking(
   if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(newStart)) {
     throw new BookingEditError('Invalid start time.')
   }
-  if (![1, 2, 3].includes(newDuration)) throw new BookingEditError('Duration must be 1, 2, or 3 hours.')
-  if (![1, 2, 3].includes(newRacerCount)) throw new BookingEditError('Racers must be 1, 2, or 3.')
+  if (!isValidDuration(newDuration)) {
+    throw new BookingEditError('Duration must be 1 to 3 hours, in half-hour steps.')
+  }
+  // Any group size — racers past the sims take turns (flat hourly add-on).
+  if (!Number.isInteger(newRacerCount) || newRacerCount < 1) {
+    throw new BookingEditError('Racers must be a whole number of 1 or more.')
+  }
   if (isMonday(newDate)) throw new BookingEditError('The venue is closed Mondays — pick another day.')
 
   const schedulingChanged =

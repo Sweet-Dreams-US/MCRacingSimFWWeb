@@ -33,17 +33,30 @@ fun isWeekend(isoDate: String): Boolean {
 const val SIM_COUNT = 3
 const val EXTRA_RACER_RATE_PER_HOUR = 10 // dollars
 
+/** Bookable session lengths — half-hour steps, matching DURATION_OPTIONS. */
+val DURATION_OPTIONS = listOf(1.0, 1.5, 2.0, 2.5, 3.0)
+
+/** "1h" / "1.5h" — chip + summary label. */
+fun formatHours(hours: Double): String =
+    if (hours % 1.0 == 0.0) "${hours.toInt()}h" else "${hours}h"
+
 /**
- * Session price in cents for (date, any racer count >= 1, hours 1-3).
- * Returns 0 only when `hours` is out of range.
+ * Session price in cents for (date, any racer count >= 1, 1–3 hours in
+ * half-hour steps). The matrix only lists whole hours, so a half hour is the
+ * exact midpoint of the whole hours either side. Returns 0 if out of range.
  */
-fun sessionPriceCents(isoDate: String, racers: Int, hours: Int): Long {
+fun sessionPriceCents(isoDate: String, racers: Int, hours: Double): Long {
     val matrix = if (isWeekend(isoDate)) WEEKEND else WEEKDAY
     val seated = racers.coerceIn(1, SIM_COUNT)
-    val base = matrix[seated]?.get(hours) ?: return 0L
+    val clamped = hours.coerceIn(1.0, 3.0)
+    val lo = Math.floor(clamped).toInt()
+    val hi = Math.ceil(clamped).toInt()
+    val loPrice = matrix[seated]?.get(lo) ?: return 0L
+    val hiPrice = matrix[seated]?.get(hi) ?: return 0L
+    val base = loPrice + (hiPrice - loPrice) * (clamped - lo)
     val extras = (racers - SIM_COUNT).coerceAtLeast(0)
-    val dollars = base + extras * EXTRA_RACER_RATE_PER_HOUR * hours
-    return dollars.toLong() * 100L
+    val dollars = base + extras * EXTRA_RACER_RATE_PER_HOUR * clamped
+    return Math.round(dollars * 100.0)
 }
 
 // Sales tax — MUST match src/lib/tax.ts (SALES_TAX_RATE_BPS) + the backend env.

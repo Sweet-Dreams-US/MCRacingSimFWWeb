@@ -14,7 +14,7 @@ interface DayAvailability {
 interface BookingCalendarProps {
   value: string | null
   onChange: (date: string) => void
-  duration: 1 | 2 | 3
+  duration: number
   racerCount: number
 }
 

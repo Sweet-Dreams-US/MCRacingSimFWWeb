@@ -212,7 +212,7 @@ private fun BookingCard(b: BookingDto, today: String, onPick: (BookingDto) -> Un
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${b.racerCount} racer${if (b.racerCount > 1) "s" else ""} · ${b.durationHours}h · ${b.id}",
+                "${b.racerCount} racer${if (b.racerCount > 1) "s" else ""} · ${formatHours(b.durationHours)} · ${b.id}",
                 color = PitGray,
                 fontSize = 12.sp,
             )
@@ -301,14 +301,14 @@ fun SaleScreen(
     val isBooking = draft.bookingId != null
     var confirm by remember { mutableStateOf<ConfirmAction?>(null) }
     var bRacers by remember { mutableStateOf(1) }
-    var bHours by remember { mutableStateOf(1) }
+    var bHours by remember { mutableStateOf(1.0) }
 
     // Recompute the walk-in session price from the racers/hours selection.
-    fun applyBuilder(r: Int, h: Int) {
+    fun applyBuilder(r: Int, h: Double) {
         val cents = sessionPriceCents(draft.today, r, h)
         if (cents > 0) {
             onAmountChange("%.2f".format(cents / 100.0))
-            onDescriptionChange("$r racer${if (r > 1) "s" else ""} · ${h}h session")
+            onDescriptionChange("$r racer${if (r > 1) "s" else ""} · ${formatHours(h)} session")
         }
     }
 
@@ -432,10 +432,10 @@ fun SaleScreen(
             }
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                (1..3).forEach { h ->
+                DURATION_OPTIONS.forEach { h ->
                     SelectChip(
                         selected = bHours == h,
-                        label = "${h}h",
+                        label = formatHours(h),
                         onClick = { bHours = h; applyBuilder(bRacers, h) },
                     )
                 }
@@ -842,10 +842,10 @@ fun NewBookingScreen(
         Text("Hours", color = PitGray, fontSize = 11.sp)
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (1..3).forEach { h ->
+            DURATION_OPTIONS.forEach { h ->
                 SelectChip(
                     selected = draft.hours == h,
-                    label = "${h}h",
+                    label = formatHours(h),
                     onClick = { onChange(retime(draft.copy(hours = h), priceIsStandard)) },
                 )
             }

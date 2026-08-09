@@ -6,7 +6,12 @@
 // pattern: local state, fetch, then router.refresh() to re-render the server page.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { calculatePrice, LARGE_GROUP_RACERS } from '@/lib/pricing'
+import {
+  calculatePrice,
+  LARGE_GROUP_RACERS,
+  DURATION_OPTIONS,
+  formatDuration,
+} from '@/lib/pricing'
 
 interface Props {
   bookingId: string
@@ -57,9 +62,7 @@ export default function EditBookingPanel(props: Props) {
 
   const [sessionDate, setSessionDate] = useState(props.sessionDate)
   const [startTime, setStartTime] = useState(toHHMM(props.startTime))
-  const [durationHours, setDurationHours] = useState<1 | 2 | 3>(
-    props.durationHours as 1 | 2 | 3
-  )
+  const [durationHours, setDurationHours] = useState<number>(Number(props.durationHours))
   // Held as TEXT so the field can be emptied while typing. Coercing straight to
   // a number forced a blank back to 1, so clearing "1" to type "2" produced
   // "12" — you could only ever get 1, 11, 12...
@@ -164,12 +167,14 @@ export default function EditBookingPanel(props: Props) {
           <label className="block telemetry-text text-xs text-pit-gray uppercase tracking-wider mb-1.5">Duration</label>
           <select
             value={durationHours}
-            onChange={(e) => setDurationHours(Number(e.target.value) as 1 | 2 | 3)}
+            onChange={(e) => setDurationHours(Number(e.target.value))}
             className="composer-input"
           >
-            <option value={1}>1 hour</option>
-            <option value={2}>2 hours</option>
-            <option value={3}>3 hours</option>
+            {DURATION_OPTIONS.map((h) => (
+              <option key={h} value={h}>
+                {formatDuration(h)}
+              </option>
+            ))}
           </select>
         </div>
         <div>

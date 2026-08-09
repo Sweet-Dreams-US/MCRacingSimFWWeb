@@ -1,39 +1,48 @@
 'use client'
 
+import { DURATION_OPTIONS } from '@/lib/pricing'
+
 interface DurationSelectorProps {
-  value: 1 | 2 | 3
-  onChange: (duration: 1 | 2 | 3) => void
+  value: number
+  onChange: (duration: number) => void
+}
+
+// Half-hours are priced at the exact midpoint of the whole hours either side.
+const DESCRIPTIONS: Record<string, string> = {
+  '1': 'Quick session',
+  '1.5': 'A little longer',
+  '2': 'Standard session',
+  '2.5': 'Good and long',
+  '3': 'Extended session',
+}
+
+function label(hours: number): string {
+  return Number.isInteger(hours) ? `${hours} Hour${hours === 1 ? '' : 's'}` : `${hours} Hours`
 }
 
 export default function DurationSelector({ value, onChange }: DurationSelectorProps) {
-  const options: { duration: 1 | 2 | 3; label: string; description: string }[] = [
-    { duration: 1, label: '1 Hour', description: 'Quick session' },
-    { duration: 2, label: '2 Hours', description: 'Standard session' },
-    { duration: 3, label: '3 Hours', description: 'Extended session' },
-  ]
-
   return (
     <div className="space-y-4">
       <h3 className="racing-headline text-xl text-grid-white">
         Session <span className="text-telemetry-cyan">Length</span>
       </h3>
-      <div className="grid grid-cols-3 gap-4">
-        {options.map((option) => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {DURATION_OPTIONS.map((duration) => (
           <button
-            key={option.duration}
+            key={duration}
             type="button"
-            onClick={() => onChange(option.duration)}
+            onClick={() => onChange(duration)}
             className={`p-4 border transition-all text-center ${
-              value === option.duration
+              value === duration
                 ? 'border-telemetry-cyan bg-telemetry-cyan/10'
                 : 'border-white/10 hover:border-white/30'
             }`}
           >
             <div className="racing-headline text-2xl text-grid-white mb-1">
-              {option.label}
+              {label(duration)}
             </div>
             <div className="telemetry-text text-sm text-pit-gray">
-              {option.description}
+              {DESCRIPTIONS[String(duration)] ?? ''}
             </div>
           </button>
         ))}

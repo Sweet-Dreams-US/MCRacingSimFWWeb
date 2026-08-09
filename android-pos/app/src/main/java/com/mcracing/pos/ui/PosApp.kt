@@ -103,7 +103,8 @@ data class BookingDraft(
     // the web invite form's slot list. Converted to "HH:MM" for the API.
     val startMinutes: Int = 18 * 60,
     val racers: Int = 1,
-    val hours: Int = 1,
+    /** Session length in hours — half-hour steps (see DURATION_OPTIONS). */
+    val hours: Double = 1.0,
     val priceText: String = "",
     val customerId: String? = null,
     val customerName: String? = null,
@@ -550,7 +551,7 @@ fun PosApp() {
         val prefill = if (remaining > 0) remaining else b.effectiveNetCents()
         draft = SaleDraft(
             amountText = "%.2f".format(prefill / 100.0),
-            description = "${if (b.sessionDate == today) "Today" else b.sessionDate} ${prettyTime(b.startTime)} — ${b.racerCount} racer(s), ${b.durationHours}h",
+            description = "${if (b.sessionDate == today) "Today" else b.sessionDate} ${prettyTime(b.startTime)} — ${b.racerCount} racer(s), ${formatHours(b.durationHours)}",
             saleType = "booking_income",
             customerId = b.customerId,
             customerName = b.customerName,
@@ -580,7 +581,7 @@ fun PosApp() {
     fun openNewBooking(date: String) {
         bookingDraft = BookingDraft(
             date = date,
-            priceText = "%.2f".format(sessionPriceCents(date, 1, 1) / 100.0),
+            priceText = "%.2f".format(sessionPriceCents(date, 1, 1.0) / 100.0),
         )
         stage = Stage.NewBooking
     }

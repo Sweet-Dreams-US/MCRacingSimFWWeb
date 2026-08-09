@@ -5,9 +5,14 @@
 // (collected in person) and warns on closed days.
 import { useState } from 'react'
 import Link from 'next/link'
-import { calculatePrice, getDayType, formatPrice, LARGE_GROUP_RACERS } from '@/lib/pricing'
-
-type Unit = 1 | 2 | 3
+import {
+  calculatePrice,
+  getDayType,
+  formatPrice,
+  LARGE_GROUP_RACERS,
+  DURATION_OPTIONS,
+  formatDuration,
+} from '@/lib/pricing'
 
 function timeOptions(): { value: string; label: string }[] {
   const opts: { value: string; label: string }[] = []
@@ -37,7 +42,7 @@ export default function InviteBookingForm() {
   const [phone, setPhone] = useState('')
   const [sessionDate, setSessionDate] = useState('')
   const [startTime, setStartTime] = useState('18:00')
-  const [durationHours, setDurationHours] = useState<Unit>(1)
+  const [durationHours, setDurationHours] = useState<number>(1)
   // Any size — racers past the 3 sims rotate through them (flat hourly add-on).
   // Held as TEXT so the field can be emptied while typing (coercing a blank
   // straight to 1 meant clearing "1" to type "2" produced "12").
@@ -268,12 +273,14 @@ export default function InviteBookingForm() {
             </label>
             <select
               value={durationHours}
-              onChange={(e) => setDurationHours(parseInt(e.target.value, 10) as Unit)}
+              onChange={(e) => setDurationHours(Number(e.target.value))}
               className="composer-input"
             >
-              <option value={1}>1 hour</option>
-              <option value={2}>2 hours</option>
-              <option value={3}>3 hours</option>
+              {DURATION_OPTIONS.map((h) => (
+                <option key={h} value={h}>
+                  {formatDuration(h)}
+                </option>
+              ))}
             </select>
           </div>
           <div>

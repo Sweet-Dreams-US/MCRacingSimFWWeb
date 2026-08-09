@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isDeviceAuthorized } from '@/lib/device-auth'
 import { createInviteBooking, AvailabilityBlockedError } from '@/lib/booking'
-import { getDayType } from '@/lib/pricing'
+import { getDayType, isValidDuration } from '@/lib/pricing'
 
 export const runtime = 'nodejs'
 
@@ -26,9 +26,10 @@ interface Body {
   sendCustomerEmail?: boolean
 }
 
-function asUnit(v: unknown, fallback: 1 | 2 | 3): 1 | 2 | 3 {
+/** Session length — 1 to 3 hours on a half-hour step, else the fallback. */
+function asDuration(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : NaN
-  return n === 1 || n === 2 || n === 3 ? n : fallback
+  return isValidDuration(n) ? n : fallback
 }
 
 /** Racer count — any whole number >= 1 (extras rotate through the sims). */
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
       lastName,
       sessionDate,
       startTime,
-      durationHours: asUnit(body.durationHours, 1),
+      durationHours: asDuration(body.durationHours, 1),
       racerCount: asRacerCount(body.racerCount, 1),
       priceCents:
         typeof body.priceCents === 'number' && body.priceCents >= 0

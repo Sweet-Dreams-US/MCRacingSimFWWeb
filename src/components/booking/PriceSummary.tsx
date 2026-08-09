@@ -13,7 +13,7 @@ import {
 
 interface PriceSummaryProps {
   date: string | null
-  duration: 1 | 2 | 3
+  duration: number
   racerCount: number
   startTime: string | null
 }
@@ -34,7 +34,8 @@ export default function PriceSummary({ date, duration, racerCount, startTime }: 
   const extras = extraRacers(racerCount)
   const extraCharge = extraRacerChargeDollars(racerCount, duration)
 
-  // Calculate end time
+  // Calculate end time. Works in MINUTES so half-hour sessions land correctly
+  // (a 1.5h session from 7:00 PM ends at 8:30 PM, not 8:00).
   let endTime = ''
   if (startTime) {
     const [time, period] = startTime.split(' ')
@@ -43,11 +44,12 @@ export default function PriceSummary({ date, duration, racerCount, startTime }: 
     if (period === 'PM' && hours !== 12) hour24 += 12
     if (period === 'AM' && hours === 12) hour24 = 0
 
-    let endHour = hour24 + duration
-    const endPeriod = endHour >= 12 && endHour < 24 ? 'PM' : 'AM'
-    if (endHour >= 24) endHour -= 24
-    const displayEndHour = endHour % 12 || 12
-    endTime = `${displayEndHour}:${String(minutes).padStart(2, '0')} ${endPeriod}`
+    const endMinutesRaw = hour24 * 60 + minutes + Math.round(duration * 60)
+    const endHour24 = Math.floor(endMinutesRaw / 60) % 24
+    const endMin = endMinutesRaw % 60
+    const endPeriod = endHour24 >= 12 ? 'PM' : 'AM'
+    const displayEndHour = endHour24 % 12 || 12
+    endTime = `${displayEndHour}:${String(endMin).padStart(2, '0')} ${endPeriod}`
   }
 
   return (

@@ -10,6 +10,9 @@ import {
   extraRacerChargeDollars,
   SIM_COUNT,
   EXTRA_RACER_RATE_PER_HOUR,
+  isValidDuration,
+  formatDuration,
+  DURATION_OPTIONS,
 } from '../pricing'
 
 // Reference dates (noon-anchored so weekday is unambiguous):
@@ -68,6 +71,56 @@ describe('no-show fee', () => {
   it('caps at the sim count — a no-show only ever costs the 3 rigs', () => {
     expect(calculateNoShowFeeCents(4)).toBe(6000)
     expect(calculateNoShowFeeCents(8)).toBe(6000)
+  })
+})
+
+describe('half-hour sessions', () => {
+  const THU = '2026-07-02' // weekday: 1 racer 45/85/115, 3 racers 130/245/340
+  const SAT = '2026-07-04' // weekend: 1 racer 50/95/135, 3 racers 140/275/365
+
+  it('offers every half hour from 1 to 3', () => {
+    expect(DURATION_OPTIONS).toEqual([1, 1.5, 2, 2.5, 3])
+  })
+
+  it('accepts only 1–3 hours on a half-hour step', () => {
+    expect(isValidDuration(1)).toBe(true)
+    expect(isValidDuration(1.5)).toBe(true)
+    expect(isValidDuration(3)).toBe(true)
+    expect(isValidDuration(1.25)).toBe(false) // quarter hour
+    expect(isValidDuration(0.5)).toBe(false) // under the minimum
+    expect(isValidDuration(3.5)).toBe(false) // over the maximum
+    expect(isValidDuration(NaN)).toBe(false)
+  })
+
+  it('prices a half hour at the exact midpoint of its neighbours', () => {
+    // weekday 1 racer: 1h $45, 2h $85 -> 1.5h = $65
+    expect(calculatePrice(THU, 1.5, 1).price).toBe(65)
+    // weekday 1 racer: 2h $85, 3h $115 -> 2.5h = $100
+    expect(calculatePrice(THU, 2.5, 1).price).toBe(100)
+    // weekday 3 racers: 1h $130, 2h $245 -> 1.5h = $187.50 (half-dollar is fine)
+    expect(calculatePrice(THU, 1.5, 3).price).toBe(187.5)
+    // weekend 1 racer: 1h $50, 2h $95 -> 1.5h = $72.50
+    expect(calculatePrice(SAT, 1.5, 1).price).toBe(72.5)
+    // weekend 3 racers: 2h $275, 3h $365 -> 2.5h = $320
+    expect(calculatePrice(SAT, 2.5, 3).price).toBe(320)
+  })
+
+  it('prorates the extra-racer add-on over a half hour', () => {
+    // 1 extra racer x $10/hr x 1.5h = $15, on top of the 3-racer 1.5h rate
+    expect(calculatePrice(THU, 1.5, 4).price).toBe(187.5 + 15)
+    expect(extraRacerChargeDollars(4, 1.5)).toBe(15)
+  })
+
+  it('leaves whole hours priced exactly as before', () => {
+    expect(calculatePrice(THU, 1, 1).price).toBe(45)
+    expect(calculatePrice(THU, 2, 3).price).toBe(245)
+    expect(calculatePrice(SAT, 3, 3).price).toBe(365)
+  })
+
+  it('labels durations for display', () => {
+    expect(formatDuration(1)).toBe('1 hour')
+    expect(formatDuration(1.5)).toBe('1.5 hours')
+    expect(formatDuration(2)).toBe('2 hours')
   })
 })
 

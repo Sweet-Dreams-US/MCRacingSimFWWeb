@@ -105,7 +105,7 @@ export interface CreateBookingCalendarEventInput {
   customerPhone: string | null
   sessionDate: string   // "YYYY-MM-DD"
   startTime: string     // "HH:MM" 24-hour
-  durationHours: 1 | 2 | 3
+  durationHours: number
   racerCount: number
   sessionPriceCents: number
   noShowFeeCents: number
@@ -120,7 +120,7 @@ export interface UpdateBookingCalendarEventInput {
   /** Updated start time as "HH:MM" 24-hour wall-clock. */
   startTime?: string
   /** Required alongside startTime if duration changed. */
-  durationHours?: 1 | 2 | 3
+  durationHours?: number
   /** Updated session date as "YYYY-MM-DD". */
   sessionDate?: string
   /** Override the event color (use COLOR_BY_SOURCE values). */

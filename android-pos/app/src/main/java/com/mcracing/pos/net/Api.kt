@@ -23,7 +23,9 @@ data class BookingDto(
     val id: String,
     val sessionDate: String,
     val startTime: String,
-    val durationHours: Int,
+    // Half-hour sessions are supported, and the backend column is numeric — an
+    // Int here makes Gson throw on a 1.5 and takes down the whole list.
+    val durationHours: Double,
     val racerCount: Int,
     val sessionPriceCents: Long,
     // What staff should actually collect: session price minus any online discount.
@@ -130,7 +132,7 @@ data class CashPaymentRequest(
 data class CreateBookingRequest(
     val sessionDate: String,   // "YYYY-MM-DD"
     val startTime: String,     // "HH:MM" 24-hour
-    val durationHours: Int,
+    val durationHours: Double, // half-hour steps (1, 1.5, 2, 2.5, 3)
     val racerCount: Int,
     val priceCents: Long,
     val customerId: String? = null,

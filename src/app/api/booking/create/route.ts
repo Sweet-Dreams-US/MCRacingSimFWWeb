@@ -12,6 +12,7 @@ import {
   AvailabilityBlockedError,
   type CreateBookingInput,
 } from '@/lib/booking'
+import { isValidDuration } from '@/lib/pricing'
 import { DiscountError } from '@/lib/discounts'
 import { sendMetaEvent, metaContextFromRequest } from '@/lib/meta/capi'
 
@@ -55,8 +56,8 @@ export async function POST(request: NextRequest) {
     if (!body.consentTimestamp) return badRequest('Missing consent timestamp')
 
     const durationHours = Number(body.duration)
-    if (![1, 2, 3].includes(durationHours)) {
-      return badRequest('duration must be 1, 2, or 3')
+    if (!isValidDuration(durationHours)) {
+      return badRequest('duration must be 1 to 3 hours, in half-hour steps')
     }
     // Any group size is allowed — racers past the 3 sims take turns and are
     // billed the flat hourly add-on (see EXTRA_RACER_RATE_PER_HOUR).
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
     const result = await createBooking({
       sessionDate: body.sessionDate,
       startTime: body.startTime,
-      durationHours: durationHours as 1 | 2 | 3,
+      durationHours,
       racerCount,
       customer: {
         firstName: body.firstName,

@@ -3,9 +3,32 @@
 // Weekend: Friday-Sunday
 // Monday: Closed
 
-type Duration = 1 | 2 | 3
+/** Hours on the matrix. Half-hours in between are priced by interpolation. */
+type MatrixHours = 1 | 2 | 3
+/** Session length in hours — any half-hour step from 1 to 3. */
+export type Duration = number
 /** Racers on the matrix — one per sim. Beyond this, see EXTRA_RACER_RATE. */
 type SeatedRacers = 1 | 2 | 3
+
+/** Every bookable session length, shortest first. */
+export const DURATION_OPTIONS: readonly number[] = [1, 1.5, 2, 2.5, 3]
+
+/** A bookable length: 1–3 hours on a half-hour step. */
+export function isValidDuration(hours: number): boolean {
+  return (
+    Number.isFinite(hours) &&
+    hours >= 1 &&
+    hours <= 3 &&
+    Number.isInteger(hours * 2) // half-hour steps only
+  )
+}
+
+/** "1 hour" / "1.5 hours" / "2 hours" — one label rule for every surface. */
+export function formatDuration(hours: number): string {
+  const n = Number(hours)
+  const text = Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '')
+  return `${text} hour${n === 1 ? '' : 's'}`
+}
 /** Any racer count on a booking. 1–3 fill the sims; extras rotate through them. */
 export type RacerCount = number
 
@@ -26,13 +49,13 @@ export const EXTRA_RACER_RATE_PER_HOUR = 10 // dollars, per racer past the 3rd
  */
 export const LARGE_GROUP_RACERS = 10
 
-const WEEKDAY_PRICES: Record<SeatedRacers, Record<Duration, number>> = {
+const WEEKDAY_PRICES: Record<SeatedRacers, Record<MatrixHours, number>> = {
   1: { 1: 45, 2: 85, 3: 115 },
   2: { 1: 90, 2: 160, 3: 220 },
   3: { 1: 130, 2: 245, 3: 340 },
 }
 
-const WEEKEND_PRICES: Record<SeatedRacers, Record<Duration, number>> = {
+const WEEKEND_PRICES: Record<SeatedRacers, Record<MatrixHours, number>> = {
   1: { 1: 50, 2: 95, 3: 135 },
   2: { 1: 100, 2: 180, 3: 250 },
   3: { 1: 140, 2: 275, 3: 365 },
@@ -63,6 +86,24 @@ export function isMonday(date: Date | string): boolean {
   return d.getDay() === 1
 }
 
+/**
+ * Matrix price for a seated racer count at any half-hour length. The matrix
+ * only lists whole hours, so a half-hour lands exactly between its neighbours
+ * (e.g. 1.5h = midway between the 1h and 2h price).
+ */
+function matrixPrice(
+  matrix: Record<SeatedRacers, Record<MatrixHours, number>>,
+  seated: SeatedRacers,
+  hours: number
+): number {
+  const clamped = Math.min(Math.max(hours, 1), 3)
+  const lo = Math.floor(clamped) as MatrixHours
+  const hi = Math.ceil(clamped) as MatrixHours
+  if (lo === hi) return matrix[seated][lo]
+  const span = matrix[seated][hi] - matrix[seated][lo]
+  return matrix[seated][lo] + span * (clamped - lo)
+}
+
 export function calculatePrice(
   date: Date | string,
   duration: Duration,
@@ -76,9 +117,12 @@ export function calculatePrice(
   // hourly add-on on top of the full 3-racer rate.
   const seated = Math.min(Math.max(Math.floor(racerCount), 1), SIM_COUNT) as SeatedRacers
   const price =
-    priceMatrix[seated][duration] + extraRacerChargeDollars(racerCount, duration)
+    matrixPrice(priceMatrix, seated, duration) +
+    extraRacerChargeDollars(racerCount, duration)
 
-  return { price, isWeekend: weekend }
+  // Half-hours can land on a half-dollar (e.g. $187.50); round to the cent so
+  // no float dust reaches the charge.
+  return { price: Math.round(price * 100) / 100, isWeekend: weekend }
 }
 
 export function getDayType(date: Date | string): 'weekday' | 'weekend' | 'closed' {
