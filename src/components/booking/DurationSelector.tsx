@@ -1,6 +1,6 @@
 'use client'
 
-import { DURATION_OPTIONS } from '@/lib/pricing'
+import { DURATION_OPTIONS, MAX_DURATION_HOURS, formatDuration } from '@/lib/pricing'
 
 interface DurationSelectorProps {
   value: number
@@ -21,6 +21,8 @@ function label(hours: number): string {
 }
 
 export default function DurationSelector({ value, onChange }: DurationSelectorProps) {
+  const isLongSession = value > 3
+
   return (
     <div className="space-y-4">
       <h3 className="racing-headline text-xl text-grid-white">
@@ -47,6 +49,54 @@ export default function DurationSelector({ value, onChange }: DurationSelectorPr
           </button>
         ))}
       </div>
+
+      {/* Longer bookings (parties, corporate days) — up to the whole day. */}
+      {!isLongSession ? (
+        <button
+          type="button"
+          onClick={() => onChange(3.5)}
+          className="w-full p-3 border border-white/10 hover:border-telemetry-cyan/50 transition-colors text-center"
+        >
+          <span className="telemetry-text text-sm text-telemetry-cyan">
+            + Need longer than 3 hours?
+          </span>
+          <span className="block telemetry-text text-xs text-pit-gray mt-0.5">
+            Book up to the whole day — great for parties and corporate events
+          </span>
+        </button>
+      ) : (
+        <div className="p-4 border border-telemetry-cyan bg-telemetry-cyan/10">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="telemetry-text text-sm text-grid-white">Session length</p>
+              <p className="telemetry-text text-xs text-pit-gray mt-0.5">
+                Half-hour steps, up to {MAX_DURATION_HOURS} hours
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onChange(Math.max(1, value - 0.5))}
+                aria-label="Half an hour shorter"
+                className="w-10 h-10 border border-white/20 hover:border-white/50 racing-headline text-xl text-grid-white transition-colors"
+              >
+                −
+              </button>
+              <span className="racing-headline text-2xl text-grid-white w-20 text-center tabular-nums">
+                {formatDuration(value)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(Math.min(MAX_DURATION_HOURS, value + 0.5))}
+                aria-label="Half an hour longer"
+                className="w-10 h-10 border border-white/20 hover:border-white/50 racing-headline text-xl text-grid-white transition-colors"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -3,14 +3,15 @@
 // Admin invite-to-booking form. Creates a card-less booking that emails the
 // customer + owner and drops it on the Gmail calendar. Shows a live price
 // (collected in person) and warns on closed days.
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useFormDraft } from '@/lib/useFormDraft'
 import {
   calculatePrice,
   getDayType,
   formatPrice,
   LARGE_GROUP_RACERS,
-  DURATION_OPTIONS,
+  allDurationOptions,
   formatDuration,
 } from '@/lib/pricing'
 
@@ -35,6 +36,24 @@ function timeOptions(): { value: string; label: string }[] {
 
 const TIME_OPTIONS = timeOptions()
 
+// Everything typed into the form, mirrored to localStorage so a half-finished
+// booking survives navigating away or the tab being discarded.
+const DRAFT_KEY = 'mc-admin-invite-booking-draft'
+interface DraftValues {
+  email: string
+  firstName: string
+  lastName: string
+  phone: string
+  sessionDate: string
+  startTime: string
+  durationHours: number
+  racerCountText: string
+  notes: string
+  requireCard: boolean
+  price: string
+  sendCustomerEmail: boolean
+}
+
 export default function InviteBookingForm() {
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
@@ -53,6 +72,84 @@ export default function InviteBookingForm() {
   // Blank = use the standard racers×hours price for the date.
   const [price, setPrice] = useState('')
   const [sendCustomerEmail, setSendCustomerEmail] = useState(true)
+
+  // ---- Draft persistence -------------------------------------------------
+  // Staff routinely start a booking, flip to the calendar (or get called away),
+  // and come back to find the page was discarded and the form blank. Mirror
+  // every field to localStorage and restore it on mount.
+  const draft = useFormDraft<DraftValues>(DRAFT_KEY)
+  const [draftRestored, setDraftRestored] = useState(false)
+
+  useEffect(() => {
+    const v = draft.restored
+    if (!v) return
+    setEmail(v.email ?? '')
+    setFirstName(v.firstName ?? '')
+    setLastName(v.lastName ?? '')
+    setPhone(v.phone ?? '')
+    setSessionDate(v.sessionDate ?? '')
+    setStartTime(v.startTime ?? '18:00')
+    setDurationHours(v.durationHours ?? 1)
+    setRacerCountText(v.racerCountText ?? '1')
+    setNotes(v.notes ?? '')
+    setRequireCard(!!v.requireCard)
+    setPrice(v.price ?? '')
+    setSendCustomerEmail(v.sendCustomerEmail !== false)
+    setDraftRestored(true)
+    // draft.restored is set once, after the mount read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.restored])
+
+  // Save on every change. Cheap (one small JSON write) and means nothing is
+  // lost even if the tab dies without warning.
+  useEffect(() => {
+    draft.save({
+      email,
+      firstName,
+      lastName,
+      phone,
+      sessionDate,
+      startTime,
+      durationHours,
+      racerCountText,
+      notes,
+      requireCard,
+      price,
+      sendCustomerEmail,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    email,
+    firstName,
+    lastName,
+    phone,
+    sessionDate,
+    startTime,
+    durationHours,
+    racerCountText,
+    notes,
+    requireCard,
+    price,
+    sendCustomerEmail,
+  ])
+
+  function clearForm() {
+    setEmail('')
+    setFirstName('')
+    setLastName('')
+    setPhone('')
+    setSessionDate('')
+    setStartTime('18:00')
+    setDurationHours(1)
+    setRacerCountText('1')
+    setNotes('')
+    setRequireCard(false)
+    setPrice('')
+    setSendCustomerEmail(true)
+    setError(null)
+    setDraftRestored(false)
+    draft.clear()
+  }
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -108,6 +205,9 @@ export default function InviteBookingForm() {
       })
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || 'Invite failed')
+      // Booking is on the books — the draft has served its purpose.
+      draft.clear()
+      setDraftRestored(false)
       setResult({
         bookingId: data.bookingId,
         requireCard: !!data.requireCard,
@@ -124,6 +224,8 @@ export default function InviteBookingForm() {
 
   function reset() {
     setResult(null)
+    // Keep the date/time so back-to-back bookings for the same slot are quick;
+    // clearForm wipes everything including the saved draft.
     setEmail('')
     setFirstName('')
     setLastName('')
@@ -132,6 +234,8 @@ export default function InviteBookingForm() {
     setRequireCard(false)
     setPrice('')
     setSendCustomerEmail(true)
+    draft.clear()
+    setDraftRestored(false)
   }
 
   if (result) {
@@ -202,6 +306,23 @@ export default function InviteBookingForm() {
 
   return (
     <div className="max-w-xl space-y-5">
+      {/* Tells staff why the form came back filled in, and gives them a one-tap
+          way to start over. */}
+      {draftRestored && (
+        <div className="bg-telemetry-cyan/10 border border-telemetry-cyan/30 p-3 flex items-center justify-between gap-3">
+          <p className="telemetry-text text-sm text-telemetry-cyan">
+            Picked up where you left off — your unsaved booking was restored.
+          </p>
+          <button
+            type="button"
+            onClick={clearForm}
+            className="telemetry-text text-xs text-pit-gray hover:text-grid-white underline whitespace-nowrap"
+          >
+            Start fresh
+          </button>
+        </div>
+      )}
+
       <div className="bg-asphalt-dark border border-white/10 p-6 space-y-5">
         {/* Customer */}
         <div>
@@ -276,7 +397,7 @@ export default function InviteBookingForm() {
               onChange={(e) => setDurationHours(Number(e.target.value))}
               className="composer-input"
             >
-              {DURATION_OPTIONS.map((h) => (
+              {allDurationOptions().map((h) => (
                 <option key={h} value={h}>
                   {formatDuration(h)}
                 </option>

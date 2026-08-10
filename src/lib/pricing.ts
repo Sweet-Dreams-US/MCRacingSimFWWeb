@@ -10,15 +10,32 @@ export type Duration = number
 /** Racers on the matrix — one per sim. Beyond this, see EXTRA_RACER_RATE. */
 type SeatedRacers = 1 | 2 | 3
 
-/** Every bookable session length, shortest first. */
+/** The common session lengths, shown as tiles/chips. Longer is still bookable. */
 export const DURATION_OPTIONS: readonly number[] = [1, 1.5, 2, 2.5, 3]
 
-/** A bookable length: 1–3 hours on a half-hour step. */
+/** Longest bookable session — the venue's whole day (noon to 2am close). */
+export const MAX_DURATION_HOURS = 14
+
+/**
+ * Hours past the 3-hour matrix are billed per SIM SEAT, per hour. Racers beyond
+ * the sims keep their cheaper EXTRA_RACER_RATE_PER_HOUR for the whole session —
+ * they're sharing a rig, not occupying a fourth one.
+ */
+export const LONG_SESSION_RATE_PER_SEAT_HOUR = 30
+
+/** Every bookable length in half-hour steps, for admin dropdowns. */
+export function allDurationOptions(): number[] {
+  const out: number[] = []
+  for (let h = 1; h <= MAX_DURATION_HOURS; h += 0.5) out.push(h)
+  return out
+}
+
+/** A bookable length: 1 hour up to a full day, on a half-hour step. */
 export function isValidDuration(hours: number): boolean {
   return (
     Number.isFinite(hours) &&
     hours >= 1 &&
-    hours <= 3 &&
+    hours <= MAX_DURATION_HOURS &&
     Number.isInteger(hours * 2) // half-hour steps only
   )
 }
@@ -99,9 +116,15 @@ function matrixPrice(
   const clamped = Math.min(Math.max(hours, 1), 3)
   const lo = Math.floor(clamped) as MatrixHours
   const hi = Math.ceil(clamped) as MatrixHours
-  if (lo === hi) return matrix[seated][lo]
-  const span = matrix[seated][hi] - matrix[seated][lo]
-  return matrix[seated][lo] + span * (clamped - lo)
+  const within =
+    lo === hi
+      ? matrix[seated][lo]
+      : matrix[seated][lo] + (matrix[seated][hi] - matrix[seated][lo]) * (clamped - lo)
+
+  // Past 3 hours the matrix runs out, so every further hour bills at the flat
+  // per-seat long-session rate.
+  const longHours = Math.max(0, hours - 3)
+  return within + longHours * LONG_SESSION_RATE_PER_SEAT_HOUR * seated
 }
 
 export function calculatePrice(

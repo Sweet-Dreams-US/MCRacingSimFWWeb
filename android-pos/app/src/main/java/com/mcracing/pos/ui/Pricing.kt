@@ -33,8 +33,14 @@ fun isWeekend(isoDate: String): Boolean {
 const val SIM_COUNT = 3
 const val EXTRA_RACER_RATE_PER_HOUR = 10 // dollars
 
-/** Bookable session lengths — half-hour steps, matching DURATION_OPTIONS. */
+/** The common session lengths, shown as chips. Longer is still bookable. */
 val DURATION_OPTIONS = listOf(1.0, 1.5, 2.0, 2.5, 3.0)
+
+/** Longest bookable session — the venue's whole day (noon to 2am close). */
+const val MAX_DURATION_HOURS = 14.0
+
+/** Hours past the 3-hour matrix bill per sim seat, per hour. */
+const val LONG_SESSION_RATE_PER_SEAT_HOUR = 30
 
 /** "1h" / "1.5h" — chip + summary label. */
 fun formatHours(hours: Double): String =
@@ -48,14 +54,17 @@ fun formatHours(hours: Double): String =
 fun sessionPriceCents(isoDate: String, racers: Int, hours: Double): Long {
     val matrix = if (isWeekend(isoDate)) WEEKEND else WEEKDAY
     val seated = racers.coerceIn(1, SIM_COUNT)
-    val clamped = hours.coerceIn(1.0, 3.0)
-    val lo = Math.floor(clamped).toInt()
-    val hi = Math.ceil(clamped).toInt()
+    val withinMatrix = hours.coerceIn(1.0, 3.0)
+    val lo = Math.floor(withinMatrix).toInt()
+    val hi = Math.ceil(withinMatrix).toInt()
     val loPrice = matrix[seated]?.get(lo) ?: return 0L
     val hiPrice = matrix[seated]?.get(hi) ?: return 0L
-    val base = loPrice + (hiPrice - loPrice) * (clamped - lo)
+    val base = loPrice + (hiPrice - loPrice) * (withinMatrix - lo)
+    // Past 3 hours the matrix runs out — bill the flat per-seat rate per hour.
+    val longHours = (hours - 3.0).coerceAtLeast(0.0)
+    val longCharge = longHours * LONG_SESSION_RATE_PER_SEAT_HOUR * seated
     val extras = (racers - SIM_COUNT).coerceAtLeast(0)
-    val dollars = base + extras * EXTRA_RACER_RATE_PER_HOUR * clamped
+    val dollars = base + longCharge + extras * EXTRA_RACER_RATE_PER_HOUR * hours
     return Math.round(dollars * 100.0)
 }
 

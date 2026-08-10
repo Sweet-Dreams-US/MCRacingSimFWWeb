@@ -13,6 +13,8 @@ import {
   isValidDuration,
   formatDuration,
   DURATION_OPTIONS,
+  MAX_DURATION_HOURS,
+  LONG_SESSION_RATE_PER_SEAT_HOUR,
 } from '../pricing'
 
 // Reference dates (noon-anchored so weekday is unambiguous):
@@ -82,13 +84,15 @@ describe('half-hour sessions', () => {
     expect(DURATION_OPTIONS).toEqual([1, 1.5, 2, 2.5, 3])
   })
 
-  it('accepts only 1–3 hours on a half-hour step', () => {
+  it('accepts any half-hour step from 1 hour up to a full day', () => {
     expect(isValidDuration(1)).toBe(true)
     expect(isValidDuration(1.5)).toBe(true)
     expect(isValidDuration(3)).toBe(true)
+    expect(isValidDuration(8)).toBe(true) // long sessions are bookable now
+    expect(isValidDuration(MAX_DURATION_HOURS)).toBe(true)
     expect(isValidDuration(1.25)).toBe(false) // quarter hour
     expect(isValidDuration(0.5)).toBe(false) // under the minimum
-    expect(isValidDuration(3.5)).toBe(false) // over the maximum
+    expect(isValidDuration(MAX_DURATION_HOURS + 0.5)).toBe(false) // past close
     expect(isValidDuration(NaN)).toBe(false)
   })
 
@@ -121,6 +125,37 @@ describe('half-hour sessions', () => {
     expect(formatDuration(1)).toBe('1 hour')
     expect(formatDuration(1.5)).toBe('1.5 hours')
     expect(formatDuration(2)).toBe('2 hours')
+  })
+})
+
+describe('sessions longer than the price matrix', () => {
+  const THU = '2026-07-02' // weekday 3h: 1 racer $115, 2 racers $220, 3 racers $340
+  const SAT = '2026-07-04' // weekend 3h: 3 racers $365
+
+  it('bills each hour past 3 at the flat per-seat rate', () => {
+    expect(LONG_SESSION_RATE_PER_SEAT_HOUR).toBe(30)
+    // 1 racer, 8h = 3h matrix ($115) + 5 extra hours x $30 x 1 seat
+    expect(calculatePrice(THU, 8, 1).price).toBe(115 + 5 * 30)
+    // 2 racers, 8h = $220 + 5 x $30 x 2
+    expect(calculatePrice(THU, 8, 2).price).toBe(220 + 5 * 30 * 2)
+    // 3 racers, 8h = $340 + 5 x $30 x 3
+    expect(calculatePrice(THU, 8, 3).price).toBe(340 + 5 * 30 * 3)
+    // weekend keeps its own 3h base
+    expect(calculatePrice(SAT, 8, 3).price).toBe(365 + 5 * 30 * 3)
+  })
+
+  it('handles a half-hour past the matrix', () => {
+    expect(calculatePrice(THU, 3.5, 1).price).toBe(115 + 0.5 * 30)
+  })
+
+  it('charges oversized groups the cheap extra-racer rate, not the seat rate', () => {
+    // 5 racers, 8h: 3h base $340 + 5h x $30 x 3 seats + 2 extras x $10 x 8h
+    expect(calculatePrice(THU, 8, 5).price).toBe(340 + 5 * 30 * 3 + 2 * 10 * 8)
+  })
+
+  it('leaves 3 hours and under exactly as before', () => {
+    expect(calculatePrice(THU, 3, 3).price).toBe(340)
+    expect(calculatePrice(THU, 2.5, 1).price).toBe(100)
   })
 })
 

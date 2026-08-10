@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import {
   calculatePrice,
   LARGE_GROUP_RACERS,
-  DURATION_OPTIONS,
+  allDurationOptions,
   formatDuration,
 } from '@/lib/pricing'
 
@@ -170,7 +170,7 @@ export default function EditBookingPanel(props: Props) {
             onChange={(e) => setDurationHours(Number(e.target.value))}
             className="composer-input"
           >
-            {DURATION_OPTIONS.map((h) => (
+            {allDurationOptions().map((h) => (
               <option key={h} value={h}>
                 {formatDuration(h)}
               </option>

@@ -849,6 +849,44 @@ fun NewBookingScreen(
                     onClick = { onChange(retime(draft.copy(hours = h), priceIsStandard)) },
                 )
             }
+            // Longer than the usual chips — parties, corporate days.
+            SelectChip(
+                selected = draft.hours > 3.0,
+                label = if (draft.hours > 3.0) formatHours(draft.hours) else "3.5+",
+                onClick = {
+                    val next = if (draft.hours > 3.0) {
+                        (draft.hours + 0.5).coerceAtMost(MAX_DURATION_HOURS)
+                    } else 3.5
+                    onChange(retime(draft.copy(hours = next), priceIsStandard))
+                },
+            )
+        }
+        if (draft.hours > 3.0) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        val next = (draft.hours - 0.5).coerceAtLeast(1.0)
+                        onChange(retime(draft.copy(hours = next), priceIsStandard))
+                    },
+                ) { Text("−") }
+                Text(
+                    "${formatHours(draft.hours)} session",
+                    color = PitGray,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(
+                    onClick = {
+                        val next = (draft.hours + 0.5).coerceAtMost(MAX_DURATION_HOURS)
+                        onChange(retime(draft.copy(hours = next), priceIsStandard))
+                    },
+                ) { Text("+") }
+            }
         }
         Spacer(Modifier.height(12.dp))
 
