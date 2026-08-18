@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useFormDraft } from '@/lib/useFormDraft'
+import { businessDateEastern } from '@/lib/business-day'
 import {
   calculatePrice,
   getDayType,
@@ -100,6 +101,18 @@ export default function InviteBookingForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.restored])
 
+  // Default the date to today. Nearly every hand-entered reservation is for
+  // tonight, so making staff pick today's date every single time is a step for
+  // nothing. Uses the *business* date (rolls over at 7am, not midnight) so a
+  // 1am walk-in still lands on the evening it belongs to.
+  //
+  // Waits for the draft read: a restored draft's date must always win, and
+  // before `ready` we can't tell "no draft" from "haven't looked yet".
+  useEffect(() => {
+    if (!draft.ready || draft.restored) return
+    setSessionDate((d) => d || businessDateEastern())
+  }, [draft.ready, draft.restored])
+
   // Save on every change. Cheap (one small JSON write) and means nothing is
   // lost even if the tab dies without warning.
   useEffect(() => {
@@ -138,7 +151,7 @@ export default function InviteBookingForm() {
     setFirstName('')
     setLastName('')
     setPhone('')
-    setSessionDate('')
+    setSessionDate(businessDateEastern())
     setStartTime('18:00')
     setDurationHours(1)
     setRacerCountText('1')

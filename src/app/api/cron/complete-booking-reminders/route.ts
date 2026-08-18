@@ -4,6 +4,9 @@
 // it's been pending 30+ minutes. Links them to /hold-card/<token> to complete
 // it (reusing the require-card flow) — the setup_intent.succeeded webhook then
 // confirms the booking. Idempotent via bookings.incomplete_reminder_sent_at.
+//
+// Second job: sweep up checkouts still abandoned after STALE_PENDING_HOURS by
+// cancelling them, so they stop cluttering the admin schedule as duplicates.
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -13,6 +16,11 @@ import { businessDateEastern } from '@/lib/business-day'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
+
+// How long an abandoned online checkout (pending, no card) lingers before it's
+// auto-cancelled. Long enough that a customer finishing slowly is never cut
+// off, short enough that duplicates don't pile up on the day's schedule.
+const STALE_PENDING_HOURS = 3
 
 export async function GET(request: Request) {
   // Vercel Cron sends Authorization: Bearer <CRON_SECRET>. Fail CLOSED.
@@ -112,5 +120,32 @@ export async function GET(request: Request) {
     sent++
   }
 
-  return NextResponse.json({ ok: true, sent, skipped })
+  // ---- Sweep up abandoned checkouts --------------------------------------
+  // A pending online booking with no card saved is a checkout the customer
+  // walked away from. It already holds no seat, but it lingers in the admin
+  // list — a customer who retried twice shows up three times, which reads as a
+  // double booking on the schedule. Cancel them a few hours in, well after the
+  // 30-minute nudge above has had its chance.
+  //
+  // Deliberately narrow: online-only, no card, and no card_link_token (an
+  // admin require-card invite is legitimately waiting on the customer and must
+  // never be swept).
+  const staleCutoff = new Date(now - STALE_PENDING_HOURS * 60 * 60 * 1000).toISOString()
+  let cancelled = 0
+  const { data: stale, error: staleError } = await supabase
+    .from('bookings')
+    .update({ status: 'cancelled' })
+    .eq('status', 'pending')
+    .eq('source', 'online')
+    .is('stripe_payment_method_id', null)
+    .is('card_link_token', null)
+    .lte('created_at', staleCutoff)
+    .select('id')
+  if (staleError) {
+    console.error('[cron] stale pending sweep failed:', staleError.message)
+  } else {
+    cancelled = stale?.length ?? 0
+  }
+
+  return NextResponse.json({ ok: true, sent, skipped, cancelled })
 }

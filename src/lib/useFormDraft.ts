@@ -23,6 +23,13 @@ interface Stored<T> {
 export interface FormDraft<T> {
   /** Draft values found on mount (null when there was nothing fresh to restore). */
   restored: T | null
+  /**
+   * True once the mount read has finished. Before that, `restored` is null
+   * simply because nothing has been read yet — a caller that wants to apply
+   * its own defaults (e.g. "date = today") must wait for this, or it can't
+   * tell "no draft" from "not looked yet" and would stomp a real draft.
+   */
+  ready: boolean
   /** Persist the current values. Safe to call on every render/change. */
   save: (values: T) => void
   /** Forget the draft — call on successful submit and on an explicit cancel. */
@@ -31,6 +38,7 @@ export interface FormDraft<T> {
 
 export function useFormDraft<T>(key: string, ttlMs: number = DEFAULT_TTL_MS): FormDraft<T> {
   const [restored, setRestored] = useState<T | null>(null)
+  const [ready, setReady] = useState(false)
   // Suppress saves until after the restore pass, so the initial empty state
   // can't overwrite a good draft.
   const readyRef = useRef(false)
@@ -50,6 +58,7 @@ export function useFormDraft<T>(key: string, ttlMs: number = DEFAULT_TTL_MS): Fo
       // Corrupt or unavailable storage (private mode) — just start fresh.
     }
     readyRef.current = true
+    setReady(true)
   }, [key, ttlMs])
 
   const save = (values: T) => {
@@ -71,5 +80,5 @@ export function useFormDraft<T>(key: string, ttlMs: number = DEFAULT_TTL_MS): Fo
     setRestored(null)
   }
 
-  return { restored, save, clear }
+  return { restored, ready, save, clear }
 }
