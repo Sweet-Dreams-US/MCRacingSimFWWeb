@@ -403,7 +403,11 @@ export default function LocationClient() {
                   <span className="text-telemetry-cyan">Reservations Only</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-pit-gray">Tuesday - Thursday</span>
+                  <span className="text-pit-gray">Tuesday</span>
+                  <span className="text-telemetry-cyan">Reservations Only</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-pit-gray">Wednesday - Thursday</span>
                   <span className="text-grid-white">Noon - Midnight</span>
                 </div>
                 <div className="flex justify-between">
@@ -416,7 +420,8 @@ export default function LocationClient() {
                 </div>
               </div>
               <p className="telemetry-text text-xs text-telemetry-cyan mt-4">
-                Always open anytime for reservations
+                Monday and Tuesday are by reservation only — no walk-ins. Book ahead
+                and we&apos;ll open up for you.
               </p>
             </div>
 

@@ -341,7 +341,7 @@ export default function TimeSlotPicker({
         )}
 
         <p className="telemetry-text text-xs text-pit-gray border-t border-white/10 pt-3">
-          <span className="text-apex-red">Hours:</span> Tue-Thu &amp; Sun Noon - Midnight • Fri-Sat Noon - 2:00 AM • Mon by reservation only
+          <span className="text-apex-red">Hours:</span> Wed-Thu &amp; Sun Noon - Midnight • Fri-Sat Noon - 2:00 AM • Mon &amp; Tue by reservation only (no walk-ins)
         </p>
       </div>
     </div>

@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     const durationHours = Number(body.duration)
     if (!isValidDuration(durationHours)) {
-      return badRequest('duration must be 1 to 3 hours, in half-hour steps')
+      return badRequest('duration must be 1 to 14 hours, in half-hour steps')
     }
     // Any group size is allowed — racers past the 3 sims take turns and are
     // billed the flat hourly add-on (see EXTRA_RACER_RATE_PER_HOUR).

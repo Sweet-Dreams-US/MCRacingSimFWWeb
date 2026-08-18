@@ -1322,7 +1322,7 @@ export async function editBooking(
     throw new BookingEditError('Invalid start time.')
   }
   if (!isValidDuration(newDuration)) {
-    throw new BookingEditError('Duration must be 1 to 3 hours, in half-hour steps.')
+    throw new BookingEditError('Duration must be 1 to 14 hours, in half-hour steps.')
   }
   // Any group size — racers past the sims take turns (flat hourly add-on).
   if (!Number.isInteger(newRacerCount) || newRacerCount < 1) {

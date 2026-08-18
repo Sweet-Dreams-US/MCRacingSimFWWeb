@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createInviteBooking, AvailabilityBlockedError } from '@/lib/booking'
-import { getDayType } from '@/lib/pricing'
+import { getDayType, isValidDuration } from '@/lib/pricing'
 
 export const runtime = 'nodejs'
 
@@ -34,9 +34,20 @@ function asPriceCents(v: unknown): number | undefined {
   return Math.round(n * 100)
 }
 
-function asUnit(v: unknown, fallback: 1 | 2 | 3): 1 | 2 | 3 {
-  const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? v : NaN
-  return n === 1 || n === 2 || n === 3 ? n : fallback
+/**
+ * Session length in hours — 1 to 14 on a half-hour step, else the fallback.
+ * This used to accept ONLY 1/2/3 and silently fall back to 1, which turned a
+ * 6-racer / 1.5-hour booking into a 1-racer / 1-hour one.
+ */
+function asDuration(v: unknown, fallback: number): number {
+  const n = typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : NaN
+  return isValidDuration(n) ? n : fallback
+}
+
+/** Racer count — any whole number >= 1 (extras rotate through the sims). */
+function asRacerCount(v: unknown, fallback: number): number {
+  const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? Math.floor(v) : NaN
+  return Number.isInteger(n) && n >= 1 ? n : fallback
 }
 
 export async function POST(request: NextRequest) {
@@ -102,8 +113,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Hours is optional → default 1; racers optional → default 1.
-  const durationHours = asUnit(body.durationHours, 1)
-  const racerCount = asUnit(body.racerCount, 1)
+  const durationHours = asDuration(body.durationHours, 1)
+  const racerCount = asRacerCount(body.racerCount, 1)
 
   try {
     const result = await createInviteBooking({
