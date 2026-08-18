@@ -50,7 +50,9 @@ export async function PATCH(
   const input: EditBookingInput = {}
   if (body.sessionDate !== undefined) input.sessionDate = body.sessionDate
   if (body.startTime !== undefined) input.startTime = body.startTime
-  if (body.durationHours !== undefined) input.durationHours = Number(body.durationHours) as 1 | 2 | 3
+  // No cast to a 1|2|3 union here — half-hours and long sessions are real
+  // durations now, and editBooking validates the value itself.
+  if (body.durationHours !== undefined) input.durationHours = Number(body.durationHours)
   if (body.racerCount !== undefined) {
     input.racerCount = Math.max(1, Math.floor(Number(body.racerCount) || 1))
   }
