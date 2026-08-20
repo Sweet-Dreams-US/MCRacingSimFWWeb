@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { getAdInsights, campaignKeyword, DATE_PRESETS, type DatePreset } from '@/lib/meta/insights'
 import { formatDollars } from '@/lib/accounting'
 import { getScheduleReconciliation } from '@/lib/meta/reconciliation'
+import { getCampaignAttribution } from '@/lib/meta/campaign-attribution'
 
 export const dynamic = 'force-dynamic' // always fetch fresh insights
 
@@ -43,9 +44,12 @@ export default async function AdsPage({ searchParams }: PageProps) {
   // Independent of the date-range switcher: reconciliation is always the last
   // 6 weeks, because it answers a health question about the pipeline rather
   // than a performance question about a campaign.
-  const [result, recon] = await Promise.all([
+  const [result, recon, attribution] = await Promise.all([
     getAdInsights(preset),
     getScheduleReconciliation(6),
+    // Follows the range switcher, unlike reconciliation: this is a performance
+    // question about creative, so the period has to match the spend above it.
+    getCampaignAttribution(preset),
   ])
 
   return (
@@ -186,6 +190,78 @@ export default async function AdsPage({ searchParams }: PageProps) {
             </>
           )}
         </>
+      )}
+
+      {/* ---------------------------------------------------------------
+          First-party attribution. Meta's Conversions panel above is what
+          META believes; this is what our own booking rows say, read from
+          the utm_* params captured at landing. utm_content is the ad name,
+          so this is the table that names a winning creative even when Meta
+          under-reports.
+         --------------------------------------------------------------- */}
+      <h2 className="racing-headline text-lg text-grid-white mt-10 mb-3">Bookings by ad (our data)</h2>
+      <p className="telemetry-text text-sm text-pit-gray mb-4 max-w-3xl">
+        Counted from the <span className="text-grid-white">utm_content</span> tag on each booking, not from
+        Meta. Ad names in Ads Manager must match the{' '}
+        <span className="text-grid-white">utm_content</span> value in that ad&apos;s destination URL exactly,
+        or one creative shows up as two rows.
+      </p>
+
+      {attribution.status === 'unavailable' && (
+        <div className="card-dark p-6 border border-yellow-500/30">
+          <p className="telemetry-text text-sm text-pit-gray break-words">{attribution.message}</p>
+        </div>
+      )}
+
+      {attribution.status === 'ok' && attribution.rows.length === 0 && (
+        <div className="card-dark p-6">
+          <p className="telemetry-text text-sm text-pit-gray">
+            No bookings from a tagged link in this period.
+            {attribution.organicBookings > 0 && (
+              <>
+                {' '}
+                <span className="text-grid-white">{fmtInt(attribution.organicBookings)}</span> booking
+                {attribution.organicBookings === 1 ? '' : 's'} arrived without campaign tags (direct, organic,
+                or an untagged link).
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
+      {attribution.status === 'ok' && attribution.rows.length > 0 && (
+        <div className="card-dark overflow-x-auto">
+          <table className="w-full telemetry-text text-sm">
+            <thead>
+              <tr className="text-left text-pit-gray border-b border-white/10">
+                <th className="p-4 font-normal uppercase tracking-wider text-xs">Ad (utm_content)</th>
+                <th className="p-4 font-normal uppercase tracking-wider text-xs">Campaign</th>
+                <th className="p-4 font-normal uppercase tracking-wider text-xs text-right">Bookings</th>
+                <th className="p-4 font-normal uppercase tracking-wider text-xs text-right">Revenue</th>
+                <th className="p-4 font-normal uppercase tracking-wider text-xs text-right">With click ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attribution.rows.map((r) => (
+                <tr key={JSON.stringify([r.campaign, r.content])} className="border-b border-white/5 last:border-0">
+                  <td className="p-4 text-telemetry-cyan">{r.content}</td>
+                  <td className="p-4 text-pit-gray">{r.campaign}</td>
+                  <td className="p-4 text-right text-grid-white">{fmtInt(r.bookings)}</td>
+                  <td className="p-4 text-right text-grid-white">{formatDollars(r.revenueCents)}</td>
+                  <td className="p-4 text-right text-pit-gray">{fmtInt(r.withClickId)}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-white/10 text-pit-gray">
+                <td className="p-4" colSpan={2}>
+                  Untagged (direct, organic, or an untagged link)
+                </td>
+                <td className="p-4 text-right">{fmtInt(attribution.organicBookings)}</td>
+                <td className="p-4 text-right">{formatDollars(attribution.organicRevenueCents)}</td>
+                <td className="p-4 text-right">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* ---------------------------------------------------------------

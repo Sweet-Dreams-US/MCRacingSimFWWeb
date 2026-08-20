@@ -261,12 +261,44 @@ export function captureAttribution(): Attribution {
   return next
 }
 
-/** Read what we've stored, without re-capturing. Safe to call any time. */
+/**
+ * Read what we've captured, without re-capturing. Safe to call any time; this
+ * is what the booking form sends to the server at submit.
+ *
+ * Reads three sources in order of authority so no single failure loses the
+ * campaign: stored first-touch, then the CURRENT url, then the live cookies.
+ * The url pass matters because our ads land directly on /book — if
+ * localStorage is unavailable (private mode, storage blocked, quota) the utm_*
+ * params would otherwise be silently dropped at submit even though they are
+ * still sitting in the address bar. Stored values win, so this only ever fills
+ * gaps and can't overwrite a genuine first touch.
+ */
 export function getAttribution(): Attribution {
   if (typeof window === 'undefined') return {}
-  const stored = loadStored()
-  // Cookies can be fresher than storage (Pixel wrote them after our last pass).
+  const attr = loadStored()
+
+  // Fill gaps only — a bare `??=` would leave explicit `undefined` keys behind,
+  // which then serialize into the request body as nulls.
+  const fillGap = <K extends keyof Attribution>(key: K, value: Attribution[K]) => {
+    if (attr[key] === undefined && value !== undefined) attr[key] = value
+  }
+  const fromUrl = parseAttributionParams(new URLSearchParams(window.location.search))
+  fillGap('fbclid', fromUrl.fbclid)
+  fillGap('utmSource', fromUrl.utmSource)
+  fillGap('utmMedium', fromUrl.utmMedium)
+  fillGap('utmCampaign', fromUrl.utmCampaign)
+  fillGap('utmContent', fromUrl.utmContent)
+  fillGap('utmTerm', fromUrl.utmTerm)
+  fillGap('landingUrl', clean(window.location.href, 500))
+
+  // Cookies can be fresher than storage (the Pixel may have written them after
+  // our last capture pass), so they take precedence for fbp/fbc specifically.
   const fbc = readCookie('_fbc')
   const fbp = readCookie('_fbp')
-  return { ...stored, ...(fbc ? { fbc } : {}), ...(fbp ? { fbp } : {}) }
+  if (fbc) attr.fbc = fbc
+  if (fbp) attr.fbp = fbp
+  // Last resort: rebuild the click id from an fbclid we hold but never got a
+  // cookie for.
+  if (!attr.fbc && attr.fbclid) attr.fbc = `fb.1.${attr.fbclidTs ?? Date.now()}.${attr.fbclid}`
+  return attr
 }

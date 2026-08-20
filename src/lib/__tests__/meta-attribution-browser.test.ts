@@ -148,7 +148,14 @@ describe('getAttribution', () => {
     expect(getAttribution().fbc).toBe('fb.1.999.FRESH')
   })
 
-  it('is empty with nothing captured', () => {
-    expect(getAttribution()).toEqual({})
+  it('reports no campaign for an organic visit', () => {
+    const attr = getAttribution()
+    expect(attr.fbclid).toBeUndefined()
+    expect(attr.utmSource).toBeUndefined()
+    expect(attr.utmContent).toBeUndefined()
+    expect(attr.fbc).toBeUndefined()
+    // landingUrl is still filled from the current page — it is the
+    // event_source_url for any event fired from here, campaign or not.
+    expect(attr.landingUrl).toBe('https://www.mcracingfortwayne.com/')
   })
 })

@@ -97,7 +97,10 @@ race, so a redelivered Stripe webhook cannot double-count.
 | `Purchase` (server) | `src/app/api/stripe/webhook/route.ts` |
 | `Lead` (server) | `src/app/api/contact/route.ts` |
 | Weekly reconciliation | `src/lib/meta/reconciliation.ts` → `/admin/ads` |
+| Bookings by ad (first-party) | `src/lib/meta/campaign-attribution.ts` → `/admin/ads` |
+| Custom Audience CSV export | `src/lib/marketing/audience-export.ts` → `/admin/marketing` |
 | Attribution columns | `supabase/migrations/016_meta_click_attribution.sql` |
+| Campaign reporting view | `supabase/migrations/017_campaign_attribution_view.sql` |
 
 ---
 
@@ -210,17 +213,90 @@ will be polluted by Meta's guesses:
 
 ---
 
+## Campaign tagging (UTMs)
+
+Every ad's destination URL carries the campaign context. `utm_content` **is the
+ad name**, and it is the only thing that identifies a winning creative without
+asking Meta:
+
+```
+https://www.mcracingfortwayne.com/book?utm_source=meta&utm_medium=paid&utm_campaign=<CAMPAIGN>&utm_content=<AD_NAME>
+```
+
+> **`utm_content` must equal the ad's name in Ads Manager, character for
+> character.** A rename on one side and not the other splits one creative into
+> two rows and quietly ruins the comparison you are running the test for.
+
+Meta appends `?fbclid=…` to that URL on a real click; we capture both.
+
+### How to read the results
+
+- **`/admin/ads` → Bookings by ad** — our own numbers, grouped by
+  `utm_content` / `utm_campaign`, with revenue and how many carried a click id.
+  Independent of Meta by design, so it stays right when Meta under-reports.
+- **SQL:** `SELECT * FROM public.mc_bookings_by_campaign;`
+- `mc_bookings.attributed_source` still records the coarse channel
+  (`Facebook or Instagram`), derived from `fbclid`/`utm_source`.
+
+Untagged bookings (direct, organic, an untagged link) are counted on their own
+row rather than folded into a campaign, so the ad rows stay honest.
+
+`src/lib/__tests__/meta-utm-end-to-end.test.ts` walks each live ad URL through
+capture → submit → the columns written on the booking row. **If an ad is
+renamed, update the list of ad names in that test.**
+
+### What survives what
+
+| Situation | Campaign kept? |
+|---|---|
+| Land on the ad URL, book immediately | yes |
+| Land on the ad URL, browse the site, then book | yes — UTMs are first-touch |
+| Land via `/book?code=FASTESTLAP` after an ad click | yes — internal links can't overwrite |
+| Click a **second, different** ad | re-attributed to the newer ad |
+| `localStorage` blocked (private mode) | yes — read back from the URL at submit |
+| Organic visit, no tags | no campaign recorded (not guessed) |
+
+---
+
+## Meta Custom Audience export
+
+**`/admin/marketing` → Meta ad audience → Download CSV** (owner-only) produces
+the seed list for a Customer List custom audience and the Lookalike built from
+it.
+
+- **One `email` column.** Lowercased, trimmed, deduplicated by inbox. Meta
+  hashes on upload, so the file is plain text and reviewable before you send it.
+- **No phone column — ever.** Same reasoning as dropping `ph` from the
+  Conversions API: a phone list uploaded for ad targeting is the most literal
+  instance of the "share mobile information for marketing" our 10DLC disclosure
+  rules out. `audience-export.test.ts` asserts no phone digits reach the file.
+- **Suppression is shared with email marketing.** The export calls the same
+  `getEmailableAudience()` the campaign sender uses, so unsubscribes, bounces,
+  and spam complaints are excluded — and an unsubscribe removes someone from
+  advertising and email at the same moment, with no second list to maintain.
+
+The page shows the estimated match count (~70% of the list) against Meta's
+100-match Lookalike floor and warns when the seed is too thin. **If the
+Lookalike will not build, use a broad Advantage+ audience instead** — do not
+lower the floor by padding the list.
+
+---
+
 ## Go-live runbook
 
 Order matters — do not reorder.
 
 ### 1. Deploy
 
-1. **Apply migration 016 first.** It is additive, but the code writes those
-   columns, so it must land before the deploy that writes them.
+1. **Apply migrations 016 and 017 first.** Both are additive, but the code
+   writes the 016 columns, so they must exist before the deploy that writes
+   them. 017 is the campaign reporting view and depends on 016.
 2. Deploy frontend + serverless.
 3. Confirm a new booking row gets `fbclid` / `utm_*` / `fbp` / `fbc` populated
    (when the visit carried them) and `meta_schedule_sent_at` stamped on confirm.
+   Fastest check: load `/book?utm_source=meta&utm_medium=paid&utm_campaign=TEST&utm_content=TEST_AD&fbclid=TEST123`,
+   book, then confirm `utm_content = 'TEST_AD'` on the row and the booking
+   appears under **/admin/ads → Bookings by ad**.
 
 ### 2. Events Manager
 
