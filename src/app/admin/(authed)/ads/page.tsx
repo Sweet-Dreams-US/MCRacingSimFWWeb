@@ -12,6 +12,7 @@ import {
   SCHEDULE_TRACKING_LIVE_FROM,
 } from '@/lib/meta/reconciliation'
 import { getCampaignAttribution } from '@/lib/meta/campaign-attribution'
+import { getCapiConfigStatus } from '@/lib/meta/capi'
 
 export const dynamic = 'force-dynamic' // always fetch fresh insights
 
@@ -47,6 +48,7 @@ export default async function AdsPage({ searchParams }: PageProps) {
   // Independent of the date-range switcher: reconciliation is always the last
   // 6 weeks, because it answers a health question about the pipeline rather
   // than a performance question about a campaign.
+  const capi = getCapiConfigStatus()
   const [result, recon, attribution] = await Promise.all([
     getAdInsights(preset),
     getScheduleReconciliation(6),
@@ -275,6 +277,44 @@ export default async function AdsPage({ searchParams }: PageProps) {
           "[meta] CAPI Schedule failed".
          --------------------------------------------------------------- */}
       <h2 className="racing-headline text-lg text-grid-white mt-10 mb-3">Tracking health</h2>
+
+      {/* Server-side tracking config. Without a token, EVERY server conversion
+          is dropped — the invisible failure this whole system exists to catch. */}
+      {!capi.hasToken && (
+        <div className="card-dark p-6 border border-red-500/50 mb-4">
+          <h3 className="racing-headline text-base text-red-400 mb-2">
+            Server-side tracking is OFF
+          </h3>
+          <p className="telemetry-text text-sm text-pit-gray">
+            <code className="text-grid-white">META_CAPI_TOKEN</code> is not set, so every
+            server-side conversion is being dropped. The browser Pixel still fires, but ad-blocked
+            and iOS visitors will not be counted at all — which is the gap this setup exists to
+            close. Set it in the Vercel project environment and redeploy.
+          </p>
+        </div>
+      )}
+
+      {capi.hasToken && capi.testEventCode && (
+        <div className="card-dark p-6 border border-yellow-500/50 mb-4">
+          <h3 className="racing-headline text-base text-yellow-400 mb-2">
+            Test mode is on — production reporting is paused
+          </h3>
+          <p className="telemetry-text text-sm text-pit-gray">
+            <code className="text-grid-white">META_TEST_EVENT_CODE</code> is set to{' '}
+            <code className="text-grid-white">{capi.testEventCode}</code>. Server events are going
+            to the Events Manager <span className="text-grid-white">Test Events</span> tab
+            <span className="text-grid-white"> instead of</span> production reporting. Unset it as
+            soon as validation is done, or real bookings will not be counted.
+          </p>
+        </div>
+      )}
+
+      {capi.hasToken && !capi.testEventCode && (
+        <p className="telemetry-text text-xs text-pit-gray/70 mb-3">
+          Server-side tracking is live on dataset{' '}
+          <code className="text-grid-white">{capi.datasetId}</code>.
+        </p>
+      )}
       <p className="telemetry-text text-sm text-pit-gray mb-4 max-w-3xl">
         Every confirmed online booking should send exactly one{' '}
         <span className="text-grid-white">Schedule</span> conversion to Meta. This compares our own

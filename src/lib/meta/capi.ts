@@ -132,9 +132,15 @@ function buildUserData(u: MetaUserData): Record<string, unknown> {
  */
 export async function sendMetaEvent(ev: MetaEvent): Promise<void> {
   if (!ACCESS_TOKEN) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn(`[meta] META_CAPI_TOKEN not set — skipping ${ev.eventName}`)
-    }
+    // Loud in production ON PURPOSE. A missing or revoked token means EVERY
+    // server-side conversion is silently dropped — the exact invisible failure
+    // this whole system exists to prevent. Better a noisy log than a month of
+    // wondering why Ads Manager is under-reporting. The token itself is never
+    // printed.
+    console.error(
+      `[meta] META_CAPI_TOKEN is not set — dropping server-side ${ev.eventName}. ` +
+        `Set it in the Vercel project environment; see docs/META_TRACKING.md.`
+    )
     return
   }
 
@@ -202,4 +208,25 @@ export function splitName(full?: string | null): { firstName?: string; lastName?
   const parts = full.trim().split(/\s+/)
   if (parts.length === 0) return {}
   return { firstName: parts[0], lastName: parts.slice(1).join(' ') || undefined }
+}
+
+export interface CapiConfigStatus {
+  /** Whether META_CAPI_TOKEN is present. The value itself is never exposed. */
+  hasToken: boolean
+  datasetId: string
+  /** Set only while validating; routes events AWAY from production reporting. */
+  testEventCode: string | null
+}
+
+/**
+ * Report whether server-side tracking is actually configured, without ever
+ * revealing the token. Rendered on /admin/ads so a missing or expired token is
+ * visible at a glance instead of being inferred from a month of thin numbers.
+ */
+export function getCapiConfigStatus(): CapiConfigStatus {
+  return {
+    hasToken: Boolean(ACCESS_TOKEN),
+    datasetId: DATASET_ID,
+    testEventCode: TEST_EVENT_CODE || null,
+  }
 }
