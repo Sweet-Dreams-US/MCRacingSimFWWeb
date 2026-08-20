@@ -36,7 +36,9 @@ import {
 } from './discounts'
 import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
-import { sendMetaEvent } from './meta/capi'
+import { sendMetaEvent, resolveFbc, type MetaUserData } from './meta/capi'
+import { deriveAttributedSource, type Attribution } from './meta/attribution'
+import { addPaymentInfoEventId, scheduleEventId } from './meta/event-ids'
 import { toAttributionSource } from './attribution'
 import { recordMcBooking } from './mc-bookings'
 import {
@@ -91,6 +93,15 @@ export interface CreateBookingInput {
   // Optional discount code the customer entered at checkout. Re-validated
   // server-side here (source of truth) before it's stored on the booking.
   discountCode?: string | null
+
+  /**
+   * Ad-click context captured in the browser at landing: fbclid, utm_* params,
+   * and the _fbp/_fbc cookies. Persisted on the row so the Stripe webhook — which runs with no
+   * browser request to read cookies from — can still forward the click id to
+   * the Conversions API and have Meta credit the booking to the right ad.
+   * See src/lib/meta/attribution.ts.
+   */
+  attribution?: Attribution | null
 }
 
 export interface CreateBookingResult {
@@ -430,6 +441,21 @@ export async function createBooking(
     consent_timestamp: input.consentTimestamp,
     consent_ip: input.consentIp ?? null,
     consent_user_agent: input.consentUserAgent ?? null,
+    // Ad-click attribution snapshot (all nullable). Read back by
+    // finalizeConfirmedBooking to enrich the server-side Schedule event.
+    fbp: input.attribution?.fbp ?? null,
+    fbc: resolveFbc({
+      fbc: input.attribution?.fbc,
+      fbclid: input.attribution?.fbclid,
+      clickTimeMs: input.attribution?.fbclidTs,
+    }) ?? null,
+    fbclid: input.attribution?.fbclid ?? null,
+    utm_source: input.attribution?.utmSource ?? null,
+    utm_medium: input.attribution?.utmMedium ?? null,
+    utm_campaign: input.attribution?.utmCampaign ?? null,
+    utm_content: input.attribution?.utmContent ?? null,
+    utm_term: input.attribution?.utmTerm ?? null,
+    landing_url: input.attribution?.landingUrl ?? null,
   }
 
   let bookingId = ''
@@ -567,6 +593,9 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
       `id, status, session_date, start_time, duration_hours, racer_count,
        session_price_cents, no_show_fee_cents, source, google_calendar_event_id,
        customer_id, discount_code, discount_amount_cents,
+       fbp, fbc, fbclid, utm_source, utm_medium, utm_campaign, utm_content,
+       utm_term, landing_url, consent_ip, consent_user_agent,
+       meta_schedule_sent_at,
        customer:customers(first_name, last_name, email, phone)`
     )
     .eq('id', bookingId)
@@ -634,35 +663,92 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
   //
   // Only the winner of the pending→confirmed race fires it, so a redelivered
   // webhook can't double-count; the deterministic event_id (sched_<bookingId>)
-  // also dedupes against the browser Pixel fired on the confirmation page. Runs
-  // in the webhook, away from the browser, so we match on hashed PII only —
-  // still a strong signal via email + phone + external_id.
+  // also dedupes against the browser Pixel fired on the confirmation page.
+  //
+  // This runs in the webhook, with no customer request to read cookies from —
+  // so the browser-match signals (fbp/fbc/IP/UA) come off the BOOKING ROW,
+  // where they were stored at booking time from the customer's own request.
+  // Without them Meta can still match on hashed email/phone, but has no click
+  // id to credit the conversion to an ad. See src/lib/meta/attribution.ts.
   if (wonConfirmRace && customer && booking.source === 'online') {
     // Real committed total = session price minus any discount (pre-tax).
     const bookingValue =
       Math.max(0, booking.session_price_cents - (booking.discount_amount_cents ?? 0)) / 100
-    await sendMetaEvent({
-      eventName: 'Schedule',
-      eventId: `sched_${bookingId}`,
-      eventSourceUrl: 'https://www.mcracingfortwayne.com/book',
-      actionSource: 'website',
-      userData: {
-        email: customer.email,
-        phone: customer.phone,
-        firstName: customer.first_name,
-        lastName: customer.last_name,
-        externalId: booking.customer_id,
-      },
-      customData: {
-        value: bookingValue,
-        currency: 'USD',
-        content_name: 'Sim Racing Session',
-        content_category: 'booking',
-        num_racers: booking.racer_count,
-        duration_hours: booking.duration_hours,
-        is_membership: false, // no membership model yet; always false for now
-      },
-    })
+    // The click/browser context captured in the customer's browser at landing
+    // and stored on the row at booking time. THIS is what lets Meta tie a
+    // server event fired from a webhook back to the ad that caused it — without
+    // fbc there is no click id, and the conversion lands as unattributed.
+    const fbc = resolveFbc({ fbc: booking.fbc, fbclid: booking.fbclid })
+    // Explicitly typed: a bare object literal here would be a `const`, and
+    // TypeScript only excess-property-checks FRESH literals — so an added
+    // `phone` would be silently ignored rather than rejected.
+    const metaUserData: MetaUserData = {
+      email: customer.email,
+      firstName: customer.first_name,
+      lastName: customer.last_name,
+      externalId: booking.customer_id,
+      fbp: booking.fbp,
+      fbc,
+      // Captured in the SAME browser request that created the booking, so
+      // they describe the customer — not this Vercel function.
+      clientIpAddress: booking.consent_ip,
+      clientUserAgent: booking.consent_user_agent,
+    }
+    const metaSourceUrl = booking.landing_url || 'https://www.mcracingfortwayne.com/book'
+
+    // Both sends run concurrently: this is the Stripe webhook, which has to ACK
+    // well inside Stripe's 30s timeout, and the two events are independent.
+    // sendMetaEvent never throws, so Promise.all can't reject here.
+    await Promise.all([
+      // AddPaymentInfo — the card was genuinely accepted by Stripe. The browser
+      // fires this too (CardSetupForm), but ONLY on the no-redirect path: a card
+      // that needs 3DS leaves the page before the Pixel can fire, so that whole
+      // segment was invisible. Same api_<id> event id, so Meta counts one.
+      sendMetaEvent({
+        eventName: 'AddPaymentInfo',
+        eventId: addPaymentInfoEventId(bookingId),
+        eventSourceUrl: metaSourceUrl,
+        actionSource: 'website',
+        userData: metaUserData,
+        customData: {
+          value: bookingValue,
+          currency: 'USD',
+          content_name: 'Sim Racing Session',
+          content_category: 'booking',
+        },
+      }),
+
+      sendMetaEvent({
+        eventName: 'Schedule',
+        eventId: scheduleEventId(bookingId),
+        // Prefer the real landing URL when we captured one; it carries the
+        // campaign query string Meta uses for URL-based attribution.
+        eventSourceUrl: metaSourceUrl,
+        actionSource: 'website',
+        userData: metaUserData,
+        customData: {
+          value: bookingValue,
+          currency: 'USD',
+          content_name: 'Sim Racing Session',
+          content_category: 'booking',
+          num_racers: booking.racer_count,
+          duration_hours: booking.duration_hours,
+          is_membership: false, // no membership model yet; always false for now
+        },
+      }),
+    ])
+
+    // Delivery receipt. Lets `mc_meta_schedule_reconciliation` answer "did Meta
+    // ever hear about this booking?" from the database alone — which is how the
+    // 8-vs-13 gap gets caught next time instead of being discovered a month
+    // later in Ads Manager. Best-effort: a failed stamp must not break confirm.
+    const { error: stampError } = await supabase
+      .from('bookings')
+      .update({ meta_schedule_sent_at: new Date().toISOString() })
+      .eq('id', bookingId)
+    if (stampError) {
+      console.error(`Meta schedule stamp failed for ${bookingId}:`, stampError.message)
+    }
   }
 
   // Unified reporting ledger (mc_bookings) — record every completed ONLINE
@@ -684,6 +770,15 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
       amountCents: netCents,
       depositCents: null, // online booking collects $0 (card-on-file only)
       customerId: booking.customer_id,
+      // First-party attribution, independent of Meta's reporting: a real
+      // fbclid/utm_source beats the self-reported "how did you hear" dropdown.
+      // Null falls through to the customer-record backfill inside
+      // recordMcBooking, so nothing regresses when there's no campaign data.
+      attributedSource: deriveAttributedSource({
+        fbc: booking.fbc ?? undefined,
+        fbclid: booking.fbclid ?? undefined,
+        utmSource: booking.utm_source ?? undefined,
+      }),
       notes: `Booking ${bookingId}`,
     })
   }

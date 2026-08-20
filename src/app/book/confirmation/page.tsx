@@ -7,6 +7,8 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatDateLong } from '@/lib/pricing'
 import { MetaEventOnMount } from '@/components/MetaPixel'
+import { getStripe } from '@/lib/stripe'
+import { scheduleEventId } from '@/lib/meta/event-ids'
 
 interface PageProps {
   searchParams: Promise<{ bookingId?: string; name?: string }>
@@ -23,6 +25,37 @@ function formatTime(t: string): string {
   if (h === 0) h = 12
   else if (h > 12) h -= 12
   return `${h}:${mStr} ${period}`
+}
+
+/**
+ * Is the card genuinely saved?
+ *
+ * `bookings.stripe_payment_method_id` is written ONLY by the
+ * setup_intent.succeeded webhook — but the customer's browser lands here the
+ * instant stripe.confirmSetup() resolves, which is normally BEFORE Stripe has
+ * even dispatched that webhook. Reading the column alone therefore loses a race
+ * on most real bookings, which is what silently suppressed the browser-side
+ * Schedule Pixel event (and showed the customer the wrong card status).
+ *
+ * So we ask Stripe directly. The SetupIntent is authoritative the moment
+ * confirmSetup resolves, with no webhook in the loop. The DB column stays as
+ * the fast path for a later revisit, and as the fallback if Stripe is
+ * unreachable.
+ */
+async function isCardOnFile(
+  paymentMethodId: string | null,
+  setupIntentId: string | null
+): Promise<boolean> {
+  if (paymentMethodId) return true // webhook already landed — no API call needed
+  if (!setupIntentId) return false
+  try {
+    const intent = await getStripe().setupIntents.retrieve(setupIntentId)
+    return intent.status === 'succeeded'
+  } catch (err) {
+    // Never fail the confirmation page over a tracking/display detail.
+    console.error(`Confirmation page: SetupIntent ${setupIntentId} lookup failed:`, err)
+    return false
+  }
 }
 
 export default async function ConfirmationPage({ searchParams }: PageProps) {
@@ -44,7 +77,7 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
       `
       id, session_date, start_time, end_time, duration_hours, racer_count,
       session_price_cents, no_show_fee_cents, discount_amount_cents, source,
-      stripe_payment_method_id, status,
+      stripe_payment_method_id, stripe_setup_intent_id, status,
       customer:customers(first_name, email)
     `
     )
@@ -59,7 +92,10 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
     ? (booking.customer[0] ?? null)
     : booking.customer
   const greetingName = name || customer?.first_name || ''
-  const cardOnFile = Boolean(booking.stripe_payment_method_id)
+  const cardOnFile = await isCardOnFile(
+    booking.stripe_payment_method_id,
+    booking.stripe_setup_intent_id
+  )
   // A conversion is ONLY a genuine self-serve online booking. Staff/admin
   // bookings (source='admin' — phone, walk-in, or an admin card-hold invite)
   // must never be reported to Meta or they poison ad optimization. The Pixel is
@@ -80,7 +116,7 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
       {cardOnFile && isOnlineBooking && (
         <MetaEventOnMount
           event="Schedule"
-          eventId={`sched_${booking.id}`}
+          eventId={scheduleEventId(booking.id)}
           once
           data={{
             value: bookingValue,

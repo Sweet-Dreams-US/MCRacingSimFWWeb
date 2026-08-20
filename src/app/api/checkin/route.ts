@@ -273,7 +273,6 @@ export async function POST(request: NextRequest) {
         eventSourceUrl: isLinkedBooking ? request.headers.get('referer') || undefined : undefined,
         userData: {
           email: email || null,
-          phone: phone || null,
           firstName,
           lastName,
           externalId: customerId,

@@ -20,6 +20,7 @@ import {
 } from '@stripe/react-stripe-js'
 import { useRouter } from 'next/navigation'
 import { metaTrack } from '@/components/MetaPixel'
+import { addPaymentInfoEventId } from '@/lib/meta/event-ids'
 
 interface CardSetupFormProps {
   bookingId: string
@@ -80,12 +81,14 @@ export default function CardSetupForm({
     }
 
     // Meta Pixel — card saved successfully = AddPaymentInfo. Only reachable on
-    // the no-redirect (non-3DS) path; 3DS cards leave the page before we can
-    // fire, which is acceptable undercounting for a funnel-health signal.
+    // the no-redirect (non-3DS) path: a 3DS card leaves the page before we can
+    // fire. That segment is no longer lost — finalizeConfirmedBooking() sends
+    // the same event server-side under the same id, so Meta dedupes this pair
+    // when both arrive and still records the conversion when only one does.
     metaTrack(
       'AddPaymentInfo',
       { value: sessionPriceCents / 100, currency: 'USD', content_category: 'booking' },
-      `api_${bookingId}`
+      addPaymentInfoEventId(bookingId)
     )
 
     // No-redirect path (card didn't require 3DS): navigate ourselves.

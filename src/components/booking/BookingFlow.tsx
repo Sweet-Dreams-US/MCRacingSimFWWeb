@@ -11,6 +11,8 @@ import TimeSlotPicker from './TimeSlotPicker'
 import CustomerInfoForm from './CustomerInfoForm'
 import AdditionalRacerForm from './AdditionalRacerForm'
 import { metaTrack } from '@/components/MetaPixel'
+import { getAttribution } from '@/lib/meta/attribution'
+import { initiateCheckoutEventId } from '@/lib/meta/event-ids'
 import WaiverSection from './WaiverSection'
 import PriceSummary from './PriceSummary'
 import CardSetupForm from './CardSetupForm'
@@ -433,6 +435,10 @@ export default function BookingFlow() {
           phone: additionalRacers[1].phone,
           email: additionalRacers[1].email,
         } : null,
+        // Ad-click context captured at landing. Stored on the booking row so
+        // the Stripe webhook can attach the click id to the server-side
+        // Schedule event long after this browser has closed.
+        attribution: getAttribution(),
       }
 
       // POST to our API → creates Supabase customer + booking + Stripe
@@ -470,7 +476,7 @@ export default function BookingFlow() {
           content_name: 'Sim Racing Session',
           content_category: 'booking',
         },
-        `ic_${result.bookingId}`
+        initiateCheckoutEventId(result.bookingId)
       )
 
       // Scroll the card step into view

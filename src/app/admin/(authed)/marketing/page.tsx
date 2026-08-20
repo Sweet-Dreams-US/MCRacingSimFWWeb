@@ -6,6 +6,10 @@ import { redirect } from 'next/navigation'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { countEmailableAudience } from '@/lib/marketing/send'
+import {
+  ASSUMED_MATCH_RATE,
+  META_LOOKALIKE_MIN_MATCHES,
+} from '@/lib/marketing/audience-export'
 import { CampaignStatusBadge } from './CampaignStatusBadge'
 
 function formatDate(iso: string | null): string {
@@ -88,6 +92,60 @@ export default async function MarketingPage() {
           accent="red"
           hint="Suppressed to protect deliverability"
         />
+      </div>
+
+      {/* Meta ad audience export -------------------------------------------
+          Seeds a Custom Audience (and the Lookalike built from it). Email
+          only: a phone list uploaded for ad targeting is exactly what our
+          10DLC disclosure promises we will not do. */}
+      <div className="bg-asphalt-dark border border-white/5 p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="max-w-2xl">
+            <h2 className="racing-headline text-lg text-grid-white mb-2">Meta ad audience</h2>
+            <p className="telemetry-text text-sm text-pit-gray">
+              Downloads the same {emailable} marketable {emailable === 1 ? 'inbox' : 'inboxes'} as a CSV for
+              Meta &rarr; Audiences &rarr; Customer List. One{' '}
+              <code className="text-grid-white">email</code> column, lowercased, deduplicated, unsubscribes
+              and bounces already removed. Meta hashes it on upload.
+            </p>
+            <p className="telemetry-text text-sm text-pit-gray mt-3">
+              <span className="text-grid-white font-bold">Email only, on purpose.</span> Phone numbers are
+              never included. Uploading a phone list for ad targeting is precisely the &ldquo;share mobile
+              information for marketing&rdquo; our SMS policy disclaims, so the export has no phone column
+              at all.
+            </p>
+            {(() => {
+              const est = Math.round(emailable * ASSUMED_MATCH_RATE)
+              const clears = est >= META_LOOKALIKE_MIN_MATCHES
+              return (
+                <p
+                  className={`telemetry-text text-sm mt-3 ${clears ? 'text-pit-gray' : 'text-yellow-400'}`}
+                >
+                  At a typical ~{Math.round(ASSUMED_MATCH_RATE * 100)}% match rate that is roughly{' '}
+                  <span className="text-grid-white font-bold">{est}</span> matched people.{' '}
+                  {clears ? (
+                    <>
+                      Above Meta&apos;s {META_LOOKALIKE_MIN_MATCHES}-match floor for a Lookalike seed, though
+                      not by much &mdash; if the Lookalike will not build, use a broad Advantage+ audience
+                      instead.
+                    </>
+                  ) : (
+                    <>
+                      Below Meta&apos;s {META_LOOKALIKE_MIN_MATCHES}-match floor, so a Lookalike likely will
+                      not build. Use a broad Advantage+ audience instead.
+                    </>
+                  )}
+                </p>
+              )
+            })()}
+          </div>
+          <a
+            href="/api/admin/customers/audience-export"
+            className="racing-headline text-sm uppercase tracking-wider border border-telemetry-cyan text-telemetry-cyan hover:bg-telemetry-cyan/10 px-5 py-3 transition-colors whitespace-nowrap"
+          >
+            Download CSV
+          </a>
+        </div>
       </div>
 
       {/* Campaigns */}

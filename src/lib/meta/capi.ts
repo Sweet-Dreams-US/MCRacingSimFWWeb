@@ -7,9 +7,10 @@
 // Meta DEDUPLICATES a Pixel event and a CAPI event that share the same
 // (event_name, event_id), so firing both = one conversion, far better matched.
 //
-// PII rule: Meta never receives raw email/phone/name. We SHA-256 hash every
-// identifier here, on the server, before it leaves the building (per Meta's
-// advanced-matching spec — see the Conversions API Payload Helper).
+// PII rule: Meta never receives a raw identifier. We SHA-256 hash everything
+// here, on the server, before it leaves the building (per Meta's advanced-
+// matching spec — see the Conversions API Payload Helper). Phone numbers are
+// not sent at all, hashed or otherwise — see the note above buildUserData().
 //
 // Design: never throws. A tracking failure must never break a booking, a
 // contact submission, or a payment. Everything is wrapped + logged.
@@ -21,6 +22,10 @@ const GRAPH_VERSION = 'v21.0'
 // env var is briefly missing; the token has NO fallback (it is a secret).
 const DATASET_ID = process.env.META_DATASET_ID || '936045282838979'
 const ACCESS_TOKEN = process.env.META_CAPI_TOKEN || ''
+// Events Manager → Test Events issues a short-lived code (TESTxxxxx). While it
+// is set, every server event is routed to the Test Events tab INSTEAD of
+// production reporting — so set it only while validating, and clear it after.
+const TEST_EVENT_CODE = process.env.META_TEST_EVENT_CODE || ''
 
 /** SHA-256 hex of a normalized string (lowercased + trimmed). Meta's format. */
 function hashField(value?: string | null): string | undefined {
@@ -30,18 +35,51 @@ function hashField(value?: string | null): string | undefined {
   return crypto.createHash('sha256').update(normalized).digest('hex')
 }
 
-/** Phone must be hashed as digits-only, E.164 without '+' (US → prefix 1). */
-function hashPhone(phone?: string | null): string | undefined {
-  if (!phone) return undefined
-  let digits = phone.replace(/\D/g, '')
-  if (!digits) return undefined
-  if (digits.length === 10) digits = '1' + digits // assume US local number
-  return crypto.createHash('sha256').update(digits).digest('hex')
+// DELIBERATELY ABSENT: phone number (`ph`).
+//
+// Meta's advanced matching accepts a hashed phone and it would raise match
+// quality slightly — but our SMS program runs under 10DLC/A2P registration,
+// whose carrier-mandated disclosure states plainly: "We do not share mobile
+// information with third parties for marketing or promotional purposes."
+// Sending even a SHA-256 phone hash to an ad platform sits against that
+// promise, and the promise wins. `MetaUserData` has no `phone` field at all so
+// the compiler — not a code review — is what enforces this.
+//
+// The cost is close to zero in practice: email is required to book, so `em`
+// gives us ~100% coverage, and fbp/fbc/external_id/IP/UA carry the rest.
+// If this is ever revisited, the 10DLC disclosure must change FIRST.
+
+/**
+ * Meta's click-id format: `fb.<subdomainIndex>.<clickTimeMs>.<fbclid>`.
+ *
+ * The Pixel normally writes this into the `_fbc` cookie itself, but only if it
+ * loaded on the landing page — blocked by an ad-blocker, or landing on a page
+ * the customer leaves before fbevents.js executes, and the click id is lost for
+ * good. We capture `fbclid` from the URL ourselves and rebuild the value here,
+ * which is the documented fallback and the single strongest ad-attribution
+ * signal a server event can carry.
+ */
+export function buildFbc(fbclid: string, clickTimeMs: number): string {
+  return `fb.1.${clickTimeMs}.${fbclid}`
+}
+
+/**
+ * Prefer a real `_fbc` cookie; otherwise synthesize one from a stored fbclid.
+ * Returns undefined when we have neither.
+ */
+export function resolveFbc(opts: {
+  fbc?: string | null
+  fbclid?: string | null
+  clickTimeMs?: number | null
+}): string | undefined {
+  if (opts.fbc) return opts.fbc
+  if (opts.fbclid) return buildFbc(opts.fbclid, opts.clickTimeMs || Date.now())
+  return undefined
 }
 
 export interface MetaUserData {
   email?: string | null
-  phone?: string | null
+  /** NOTE: there is intentionally no `phone` — see the comment above. */
   firstName?: string | null
   lastName?: string | null
   /** A stable non-PII id (we use customer_id) — hashed, boosts matching. */
@@ -75,8 +113,6 @@ function buildUserData(u: MetaUserData): Record<string, unknown> {
   const ud: Record<string, unknown> = {}
   const em = hashField(u.email)
   if (em) ud.em = em
-  const ph = hashPhone(u.phone)
-  if (ph) ud.ph = ph
   const fn = hashField(u.firstName)
   if (fn) ud.fn = fn
   const ln = hashField(u.lastName)
@@ -114,6 +150,8 @@ export async function sendMetaEvent(ev: MetaEvent): Promise<void> {
         ...(ev.customData ? { custom_data: ev.customData } : {}),
       },
     ],
+    // Only present while validating in Events Manager → Test Events.
+    ...(TEST_EVENT_CODE ? { test_event_code: TEST_EVENT_CODE } : {}),
   }
 
   try {

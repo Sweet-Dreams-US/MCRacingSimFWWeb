@@ -146,6 +146,33 @@ export default function PrivacyPage() {
           </section>
 
           <section className="space-y-3">
+            <h2 className="text-xl text-grid-white font-bold">Advertising and Analytics</h2>
+            <p>
+              We use analytics and advertising measurement tools to understand how people find and use our
+              website, including Google Analytics and the Meta (Facebook and Instagram) Pixel and Conversions
+              API. These tools use cookies and similar identifiers to record actions you take on our site,
+              such as viewing the booking page or completing a booking.
+            </p>
+            <p>
+              <span className="text-grid-white">Hashed identifiers:</span> To measure whether our advertising
+              works, we may send Meta an irreversibly hashed (SHA-256) version of your email address and name,
+              together with cookie identifiers, your IP address, and your browser type. Meta receives these
+              values in hashed form and uses them to determine whether a booking came from one of our ads. We do
+              not send Meta your name or email address in readable form.
+            </p>
+            <p className="text-grid-white font-bold">
+              We never send your phone number to Meta or any other advertising platform, in any form —
+              including hashed.
+            </p>
+            <p>
+              <span className="text-grid-white">Your choices:</span> You can limit this collection using your
+              browser&apos;s cookie controls, a tracking-blocking extension, your device&apos;s
+              advertising settings, or the ad preference controls in your Facebook or Instagram account. Blocking
+              these tools does not affect your ability to book a session.
+            </p>
+          </section>
+
+          <section className="space-y-3">
             <h2 className="text-xl text-grid-white font-bold">Data Security</h2>
             <p>
               We implement reasonable administrative, technical, and physical security

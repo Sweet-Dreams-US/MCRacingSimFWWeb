@@ -146,6 +146,16 @@ export type Database = {
         Row: {
           card_link_token: string | null
           consent_fee_cents: number
+          fbc: string | null
+          fbclid: string | null
+          fbp: string | null
+          landing_url: string | null
+          meta_schedule_sent_at: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
           consent_ip: string | null
           consent_text: string
           consent_timestamp: string
@@ -178,6 +188,16 @@ export type Database = {
         Insert: {
           card_link_token?: string | null
           consent_fee_cents: number
+          fbc?: string | null
+          fbclid?: string | null
+          fbp?: string | null
+          landing_url?: string | null
+          meta_schedule_sent_at?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           consent_ip?: string | null
           consent_text: string
           consent_timestamp?: string
@@ -210,6 +230,16 @@ export type Database = {
         Update: {
           card_link_token?: string | null
           consent_fee_cents?: number
+          fbc?: string | null
+          fbclid?: string | null
+          fbp?: string | null
+          landing_url?: string | null
+          meta_schedule_sent_at?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           consent_ip?: string | null
           consent_text?: string
           consent_timestamp?: string

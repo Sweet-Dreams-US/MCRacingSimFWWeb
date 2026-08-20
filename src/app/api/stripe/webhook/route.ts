@@ -355,7 +355,6 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event, supabase: Supa)
             userData: cust
               ? {
                   email: cust.email,
-                  phone: cust.phone,
                   firstName: cust.first_name,
                   lastName: cust.last_name,
                   externalId: posCustomerId,

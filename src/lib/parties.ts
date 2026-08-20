@@ -337,7 +337,6 @@ export async function finalizePartyDeposit(opts: {
         actionSource: 'website',
         userData: {
           email: party.contact_email,
-          phone: party.contact_phone,
           firstName,
           lastName,
         },
