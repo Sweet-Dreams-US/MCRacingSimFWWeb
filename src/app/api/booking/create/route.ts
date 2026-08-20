@@ -16,6 +16,7 @@ import { isValidDuration } from '@/lib/pricing'
 import { DiscountError } from '@/lib/discounts'
 import { sendMetaEvent, metaContextFromRequest, resolveFbc } from '@/lib/meta/capi'
 import { sanitizeAttribution, type Attribution } from '@/lib/meta/attribution'
+import { initiateCheckoutEventId } from '@/lib/meta/event-ids'
 
 interface IncomingPayload {
   sessionDate?: string
@@ -145,12 +146,11 @@ export async function POST(request: NextRequest) {
     // match; deduped against the client Pixel via ic_<bookingId>.
     await sendMetaEvent({
       eventName: 'InitiateCheckout',
-      eventId: `ic_${result.bookingId}`,
+      eventId: initiateCheckoutEventId(result.bookingId),
       eventSourceUrl:
         request.headers.get('referer') || 'https://www.mcracingfortwayne.com/book',
       userData: {
         email: body.email,
-        phone: body.phone,
         firstName: body.firstName,
         lastName: body.lastName,
         ...cookieCtx,

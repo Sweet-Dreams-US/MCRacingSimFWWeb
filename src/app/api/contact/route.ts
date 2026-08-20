@@ -130,7 +130,6 @@ export async function POST(request: NextRequest) {
       request.headers.get('referer') || 'https://www.mcracingfortwayne.com/contact',
     userData: {
       email,
-      phone: phone || null,
       firstName,
       lastName,
       ...metaContextFromRequest(request),

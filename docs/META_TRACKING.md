@@ -55,6 +55,23 @@ bookings**. Three separate causes, all now fixed:
 **Optimize campaigns on `Schedule`.** Watch `InitiateCheckout` as the leading
 indicator while `Schedule` volume is thin.
 
+### Dedupe keys are structural, not conventional
+
+Meta collapses a browser/server pair into one conversion only when both carry
+the same `(event_name, event_id)`. The two halves of each pair live far apart —
+the browser `Schedule` fires in a React component on `/book/confirmation`, the
+server `Schedule` fires in a Stripe webhook minutes later — so both call the
+**same builder** in `src/lib/meta/event-ids.ts`. You cannot change one half
+without changing the other.
+
+Ids must stay **deterministic**, derived from the booking id and never from
+`Date.now()` or a random UUID, so a refresh, a form retry, or a redelivered
+webhook reproduces the id instead of minting a second conversion.
+
+`Lead` is the one exception: at submit time there is no server-side row to key
+off, so the browser mints a UUID and passes it to the server. It is held in a
+ref for the life of the form, so a retry after a failed response reuses it.
+
 ### What counts as a conversion
 
 `Schedule` fires **only for `source = 'online'`** bookings. Staff-entered
@@ -74,6 +91,7 @@ race, so a redelivered Stripe webhook cannot double-count.
 | Base pixel, `metaTrack()`, `MetaEventOnMount` | `src/components/MetaPixel.tsx` |
 | Server event sender + SHA-256 hashing | `src/lib/meta/capi.ts` |
 | Click-ID / UTM capture + persistence | `src/lib/meta/attribution.ts` |
+| Shared dedupe `event_id` builders | `src/lib/meta/event-ids.ts` |
 | `Schedule` + `AddPaymentInfo` (server) | `src/lib/booking.ts` → `finalizeConfirmedBooking()` |
 | `InitiateCheckout` (server) | `src/app/api/booking/create/route.ts` |
 | `Purchase` (server) | `src/app/api/stripe/webhook/route.ts` |
@@ -85,17 +103,36 @@ race, so a redelivered Stripe webhook cannot double-count.
 
 ## Advanced matching
 
-Meta never receives a raw email, phone number, or name. `src/lib/meta/capi.ts`
-SHA-256 hashes every identifier **on the server** before it leaves the building:
+Meta never receives a raw identifier. `src/lib/meta/capi.ts` SHA-256 hashes
+everything **on the server** before it leaves the building:
 
-- **email** — lowercased, trimmed, then hashed
-- **phone** — digits only, E.164 without `+` (a 10-digit US number gets a `1`
-  prefix), then hashed
-- **first/last name** — lowercased, trimmed, then hashed
+- **email** (`em`) — lowercased, trimmed, then hashed
+- **first/last name** (`fn`/`ln`) — lowercased, trimmed, then hashed
 - **external_id** — our `customer_id`, hashed
 
 Unhashed by design (Meta requires these raw): `client_ip_address`,
 `client_user_agent`, `fbp`, `fbc`.
+
+### Phone numbers are never sent — hashed or otherwise
+
+`ph` is deliberately absent from every Conversions API payload. Our SMS program
+runs under 10DLC/A2P registration, whose carrier-mandated disclosure states:
+*"We do not share mobile information with third parties for marketing or
+promotional purposes."* Sending even a SHA-256 phone hash to an ad platform sits
+against that promise, so the promise wins.
+
+This is enforced structurally, not by convention:
+
+- `MetaUserData` has **no `phone` field**, so the compiler rejects any caller
+  that tries to pass one.
+- `src/lib/__tests__/meta-capi-payload.test.ts` asserts no `ph` key and no phone
+  digits ever appear on the wire — including the case where a phone is smuggled
+  onto `userData` at runtime past the type.
+- `/privacy` states it explicitly.
+
+The match-quality cost is negligible: email is required to book, so `em` gives
+near-100% coverage, and `fbp`/`fbc`/`external_id`/IP/UA carry the rest.
+**If this is ever revisited, the 10DLC disclosure must change first.**
 
 ---
 
@@ -166,28 +203,80 @@ will be polluted by Meta's guesses:
 3. **Confirm domain verification.** Already in place via the
    `facebook-domain-verification` meta tag in `src/app/layout.tsx`.
 4. **Set `Schedule` as the campaign's optimization event.**
+5. **Aggregated Event Measurement — put `Schedule` at or near the top of the
+   8-event priority list.** iOS conversions route through AEM, and events that
+   aren't prioritized are simply dropped for Apple users. This is a silent,
+   platform-wide undercount if missed, and it looks identical to a tracking bug.
 
 ---
 
-## Validating a change
+## Go-live runbook
 
-1. Set `META_TEST_EVENT_CODE` in the Vercel **preview** environment to the code
-   from Events Manager → Test Events.
-2. Walk the funnel on the preview deploy: load `/book` → pick a slot → submit
-   details → save a test card.
-3. In Test Events you should see, in order: `PageView`, `ViewContent`,
-   `AddToCart`, `InitiateCheckout` (browser **and** server, one row after
-   dedupe), `AddPaymentInfo`, `Schedule`.
-4. Check each conversion shows **one** event, not two — if `Schedule` appears
-   twice, the `event_id`s diverged.
-5. Check the match-quality score on `Schedule`. It should list email, phone,
-   external_id, IP, user agent, and — for a visit that arrived with an
-   `fbclid` — `fbc`.
-6. **Unset `META_TEST_EVENT_CODE` when finished.** While it is set, server
-   events go to the Test Events tab *instead of* production reporting.
+Order matters — do not reorder.
 
-> Test the fbclid path by loading the preview URL with `?fbclid=TEST123` before
-> booking, then confirm `fbc` is present on the resulting `Schedule`.
+### 1. Deploy
+
+1. **Apply migration 016 first.** It is additive, but the code writes those
+   columns, so it must land before the deploy that writes them.
+2. Deploy frontend + serverless.
+3. Confirm a new booking row gets `fbclid` / `utm_*` / `fbp` / `fbc` populated
+   (when the visit carried them) and `meta_schedule_sent_at` stamped on confirm.
+
+### 2. Events Manager
+
+Complete every item in **Manual steps in Events Manager** above — automatic
+event detection off, Automatic Advanced Matching off, `Schedule` as the
+optimization event, and `Schedule` prioritized in the AEM list.
+
+### 3. Validate before any spend
+
+Set `META_TEST_EVENT_CODE` in the Vercel **preview** environment (not
+production) to the code from Events Manager → Test Events, then run **one real
+end-to-end booking** against the preview deploy and confirm:
+
+- The funnel fires once each: `ViewContent` (/book) → `InitiateCheckout` →
+  `AddPaymentInfo` → `Schedule`.
+- **Dedupe:** browser + server `Schedule` collapse to ONE event in the Events
+  Manager overlap/deduplication view. Two rows means the `event_id`s diverged —
+  fix before spending anything.
+- **EMQ** on `Schedule` shows email, `fbp`/`fbc`, IP, UA, and `external_id`.
+- **The 3DS path** produces a server-side `AddPaymentInfo` (the browser event is
+  unreachable there).
+- Load the preview with `?fbclid=TEST123` before booking and confirm `fbc`
+  lands on the resulting `Schedule`.
+
+Then **unset `META_TEST_EVENT_CODE`.**
+
+### 4. Reconcile — daily for the first two weeks, then weekly
+
+- `/admin/ads` → Tracking health shows **0 Missing** for new bookings.
+- Three numbers converge: booking-system bookings = Meta's `Schedule` count =
+  rows with `attributed_source` populated.
+- Spot-check that `mc_bookings.attributed_source` is picking up UTMs, so
+  first-party attribution exists independently of Meta.
+
+See **Weekly reconciliation** below for how to read those numbers.
+
+### 5. Only then, turn spend on
+
+Point the ad set at `Schedule`. If `Schedule` volume is too thin to exit the
+learning phase, optimize on `InitiateCheckout` first and migrate to `Schedule`
+once volume supports it.
+
+---
+
+## The failure mode to watch
+
+**The risk has flipped from under-counting to double-counting.** The browser
+`Schedule` used to lose its race with the webhook and silently never fire; now
+it fires reliably, so both halves of every pair are live and dedupe is what
+stands between us and inflated numbers.
+
+If reconciliation reads clean (0 Missing) but the optimizer's conversion count
+looks high, **check `event_id` parity first** — `src/lib/meta/event-ids.ts` and
+the Events Manager deduplication view. That failure is invisible in our own
+reconciliation, because our side genuinely is healthy; only Meta sees the
+double. It is the single most likely cause of a "too good" number.
 
 ---
 
@@ -221,6 +310,8 @@ near zero while campaigns are running, click-ID capture is broken.
 - The site has a privacy policy at `/privacy`.
 - Raw PII never reaches Meta; everything identifying is SHA-256 hashed
   server-side.
+- Phone numbers are never sent to Meta at all, hashed or otherwise (10DLC —
+  see the advanced-matching section above).
 - There is **no cookie-consent gate** on this site (a US-only local business, no
   GDPR/UK obligation). If one is ever added, `MetaPixel` and
   `captureAttribution()` must be gated behind consent before firing.

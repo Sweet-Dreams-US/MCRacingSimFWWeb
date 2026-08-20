@@ -7,9 +7,10 @@
 // Meta DEDUPLICATES a Pixel event and a CAPI event that share the same
 // (event_name, event_id), so firing both = one conversion, far better matched.
 //
-// PII rule: Meta never receives raw email/phone/name. We SHA-256 hash every
-// identifier here, on the server, before it leaves the building (per Meta's
-// advanced-matching spec — see the Conversions API Payload Helper).
+// PII rule: Meta never receives a raw identifier. We SHA-256 hash everything
+// here, on the server, before it leaves the building (per Meta's advanced-
+// matching spec — see the Conversions API Payload Helper). Phone numbers are
+// not sent at all, hashed or otherwise — see the note above buildUserData().
 //
 // Design: never throws. A tracking failure must never break a booking, a
 // contact submission, or a payment. Everything is wrapped + logged.
@@ -34,14 +35,19 @@ function hashField(value?: string | null): string | undefined {
   return crypto.createHash('sha256').update(normalized).digest('hex')
 }
 
-/** Phone must be hashed as digits-only, E.164 without '+' (US → prefix 1). */
-function hashPhone(phone?: string | null): string | undefined {
-  if (!phone) return undefined
-  let digits = phone.replace(/\D/g, '')
-  if (!digits) return undefined
-  if (digits.length === 10) digits = '1' + digits // assume US local number
-  return crypto.createHash('sha256').update(digits).digest('hex')
-}
+// DELIBERATELY ABSENT: phone number (`ph`).
+//
+// Meta's advanced matching accepts a hashed phone and it would raise match
+// quality slightly — but our SMS program runs under 10DLC/A2P registration,
+// whose carrier-mandated disclosure states plainly: "We do not share mobile
+// information with third parties for marketing or promotional purposes."
+// Sending even a SHA-256 phone hash to an ad platform sits against that
+// promise, and the promise wins. `MetaUserData` has no `phone` field at all so
+// the compiler — not a code review — is what enforces this.
+//
+// The cost is close to zero in practice: email is required to book, so `em`
+// gives us ~100% coverage, and fbp/fbc/external_id/IP/UA carry the rest.
+// If this is ever revisited, the 10DLC disclosure must change FIRST.
 
 /**
  * Meta's click-id format: `fb.<subdomainIndex>.<clickTimeMs>.<fbclid>`.
@@ -73,7 +79,7 @@ export function resolveFbc(opts: {
 
 export interface MetaUserData {
   email?: string | null
-  phone?: string | null
+  /** NOTE: there is intentionally no `phone` — see the comment above. */
   firstName?: string | null
   lastName?: string | null
   /** A stable non-PII id (we use customer_id) — hashed, boosts matching. */
@@ -107,8 +113,6 @@ function buildUserData(u: MetaUserData): Record<string, unknown> {
   const ud: Record<string, unknown> = {}
   const em = hashField(u.email)
   if (em) ud.em = em
-  const ph = hashPhone(u.phone)
-  if (ph) ud.ph = ph
   const fn = hashField(u.firstName)
   if (fn) ud.fn = fn
   const ln = hashField(u.lastName)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import Button from '@/components/Button'
 import { CONTACT_REASONS, CONTACT_REASON_LABELS, EVENT_REASONS, type ContactReason } from '@/lib/contact'
 import { metaTrack } from '@/components/MetaPixel'
@@ -22,18 +22,26 @@ export default function ContactClient() {
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [error, setError] = useState<string | null>(null)
 
+  // Dedupe key shared by the Pixel Lead and the CAPI Lead. Minted ONCE per form
+  // instance rather than per submit: if the first attempt reached the server but
+  // the response was lost, the retry reuses this id and Meta collapses the two
+  // into one conversion. Minting a fresh id per attempt would report two Leads
+  // for one inquiry. Unlike the booking funnel (see lib/meta/event-ids.ts) there
+  // is no server-side row to derive a stable id from at this point, so a
+  // client-generated id held across retries is the best available key.
+  const leadEventId = useRef<string | null>(null)
+
   const showEventFields = EVENT_REASONS.has(reason)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setStatus('sending')
     setError(null)
-    // One id shared between the Pixel Lead (below) and the CAPI Lead (server),
-    // so Meta dedupes the pair into a single, well-matched conversion.
-    const eventId =
+    leadEventId.current ??=
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
         : `lead_${Date.now()}_${Math.round(Math.random() * 1e9)}`
+    const eventId = leadEventId.current
     try {
       const res = await fetch('/api/contact', {
         method: 'POST',

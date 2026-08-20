@@ -36,8 +36,9 @@ import {
 } from './discounts'
 import { sendBookingEmails } from './emails/send-booking-emails'
 import { sendEmail, getOwnerNotificationEmail } from './email'
-import { sendMetaEvent, resolveFbc } from './meta/capi'
+import { sendMetaEvent, resolveFbc, type MetaUserData } from './meta/capi'
 import { deriveAttributedSource, type Attribution } from './meta/attribution'
+import { addPaymentInfoEventId, scheduleEventId } from './meta/event-ids'
 import { toAttributionSource } from './attribution'
 import { recordMcBooking } from './mc-bookings'
 import {
@@ -678,9 +679,11 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
     // server event fired from a webhook back to the ad that caused it — without
     // fbc there is no click id, and the conversion lands as unattributed.
     const fbc = resolveFbc({ fbc: booking.fbc, fbclid: booking.fbclid })
-    const metaUserData = {
+    // Explicitly typed: a bare object literal here would be a `const`, and
+    // TypeScript only excess-property-checks FRESH literals — so an added
+    // `phone` would be silently ignored rather than rejected.
+    const metaUserData: MetaUserData = {
       email: customer.email,
-      phone: customer.phone,
       firstName: customer.first_name,
       lastName: customer.last_name,
       externalId: booking.customer_id,
@@ -703,7 +706,7 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
       // segment was invisible. Same api_<id> event id, so Meta counts one.
       sendMetaEvent({
         eventName: 'AddPaymentInfo',
-        eventId: `api_${bookingId}`,
+        eventId: addPaymentInfoEventId(bookingId),
         eventSourceUrl: metaSourceUrl,
         actionSource: 'website',
         userData: metaUserData,
@@ -717,7 +720,7 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
 
       sendMetaEvent({
         eventName: 'Schedule',
-        eventId: `sched_${bookingId}`,
+        eventId: scheduleEventId(bookingId),
         // Prefer the real landing URL when we captured one; it carries the
         // campaign query string Meta uses for URL-based attribution.
         eventSourceUrl: metaSourceUrl,

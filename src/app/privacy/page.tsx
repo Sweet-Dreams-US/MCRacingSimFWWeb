@@ -155,11 +155,14 @@ export default function PrivacyPage() {
             </p>
             <p>
               <span className="text-grid-white">Hashed identifiers:</span> To measure whether our advertising
-              works, we may send Meta an irreversibly hashed (SHA-256) version of information you provided when
-              booking or contacting us, such as your email address and phone number, together with cookie
-              identifiers, your IP address, and your browser type. Meta receives these values in hashed form and
-              uses them to determine whether a booking came from one of our ads. We do not send Meta your name,
-              email address, or phone number in readable form.
+              works, we may send Meta an irreversibly hashed (SHA-256) version of your email address and name,
+              together with cookie identifiers, your IP address, and your browser type. Meta receives these
+              values in hashed form and uses them to determine whether a booking came from one of our ads. We do
+              not send Meta your name or email address in readable form.
+            </p>
+            <p className="text-grid-white font-bold">
+              We never send your phone number to Meta or any other advertising platform, in any form —
+              including hashed.
             </p>
             <p>
               <span className="text-grid-white">Your choices:</span> You can limit this collection using your

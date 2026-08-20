@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatDateLong } from '@/lib/pricing'
 import { MetaEventOnMount } from '@/components/MetaPixel'
 import { getStripe } from '@/lib/stripe'
+import { scheduleEventId } from '@/lib/meta/event-ids'
 
 interface PageProps {
   searchParams: Promise<{ bookingId?: string; name?: string }>
@@ -115,7 +116,7 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
       {cardOnFile && isOnlineBooking && (
         <MetaEventOnMount
           event="Schedule"
-          eventId={`sched_${booking.id}`}
+          eventId={scheduleEventId(booking.id)}
           once
           data={{
             value: bookingValue,
