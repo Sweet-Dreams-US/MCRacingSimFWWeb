@@ -21,6 +21,10 @@ const GRAPH_VERSION = 'v21.0'
 // env var is briefly missing; the token has NO fallback (it is a secret).
 const DATASET_ID = process.env.META_DATASET_ID || '936045282838979'
 const ACCESS_TOKEN = process.env.META_CAPI_TOKEN || ''
+// Events Manager → Test Events issues a short-lived code (TESTxxxxx). While it
+// is set, every server event is routed to the Test Events tab INSTEAD of
+// production reporting — so set it only while validating, and clear it after.
+const TEST_EVENT_CODE = process.env.META_TEST_EVENT_CODE || ''
 
 /** SHA-256 hex of a normalized string (lowercased + trimmed). Meta's format. */
 function hashField(value?: string | null): string | undefined {
@@ -37,6 +41,34 @@ function hashPhone(phone?: string | null): string | undefined {
   if (!digits) return undefined
   if (digits.length === 10) digits = '1' + digits // assume US local number
   return crypto.createHash('sha256').update(digits).digest('hex')
+}
+
+/**
+ * Meta's click-id format: `fb.<subdomainIndex>.<clickTimeMs>.<fbclid>`.
+ *
+ * The Pixel normally writes this into the `_fbc` cookie itself, but only if it
+ * loaded on the landing page — blocked by an ad-blocker, or landing on a page
+ * the customer leaves before fbevents.js executes, and the click id is lost for
+ * good. We capture `fbclid` from the URL ourselves and rebuild the value here,
+ * which is the documented fallback and the single strongest ad-attribution
+ * signal a server event can carry.
+ */
+export function buildFbc(fbclid: string, clickTimeMs: number): string {
+  return `fb.1.${clickTimeMs}.${fbclid}`
+}
+
+/**
+ * Prefer a real `_fbc` cookie; otherwise synthesize one from a stored fbclid.
+ * Returns undefined when we have neither.
+ */
+export function resolveFbc(opts: {
+  fbc?: string | null
+  fbclid?: string | null
+  clickTimeMs?: number | null
+}): string | undefined {
+  if (opts.fbc) return opts.fbc
+  if (opts.fbclid) return buildFbc(opts.fbclid, opts.clickTimeMs || Date.now())
+  return undefined
 }
 
 export interface MetaUserData {
@@ -114,6 +146,8 @@ export async function sendMetaEvent(ev: MetaEvent): Promise<void> {
         ...(ev.customData ? { custom_data: ev.customData } : {}),
       },
     ],
+    // Only present while validating in Events Manager → Test Events.
+    ...(TEST_EVENT_CODE ? { test_event_code: TEST_EVENT_CODE } : {}),
   }
 
   try {

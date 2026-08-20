@@ -14,7 +14,8 @@ import {
 } from '@/lib/booking'
 import { isValidDuration } from '@/lib/pricing'
 import { DiscountError } from '@/lib/discounts'
-import { sendMetaEvent, metaContextFromRequest } from '@/lib/meta/capi'
+import { sendMetaEvent, metaContextFromRequest, resolveFbc } from '@/lib/meta/capi'
+import { sanitizeAttribution, type Attribution } from '@/lib/meta/attribution'
 
 interface IncomingPayload {
   sessionDate?: string
@@ -33,6 +34,12 @@ interface IncomingPayload {
   discountCode?: string | null
   racer2?: { firstName: string; lastName: string; phone: string; email: string } | null
   racer3?: { firstName: string; lastName: string; phone: string; email: string } | null
+  /**
+   * Ad-click context the browser captured at landing
+   * (src/lib/meta/attribution.ts). Typed as unknown because it arrives from the
+   * client — it is run through sanitizeAttribution() before any use.
+   */
+  attribution?: unknown
 }
 
 function badRequest(message: string) {
@@ -89,6 +96,24 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
     const consentUserAgent = request.headers.get('user-agent') ?? null
 
+    // ---- Merge ad-click attribution ----------------------------------------
+    // The request's own cookies are the trustworthy source (the browser cannot
+    // lie about what the Pixel wrote), so they win. The client-reported bundle
+    // fills the gaps the cookies can't cover: an fbclid from a landing page the
+    // Pixel never got to run on, and the utm_* of the FIRST visit — by now the
+    // customer may be several internal navigations deep with a clean URL.
+    const cookieCtx = metaContextFromRequest(request)
+    // Untrusted: it came from the request body. Strip unknown keys, cap
+    // lengths, and reject malformed fbp/fbc before it reaches the DB or Meta.
+    const clientAttr = sanitizeAttribution(body.attribution)
+    const attribution: Attribution = {
+      ...clientAttr,
+      fbp: cookieCtx.fbp ?? clientAttr.fbp,
+      fbc:
+        cookieCtx.fbc ??
+        resolveFbc({ fbc: clientAttr.fbc, fbclid: clientAttr.fbclid, clickTimeMs: clientAttr.fbclidTs }),
+    }
+
     // ---- Create the booking + Stripe SetupIntent ----------------------------
     const result = await createBooking({
       sessionDate: body.sessionDate,
@@ -111,6 +136,7 @@ export async function POST(request: NextRequest) {
       consentUserAgent,
       source: 'online',
       discountCode: body.discountCode ?? null,
+      attribution,
     })
 
     // Meta CAPI — the customer submitted their details and a booking row now
@@ -127,7 +153,11 @@ export async function POST(request: NextRequest) {
         phone: body.phone,
         firstName: body.firstName,
         lastName: body.lastName,
-        ...metaContextFromRequest(request),
+        ...cookieCtx,
+        // Fall back to the client-captured click id when the Pixel never wrote
+        // the _fbc cookie (blocked, or it landed before fbevents.js ran).
+        fbp: attribution.fbp,
+        fbc: attribution.fbc,
       },
       customData: {
         value: result.sessionPriceCents / 100,

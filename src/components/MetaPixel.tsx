@@ -10,6 +10,7 @@
 import Script from 'next/script'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useRef } from 'react'
+import { captureAttribution } from '@/lib/meta/attribution'
 
 // Public, non-secret. Env-driven with the live id as a fallback so the pixel
 // keeps working even if the env var is momentarily absent.
@@ -104,6 +105,21 @@ export function MetaEventOnMount(props: {
   return null
 }
 
+// First-touch ad attribution. Runs on the very first paint of every page load
+// (and on SPA route changes, since ?fbclid= can appear on any entry URL) to
+// stash fbclid/utm_* + the _fbp/_fbc cookies in localStorage. The booking form
+// reads them back at submit time so the SERVER Schedule event — fired from the
+// Stripe webhook, long after the browser is gone — can still carry the click id
+// that ties the conversion to the ad. See src/lib/meta/attribution.ts.
+function AttributionCapture() {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    captureAttribution()
+  }, [pathname, searchParams])
+  return null
+}
+
 // Sitewide Contact event: any click on a tel:/mailto: link (call buttons in
 // the nav, footer, call-to-book popup, contact page) counts as the customer
 // reaching out. One capture-phase listener beats sprinkling handlers on every
@@ -158,6 +174,7 @@ export default function MetaPixel() {
         />
       </noscript>
       <Suspense fallback={null}>
+        <AttributionCapture />
         <RouteChangePageView />
       </Suspense>
       <ContactClickTracker />

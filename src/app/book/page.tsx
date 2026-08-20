@@ -1,5 +1,6 @@
 import { Metadata } from 'next'
 import BookingFlow from '@/components/booking/BookingFlow'
+import { MetaEventOnMount } from '@/components/MetaPixel'
 
 export const metadata: Metadata = {
   title: 'Book Your Session | MC Racing Sim Fort Wayne',
@@ -85,6 +86,17 @@ const svgProps = {
 export default function BookPage() {
   return (
     <main className="min-h-screen bg-asphalt">
+      {/* Meta Pixel ViewContent — top of the booking funnel. Browser-only by
+          design: this is a leading indicator for campaign diagnostics, not a
+          conversion, so it isn't worth a server event or a dedupe id. */}
+      <MetaEventOnMount
+        event="ViewContent"
+        data={{
+          content_name: 'booking',
+          content_category: 'booking',
+          content_type: 'product',
+        }}
+      />
       {/* ================= HERO ================= */}
       <section className="relative overflow-hidden pt-28 pb-14 px-4">
         <div className="absolute inset-0 checkered-pattern opacity-[0.04] pointer-events-none" />
