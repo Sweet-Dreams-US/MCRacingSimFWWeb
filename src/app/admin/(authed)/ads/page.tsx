@@ -7,7 +7,10 @@
 import Link from 'next/link'
 import { getAdInsights, campaignKeyword, DATE_PRESETS, type DatePreset } from '@/lib/meta/insights'
 import { formatDollars } from '@/lib/accounting'
-import { getScheduleReconciliation } from '@/lib/meta/reconciliation'
+import {
+  getScheduleReconciliation,
+  SCHEDULE_TRACKING_LIVE_FROM,
+} from '@/lib/meta/reconciliation'
 import { getCampaignAttribution } from '@/lib/meta/campaign-attribution'
 
 export const dynamic = 'force-dynamic' // always fetch fresh insights
@@ -278,6 +281,15 @@ export default async function AdsPage({ searchParams }: PageProps) {
         booking records against what we actually managed to send — so a tracking outage shows up here
         the same week, not a month later in Ads Manager.
       </p>
+      <p className="telemetry-text text-xs text-pit-gray/70 mb-4">
+        Counts bookings from {new Date(SCHEDULE_TRACKING_LIVE_FROM).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+          timeZone: 'UTC',
+        })}{' '}
+        onward — earlier bookings predate delivery tracking and were deliberately not backfilled.
+      </p>
 
       {recon.status === 'unavailable' && (
         <div className="card-dark p-6 border border-yellow-500/30">
@@ -288,7 +300,8 @@ export default async function AdsPage({ searchParams }: PageProps) {
       {recon.status === 'ok' && recon.weeks.length === 0 && (
         <div className="card-dark p-6">
           <p className="telemetry-text text-sm text-pit-gray">
-            No online bookings in the last 6 weeks to reconcile.
+            No online bookings since Schedule delivery tracking went live. The first booking after
+            deploy will appear here.
           </p>
         </div>
       )}

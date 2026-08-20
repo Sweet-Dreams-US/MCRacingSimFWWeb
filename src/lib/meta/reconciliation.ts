@@ -17,6 +17,21 @@
 // Supabase blip renders a friendly note instead of breaking the admin page.
 import { createAdminClient } from '../supabase/admin'
 
+/**
+ * The day migration 016 added `meta_schedule_sent_at` to production.
+ *
+ * Bookings created before this CANNOT have a delivery stamp — the column did
+ * not exist — so counting them would report every historical week as 100%
+ * missing and make a healthy dashboard look like a total outage. That is the
+ * opposite of the point: this table exists to make a REAL gap obvious, and it
+ * can only do that if it is quiet when nothing is wrong.
+ *
+ * Backfilling the old rows was the alternative and would have been a lie: we
+ * genuinely do not know which historical bookings reached Meta, and the whole
+ * reason this feature exists is that several did not.
+ */
+export const SCHEDULE_TRACKING_LIVE_FROM = '2026-08-20T00:00:00.000Z'
+
 export interface ReconciliationWeek {
   /** Monday of the week, YYYY-MM-DD. */
   weekStart: string
@@ -51,8 +66,11 @@ function weekStartOf(iso: string): string {
  */
 export async function getScheduleReconciliation(weeks = 6): Promise<ReconciliationResult> {
   try {
-    const since = new Date()
-    since.setUTCDate(since.getUTCDate() - weeks * 7)
+    const windowStart = new Date()
+    windowStart.setUTCDate(windowStart.getUTCDate() - weeks * 7)
+    // Never look back past the day the delivery stamp started existing.
+    const liveFrom = new Date(SCHEDULE_TRACKING_LIVE_FROM)
+    const since = windowStart > liveFrom ? windowStart : liveFrom
 
     const supabase = createAdminClient()
     const { data, error } = await supabase

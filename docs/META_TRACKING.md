@@ -101,6 +101,7 @@ race, so a redelivered Stripe webhook cannot double-count.
 | Custom Audience CSV export | `src/lib/marketing/audience-export.ts` → `/admin/marketing` |
 | Attribution columns | `supabase/migrations/016_meta_click_attribution.sql` |
 | Campaign reporting view | `supabase/migrations/017_campaign_attribution_view.sql` |
+| Reporting-view hardening | `supabase/migrations/018_secure_reporting_views.sql` |
 
 ---
 
@@ -288,9 +289,10 @@ Order matters — do not reorder.
 
 ### 1. Deploy
 
-1. **Apply migrations 016 and 017 first.** Both are additive, but the code
-   writes the 016 columns, so they must exist before the deploy that writes
-   them. 017 is the campaign reporting view and depends on 016.
+1. ~~Apply migrations 016, 017 and 018.~~ **Already applied to production**
+   (project `gniqzosrrnlrczmeeryd`) on 2026-08-20. 016 adds the attribution
+   columns, 017 the campaign reporting view, 018 secures both views plus the
+   pre-existing `mc_revenue_by_source` — see below.
 2. Deploy frontend + serverless.
 3. Confirm a new booking row gets `fbclid` / `utm_*` / `fbp` / `fbc` populated
    (when the visit carried them) and `meta_schedule_sent_at` stamped on confirm.
@@ -375,6 +377,13 @@ Straight from SQL:
 SELECT * FROM public.mc_meta_schedule_reconciliation;
 ```
 
+**Baseline:** the table counts bookings from **2026-08-20** onward, the day
+`meta_schedule_sent_at` was added. Earlier bookings cannot carry a delivery
+stamp because the column did not exist, and they were deliberately not
+backfilled — we genuinely do not know which of them reached Meta, and inventing
+a stamp would defeat the purpose of the check. The constant lives in
+`src/lib/meta/reconciliation.ts` as `SCHEDULE_TRACKING_LIVE_FROM`.
+
 `With ad click ID` is the share of bookings that carried an `fbclid`/`_fbc`.
 It will not be 100% — plenty of customers arrive organically — but if it is
 near zero while campaigns are running, click-ID capture is broken.
@@ -388,6 +397,13 @@ near zero while campaigns are running, click-ID capture is broken.
   server-side.
 - Phone numbers are never sent to Meta at all, hashed or otherwise (10DLC —
   see the advanced-matching section above).
+- The reporting views (`mc_meta_schedule_reconciliation`,
+  `mc_bookings_by_campaign`, `mc_revenue_by_source`) run with
+  `security_invoker = on` and are readable only by the service role. Postgres
+  views default to running as their OWNER, which bypasses the caller's RLS — so
+  a reporting view over `bookings` is a public read hole around RLS unless this
+  is set. Migration 018 fixed it; keep any NEW reporting view consistent with
+  that pattern.
 - There is **no cookie-consent gate** on this site (a US-only local business, no
   GDPR/UK obligation). If one is ever added, `MetaPixel` and
   `captureAttribution()` must be gated behind consent before firing.
