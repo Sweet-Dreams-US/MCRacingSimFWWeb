@@ -19,6 +19,7 @@
 // See SETUP_GOOGLE_CALENDAR.md in the project root for the one-time setup.
 
 import { google, type calendar_v3 } from 'googleapis'
+import { addHoursToTime } from './time'
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -158,13 +159,12 @@ function toCalendarDateTime(
 
 /**
  * Add `hours` to "HH:MM" wall-clock, wrapping past midnight.
- * Mirrors the same helper in src/lib/booking.ts to keep end-time math
- * identical between the DB row and the calendar event.
+ * Now a thin alias over the shared helper in src/lib/time.ts — this used to be
+ * a hand-copied duplicate of booking.ts's version, and both carried the same
+ * whole-hour bug that broke half-hour sessions.
  */
 function addHours(time: string, hours: number): string {
-  const [h, m] = time.split(':').map(Number)
-  const endHour = (h + hours) % 24
-  return `${String(endHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return addHoursToTime(time, hours)
 }
 
 function formatMoney(cents: number): string {

@@ -522,6 +522,10 @@ export default function InviteBookingForm() {
       {error && (
         <div className="bg-apex-red/10 border border-apex-red/30 p-3">
           <p className="telemetry-text text-sm text-apex-red">{error}</p>
+          <p className="telemetry-text text-xs text-apex-red/80 mt-1.5">
+            If this keeps happening, block the time so the slot isn&apos;t
+            double-booked, and take the details by phone — (808) 220-2600.
+          </p>
         </div>
       )}
 

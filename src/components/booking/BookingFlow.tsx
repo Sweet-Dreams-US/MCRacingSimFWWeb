@@ -496,7 +496,16 @@ export default function BookingFlow() {
       {/* Error Display */}
       {error && (
         <div className="mb-6 p-4 bg-apex-red/10 border border-apex-red text-apex-red telemetry-text">
-          {error}
+          <p>{error}</p>
+          {/* Never let a failed online booking be a dead end — a customer who
+              hits an error should still be able to get on the grid. */}
+          <p className="mt-2 text-sm">
+            Trouble booking online? Call us at{' '}
+            <a href="tel:+18082202600" className="underline hover:text-grid-white">
+              (808) 220-2600
+            </a>{' '}
+            and we&apos;ll book it for you.
+          </p>
         </div>
       )}
 

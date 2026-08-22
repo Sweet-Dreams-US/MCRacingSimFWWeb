@@ -13,6 +13,7 @@
 
 import { randomUUID } from 'crypto'
 import { createAdminClient } from './supabase/admin'
+import { addHoursToTime } from './time'
 import type { Database } from './supabase/types'
 import { getStripe } from './stripe'
 import {
@@ -140,11 +141,13 @@ function generateBookingId(firstName: string, sessionDate: string, attempt = 0):
  * Add `durationHours` to a "HH:MM" 24-hour string. Wraps past midnight
  * (e.g. 23:00 + 3h = 02:00). End times never include a date because the
  * booking row already carries session_date.
+ *
+ * Delegates to the shared minute-based helper so half-hour session lengths
+ * (1.5, 2.5, ...) produce "14:30" rather than the "14.5:00" that Postgres
+ * rejected outright.
  */
 export function computeEndTime(startTime: string, durationHours: number): string {
-  const [h, m] = startTime.split(':').map(Number)
-  const endHour = (h + durationHours) % 24
-  return `${String(endHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return addHoursToTime(startTime, durationHours)
 }
 
 /** Normalize a Postgres TIME ("HH:MM:SS") or form value to "HH:MM". */
