@@ -108,7 +108,7 @@ export default function BookPage() {
             Book Your <span className="text-apex-red">Session</span>
           </h1>
           <p className="telemetry-text text-base sm:text-lg text-pit-gray max-w-2xl mx-auto mb-7">
-            Real physics. No consequences. Lock in your spot on the grid in under two
+            Extreme racing, completely safe. Lock in your spot on the grid in under two
             minutes — pick your time, your crew, and your track.
           </p>
 

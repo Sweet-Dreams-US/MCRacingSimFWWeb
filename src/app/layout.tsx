@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     default: 'MC Racing Sim Fort Wayne | Professional Sim Racing & RC Track',
     template: '%s | MC Racing Sim Fort Wayne',
   },
-  description: 'Fort Wayne\'s only professional-grade Sim Racing & RC Lounge. Experience real physics with no consequences on our $15k simulator rigs. Located at 1205 W Main St, Fort Wayne, IN 46808. Call 1(808) 220-2600 to book.',
+  description: 'Fort Wayne\'s only professional-grade Sim Racing & RC Lounge. Pro-grade simulators and an indoor RC track — extreme, completely safe, and open late. Located at 1205 W Main St, Fort Wayne, IN 46808. Call 1(808) 220-2600 to book.',
   keywords: [
     'sim racing Fort Wayne',
     'racing simulator Indiana',

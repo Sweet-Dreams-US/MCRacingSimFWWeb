@@ -36,7 +36,7 @@ export default function Footer() {
             </div>
             <p className="telemetry-text text-sm text-pit-gray leading-relaxed">
               Fort Wayne's only professional-grade sim racing facility.
-              Real physics. No consequences.
+              Extreme, completely safe, and open late.
             </p>
           </div>
 
