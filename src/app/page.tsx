@@ -205,19 +205,8 @@ export default function Home() {
 
         {/* Hero Content */}
         <div className="relative z-20 max-w-6xl mx-auto px-6 text-center">
-          {/* Logo leads — it's the thing people recognise. */}
-          <div className="hero-title flex justify-center mb-6">
-            <Image
-              src="/assets/mclogoSHADOW.png"
-              alt="MC Racing Sim Fort Wayne"
-              width={900}
-              height={300}
-              priority
-              className="w-full max-w-[22rem] sm:max-w-lg lg:max-w-2xl h-auto"
-            />
-          </div>
-
-          {/* Reviews sit directly under the logo — social proof before the pitch. */}
+          {/* Rating leads the hero — the logo already sits in the nav, so a
+              second copy here was redundant. Social proof before the pitch. */}
           <div className="hero-title flex flex-col items-center gap-1 mb-6">
             <div className="flex items-center gap-2">
               <span className="text-xl tracking-[0.2em] text-apex-red" aria-hidden="true">
@@ -232,8 +221,8 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Real reviews scrolling under the logo — social proof in the
-              customers' own words, before any of our own copy. */}
+          {/* Real reviews scrolling at the top of the hero — social proof in
+              the customers' own words, before any of our own copy. */}
           <div className="hero-title mb-8">
             <ReviewsMarquee />
           </div>
