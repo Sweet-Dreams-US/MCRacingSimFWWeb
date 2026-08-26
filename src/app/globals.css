@@ -454,3 +454,41 @@ body {
   z-index: 100;
   transition: width 0.1s linear;
 }
+
+/* ---------------------------------------------------------------------------
+   Reviews marquee (homepage hero)
+   The track holds the review list twice; translating it exactly -50% lands the
+   copy on the original, so the loop is seamless with no JS.
+--------------------------------------------------------------------------- */
+@keyframes reviews-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.reviews-track {
+  display: flex;
+  width: max-content;
+  animation: reviews-scroll var(--reviews-duration, 80s) linear infinite;
+}
+
+/* Let people stop it to actually read one. */
+.reviews-marquee:hover .reviews-track,
+.reviews-marquee:focus-within .reviews-track {
+  animation-play-state: paused;
+}
+
+/* Edges fade out so cards enter and leave instead of being chopped off. */
+.reviews-marquee {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reviews-track {
+    animation: none;
+    /* Not animating means the duplicated half would just be dead weight, so
+       allow a normal horizontal scroll instead. */
+    width: 100%;
+    overflow-x: auto;
+  }
+}

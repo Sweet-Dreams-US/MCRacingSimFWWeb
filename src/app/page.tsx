@@ -8,6 +8,7 @@ import Button from '@/components/Button'
 import SectionDivider from '@/components/SectionDivider'
 import StatCounter from '@/components/StatCounter'
 import ScrambleText from '@/components/ScrambleText'
+import ReviewsMarquee from '@/components/ReviewsMarquee'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -231,8 +232,17 @@ export default function Home() {
             </p>
           </div>
 
+          {/* Real reviews scrolling under the logo — social proof in the
+              customers' own words, before any of our own copy. */}
+          <div className="hero-title mb-8">
+            <ReviewsMarquee />
+          </div>
+
           <h1 className="hero-subtitle racing-headline text-3xl md:text-5xl text-grid-white mb-4 leading-tight">
-            <ScrambleText text="Fort Wayne's Fastest Night Out" />
+            {/* Deliberately NOT ScrambleText: it needs 3x text.length ticks,
+                so a headline this long stays unreadable for ~4.5s. The main
+                message has to land instantly. */}
+            Fort Wayne&apos;s Fastest Night Out
           </h1>
 
           <p className="hero-subtitle telemetry-text text-lg md:text-xl text-pit-gray max-w-2xl mx-auto mb-10">
