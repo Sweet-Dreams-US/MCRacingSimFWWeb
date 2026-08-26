@@ -107,6 +107,7 @@ export default function EmailSuggestInput({
         className={className}
         placeholder={placeholder}
         required={required}
+        name="email"
         autoComplete="email"
       />
       {open && (

@@ -113,56 +113,24 @@ export default function BookingFlow() {
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; discountCents: number } | null>(null)
   const [discountError, setDiscountError] = useState<string | null>(null)
   const [discountChecking, setDiscountChecking] = useState(false)
-  // Code arriving via ?code= (e.g. the FASTESTLAP special banner). Held until a
-  // date is picked (validation needs the session price), then auto-applied once.
-  const [pendingCode, setPendingCode] = useState<string | null>(null)
+  // A code arriving via ?code= (e.g. the FASTESTLAP banner) is PREFILLED into
+  // the box but deliberately NOT auto-applied. It used to apply itself, so a
+  // customer who tapped the banner out of curiosity and then booked an ordinary
+  // session silently got 20% off something they never opted into. They now have
+  // to press Apply, which is one tap and makes the discount a choice.
+  const [prefilledFromLink, setPrefilledFromLink] = useState(false)
 
   // Read ?code= on mount. window.location (not useSearchParams) so the static
   // /book page needs no Suspense boundary.
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('code')?.trim()
     if (code) {
-      const upper = code.toUpperCase()
-      setPendingCode(upper)
-      setDiscountInput(upper)
+      setDiscountInput(code.toUpperCase())
+      setPrefilledFromLink(true)
     }
   }, [])
 
-  // Auto-apply the pending code as soon as the session is priceable. One shot:
-  // whatever the outcome, the server re-validates at create, and the review
-  // step shows the applied discount (or the error) in the normal discount box.
-  useEffect(() => {
-    if (!pendingCode || !selectedDate || appliedDiscount) return
-    const code = pendingCode
-    setPendingCode(null)
-    let cancelled = false
-    ;(async () => {
-      setDiscountChecking(true)
-      setDiscountError(null)
-      try {
-        const { price } = calculatePrice(selectedDate, duration, racerCount)
-        const res = await fetch('/api/booking/validate-discount', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, priceCents: price * 100, hours: duration }),
-        })
-        const data = await res.json()
-        if (cancelled) return
-        if (data.ok) {
-          setAppliedDiscount({ code: data.code || code, discountCents: data.discountCents })
-        } else {
-          setDiscountError(data.reason || "That code isn't valid.")
-        }
-      } catch {
-        if (!cancelled) setDiscountError('Could not check that code — try Apply below.')
-      } finally {
-        if (!cancelled) setDiscountChecking(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [pendingCode, selectedDate, appliedDiscount, duration, racerCount])
+  // (No auto-apply effect on purpose — see prefilledFromLink above.)
 
   // Warn before leaving mid-booking (native "Leave site?" prompt) once the
   // customer has started but before the booking is submitted — so an accidental
@@ -738,6 +706,11 @@ export default function BookingFlow() {
                       </div>
                       {discountError && (
                         <p className="telemetry-text text-xs text-apex-red mt-1.5">{discountError}</p>
+                      )}
+                      {prefilledFromLink && !discountError && (
+                        <p className="telemetry-text text-xs text-telemetry-cyan mt-1.5">
+                          Press Apply to use this code.
+                        </p>
                       )}
                     </div>
                   )}

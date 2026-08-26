@@ -45,7 +45,7 @@ export const metadata: Metadata = {
     telephone: false,
   },
   openGraph: {
-    title: 'MC Racing Sim Fort Wayne | Real Physics. No Consequences.',
+    title: "MC Racing Sim Fort Wayne | Fort Wayne's Fastest Night Out",
     description: 'Fort Wayne\'s premier sim racing destination. Professional-grade simulators, indoor RC track, birthday parties & corporate events. Call 1(808) 220-2600.',
     url: siteUrl,
     siteName: 'MC Racing Sim Fort Wayne',
@@ -71,7 +71,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'MC Racing Sim Fort Wayne',
-    description: 'Real Physics. No Consequences. Fort Wayne\'s premier sim racing destination.',
+    description: "Fort Wayne's premier sim racing destination. Pro-grade simulators and an indoor RC track — extreme, safe, and open late. 100% five-star reviews.",
     images: ['/assets/WideTwoRacingBays.webp'],
     creator: '@mcracingsim',
     site: '@mcracingsim',

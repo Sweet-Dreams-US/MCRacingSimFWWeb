@@ -114,12 +114,15 @@ function matrixPrice(
   hours: number
 ): number {
   const clamped = Math.min(Math.max(hours, 1), 3)
-  const lo = Math.floor(clamped) as MatrixHours
-  const hi = Math.ceil(clamped) as MatrixHours
-  const within =
-    lo === hi
-      ? matrix[seated][lo]
-      : matrix[seated][lo] + (matrix[seated][hi] - matrix[seated][lo]) * (clamped - lo)
+  const whole = Math.floor(clamped) as MatrixHours
+  const hasHalf = clamped - whole >= 0.5
+
+  // A trailing half hour bills at HALF THE ONE-HOUR RATE, on top of the whole
+  // hours. It deliberately does NOT interpolate toward the next tier: the 2h
+  // and 3h prices carry a bulk discount, and interpolating handed a 1.5h
+  // session part of the 2-hour discount it hasn't earned.
+  //   weekend 3 racers: 1h $140 -> 1.5h = 140 + 70 = $210  (interpolation gave $207.50)
+  const within = matrix[seated][whole] + (hasHalf ? matrix[seated][1] / 2 : 0)
 
   // Past 3 hours the matrix runs out, so every further hour bills at the flat
   // per-seat long-session rate.

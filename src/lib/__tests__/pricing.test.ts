@@ -96,22 +96,38 @@ describe('half-hour sessions', () => {
     expect(isValidDuration(NaN)).toBe(false)
   })
 
-  it('prices a half hour at the exact midpoint of its neighbours', () => {
-    // weekday 1 racer: 1h $45, 2h $85 -> 1.5h = $65
-    expect(calculatePrice(THU, 1.5, 1).price).toBe(65)
-    // weekday 1 racer: 2h $85, 3h $115 -> 2.5h = $100
-    expect(calculatePrice(THU, 2.5, 1).price).toBe(100)
-    // weekday 3 racers: 1h $130, 2h $245 -> 1.5h = $187.50 (half-dollar is fine)
-    expect(calculatePrice(THU, 1.5, 3).price).toBe(187.5)
-    // weekend 1 racer: 1h $50, 2h $95 -> 1.5h = $72.50
-    expect(calculatePrice(SAT, 1.5, 1).price).toBe(72.5)
-    // weekend 3 racers: 2h $275, 3h $365 -> 2.5h = $320
-    expect(calculatePrice(SAT, 2.5, 3).price).toBe(320)
+  // A trailing half hour costs half the ONE-HOUR rate on top of the whole
+  // hours. It must never interpolate toward the next tier — the 2h/3h prices
+  // carry a bulk discount, and interpolating gave a 1.5h session part of a
+  // discount it hasn't earned.
+  it('prices a half hour at half the one-hour rate, not a midpoint', () => {
+    // weekday 1 racer: 1h $45 -> 1.5h = 45 + 22.50 = $67.50 (midpoint was $65)
+    expect(calculatePrice(THU, 1.5, 1).price).toBe(67.5)
+    // weekday 1 racer: 2h $85 + half of 1h $45 -> 2.5h = $107.50 (was $100)
+    expect(calculatePrice(THU, 2.5, 1).price).toBe(107.5)
+    // weekday 3 racers: 1h $130 -> 1.5h = 130 + 65 = $195 (was $187.50)
+    expect(calculatePrice(THU, 1.5, 3).price).toBe(195)
+    // weekend 1 racer: 1h $50 -> 1.5h = $75 (was $72.50)
+    expect(calculatePrice(SAT, 1.5, 1).price).toBe(75)
+    // weekend 3 racers: 2h $275 + half of 1h $140 -> 2.5h = $345 (was $320)
+    expect(calculatePrice(SAT, 2.5, 3).price).toBe(345)
+  })
+
+  it('never prices a half hour cheaper than the whole hour below it', () => {
+    for (const date of [THU, SAT]) {
+      for (const racers of [1, 2, 3] as const) {
+        for (const [lo, half] of [[1, 1.5], [2, 2.5]] as const) {
+          expect(calculatePrice(date, half as never, racers).price).toBeGreaterThan(
+            calculatePrice(date, lo as never, racers).price
+          )
+        }
+      }
+    }
   })
 
   it('prorates the extra-racer add-on over a half hour', () => {
-    // 1 extra racer x $10/hr x 1.5h = $15, on top of the 3-racer 1.5h rate
-    expect(calculatePrice(THU, 1.5, 4).price).toBe(187.5 + 15)
+    // 1 extra racer x $10/hr x 1.5h = $15, on top of the 3-racer 1.5h rate ($195)
+    expect(calculatePrice(THU, 1.5, 4).price).toBe(195 + 15)
     expect(extraRacerChargeDollars(4, 1.5)).toBe(15)
   })
 
@@ -153,9 +169,10 @@ describe('sessions longer than the price matrix', () => {
     expect(calculatePrice(THU, 8, 5).price).toBe(340 + 5 * 30 * 3 + 2 * 10 * 8)
   })
 
-  it('leaves 3 hours and under exactly as before', () => {
+  it('leaves WHOLE hours at or under 3 exactly as before', () => {
     expect(calculatePrice(THU, 3, 3).price).toBe(340)
-    expect(calculatePrice(THU, 2.5, 1).price).toBe(100)
+    // Half hours are no longer midpoints: 2h $85 + half of 1h $45 = $107.50.
+    expect(calculatePrice(THU, 2.5, 1).price).toBe(107.5)
   })
 })
 

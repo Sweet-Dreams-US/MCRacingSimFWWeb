@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Button from '@/components/Button'
 import EmailSuggestInput from '@/components/EmailSuggestInput'
@@ -24,6 +24,17 @@ function CheckinContent() {
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
+
+  // Required-field validation is done in JS rather than left to the browser.
+  // On the venue tablet a native `required` bubble can end up off-screen (or
+  // suppressed entirely if the control isn't focusable), so tapping Submit
+  // looked like it did nothing at all. Now we scroll the missed question into
+  // view, focus it, and say what's wrong.
+  const [missingField, setMissingField] = useState<string | null>(null)
+  const firstNameRef = useRef<HTMLInputElement>(null)
+  const lastNameRef = useRef<HTMLInputElement>(null)
+  const howHeardRef = useRef<HTMLSelectElement>(null)
+  const waiverRef = useRef<HTMLInputElement>(null)
 
   // "Been here before?" returning-customer lookup state.
   const [lookupEmail, setLookupEmail] = useState('')
@@ -86,6 +97,29 @@ function CheckinContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Walk the required fields in the order they appear and stop at the first
+    // gap, so the racer is taken to the question they actually missed.
+    const checks: Array<{
+      key: string
+      ok: boolean
+      ref: React.RefObject<HTMLElement | null>
+    }> = [
+      { key: 'firstName', ok: !!formData.firstName.trim(), ref: firstNameRef },
+      { key: 'lastName', ok: !!formData.lastName.trim(), ref: lastNameRef },
+      { key: 'howDidYouHear', ok: !!formData.howDidYouHear, ref: howHeardRef },
+      { key: 'agreedToWaiver', ok: formData.agreedToWaiver, ref: waiverRef },
+    ]
+    const missed = checks.find((c) => !c.ok)
+    if (missed) {
+      setMissingField(missed.key)
+      missed.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // Focus after the scroll starts so the browser doesn't fight it.
+      setTimeout(() => missed.ref.current?.focus({ preventScroll: true }), 250)
+      return
+    }
+    setMissingField(null)
+
     setIsSubmitting(true)
     setSubmitStatus('idle')
 
@@ -224,6 +258,8 @@ function CheckinContent() {
                 <div className="flex flex-col sm:flex-row gap-3">
                   <input
                     type="email"
+                    name="email"
+                    autoComplete="email"
                     value={lookupEmail}
                     onChange={(e) => {
                       setLookupEmail(e.target.value)
@@ -278,10 +314,13 @@ function CheckinContent() {
                       First Name *
                     </label>
                     <input
+                      ref={firstNameRef}
                       type="text"
+                      name="given-name"
+                      autoComplete="given-name"
                       required
                       value={formData.firstName}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                      onChange={(e) => { setMissingField(null); setFormData({ ...formData, firstName: e.target.value }) }}
                       className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors"
                       placeholder="John"
                     />
@@ -291,10 +330,13 @@ function CheckinContent() {
                       Last Name *
                     </label>
                     <input
+                      ref={lastNameRef}
                       type="text"
+                      name="family-name"
+                      autoComplete="family-name"
                       required
                       value={formData.lastName}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                      onChange={(e) => { setMissingField(null); setFormData({ ...formData, lastName: e.target.value }) }}
                       className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors"
                       placeholder="Racer"
                     />
@@ -323,6 +365,8 @@ function CheckinContent() {
                     </label>
                     <input
                       type="tel"
+                      name="tel"
+                      autoComplete="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors"
@@ -360,10 +404,15 @@ function CheckinContent() {
                     How did you hear about us? *
                   </label>
                   <select
+                    ref={howHeardRef}
                     required
                     value={formData.howDidYouHear}
-                    onChange={(e) => setFormData({ ...formData, howDidYouHear: e.target.value })}
-                    className="w-full bg-asphalt border border-white/20 px-4 py-3 text-grid-white telemetry-text focus:border-telemetry-cyan focus:outline-none transition-colors"
+                    onChange={(e) => { setMissingField(null); setFormData({ ...formData, howDidYouHear: e.target.value }) }}
+                    className={`w-full bg-asphalt border px-4 py-3 text-grid-white telemetry-text focus:outline-none transition-colors ${
+                      missingField === 'howDidYouHear'
+                        ? 'border-apex-red focus:border-apex-red'
+                        : 'border-white/20 focus:border-telemetry-cyan'
+                    }`}
                   >
                     <option value="">Select an option</option>
                     {howDidYouHearOptions.map((option) => (
@@ -372,6 +421,11 @@ function CheckinContent() {
                       </option>
                     ))}
                   </select>
+                  {missingField === 'howDidYouHear' && (
+                    <p className="telemetry-text text-sm text-apex-red mt-2">
+                      Please tell us how you heard about us before submitting.
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-6">
@@ -438,8 +492,9 @@ function CheckinContent() {
                   <input
                     type="checkbox"
                     required
+                    ref={waiverRef}
                     checked={formData.agreedToWaiver}
-                    onChange={(e) => setFormData({ ...formData, agreedToWaiver: e.target.checked })}
+                    onChange={(e) => { setMissingField(null); setFormData({ ...formData, agreedToWaiver: e.target.checked }) }}
                     className="w-5 h-5 accent-apex-red mt-0.5"
                   />
                   <span className="telemetry-text text-sm text-grid-white">
@@ -461,6 +516,17 @@ function CheckinContent() {
 
               {/* Submit Button */}
               <div className="text-center">
+                {missingField && (
+                  <div className="bg-apex-red/10 border border-apex-red p-3 mb-4">
+                    <p className="telemetry-text text-sm text-apex-red">
+                      {missingField === 'agreedToWaiver'
+                        ? 'Please agree to the waiver to continue.'
+                        : missingField === 'howDidYouHear'
+                          ? 'Please tell us how you heard about us.'
+                          : 'Please fill in your name.'}
+                    </p>
+                  </div>
+                )}
                 <Button type="submit" size="lg" fullWidth disabled={isSubmitting}>
                   {isSubmitting ? 'Submitting...' : 'Complete Tech Inspection'}
                 </Button>

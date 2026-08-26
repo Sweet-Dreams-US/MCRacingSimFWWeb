@@ -11,6 +11,21 @@ import ScrambleText from '@/components/ScrambleText'
 
 gsap.registerPlugin(ScrollTrigger)
 
+
+// ---------------------------------------------------------------------------
+// Hero configuration
+// ---------------------------------------------------------------------------
+
+// Drop a short, muted, looping clip in /public/assets and point this at it
+// (e.g. '/assets/hero.mp4') to run video behind the header. Left empty the
+// hero uses the still image instead, so nothing breaks while it's missing.
+const HERO_VIDEO = ''
+
+// Shown under the logo. Kept here so they're corrected in one place rather
+// than hunted through the markup — update if the rating ever moves.
+const REVIEW_RATING = 5.0
+const REVIEW_HEADLINE = '100% five-star reviews on Google'
+
 export default function Home() {
   const heroRef = useRef<HTMLDivElement>(null)
   const simRef = useRef<HTMLDivElement>(null)
@@ -148,15 +163,32 @@ export default function Home() {
         ref={heroRef}
         className="relative min-h-screen flex items-center justify-center overflow-hidden"
       >
-        {/* Video Background Placeholder - using image */}
+        {/* Background: looping video at low opacity, falling back to the still
+            image. The <video> only renders if HERO_VIDEO is set below — drop a
+            file in /public/assets and point this at it. Until then the poster
+            image shows exactly as before, so the hero never breaks. */}
         <div className="absolute inset-0 bg-asphalt-dark">
-          <Image
-            src="/assets/WideTwoRacingBays.webp"
-            alt="MC Racing Sim Fort Wayne racing bays"
-            fill
-            className="object-cover opacity-30"
-            priority
-          />
+          {HERO_VIDEO ? (
+            <video
+              className="absolute inset-0 w-full h-full object-cover opacity-20"
+              src={HERO_VIDEO}
+              poster="/assets/WideTwoRacingBays.webp"
+              autoPlay
+              muted
+              loop
+              playsInline
+              // Decorative only — never announce it to screen readers.
+              aria-hidden="true"
+            />
+          ) : (
+            <Image
+              src="/assets/WideTwoRacingBays.webp"
+              alt="MC Racing Sim Fort Wayne racing bays"
+              fill
+              className="object-cover opacity-30"
+              priority
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-b from-asphalt/50 via-asphalt/70 to-asphalt z-10" />
           {/* Grid pattern overlay */}
           <div className="absolute inset-0 grid-bg opacity-30" />
@@ -172,15 +204,43 @@ export default function Home() {
 
         {/* Hero Content */}
         <div className="relative z-20 max-w-6xl mx-auto px-6 text-center">
-          <h1 className="hero-title racing-headline text-5xl md:text-7xl lg:text-8xl text-grid-white mb-6 leading-tight">
-            <span className="block"><ScrambleText text="Real Physics." /></span>
-            <span className="block text-apex-red">No Consequences.</span>
+          {/* Logo leads — it's the thing people recognise. */}
+          <div className="hero-title flex justify-center mb-6">
+            <Image
+              src="/assets/mclogoSHADOW.png"
+              alt="MC Racing Sim Fort Wayne"
+              width={900}
+              height={300}
+              priority
+              className="w-full max-w-[22rem] sm:max-w-lg lg:max-w-2xl h-auto"
+            />
+          </div>
+
+          {/* Reviews sit directly under the logo — social proof before the pitch. */}
+          <div className="hero-title flex flex-col items-center gap-1 mb-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xl tracking-[0.2em] text-apex-red" aria-hidden="true">
+                ★★★★★
+              </span>
+              <span className="telemetry-text text-sm text-grid-white font-bold">
+                {REVIEW_RATING.toFixed(1)}
+              </span>
+            </div>
+            <p className="telemetry-text text-xs sm:text-sm text-pit-gray uppercase tracking-wider">
+              {REVIEW_HEADLINE}
+            </p>
+          </div>
+
+          <h1 className="hero-subtitle racing-headline text-3xl md:text-5xl text-grid-white mb-4 leading-tight">
+            <ScrambleText text="Fort Wayne's Fastest Night Out" />
           </h1>
 
           <p className="hero-subtitle telemetry-text text-lg md:text-xl text-pit-gray max-w-2xl mx-auto mb-10">
-            Fort Wayne's only professional-grade Sim Racing & RC Lounge.
+            Pro-grade racing simulators and an indoor RC track. Genuinely
+            extreme, completely safe, and{' '}
+            <span className="text-grid-white">open late</span>.
             <span className="block text-telemetry-cyan mt-2">
-              Located at 1205 W Main St.
+              1205 W Main St, Fort Wayne.
             </span>
           </p>
 
@@ -234,6 +294,66 @@ export default function Home() {
               className="stat-item"
               prefix="#"
             />
+          </div>
+        </div>
+      </section>
+
+      {/* Perfect for Parties — sits straight after the reviews/stats so the
+          group-booking audience sees itself before scrolling into the detail. */}
+      <section className="py-20 md:py-28 bg-asphalt relative overflow-hidden">
+        <div className="absolute inset-0 grid-bg opacity-10" />
+        <div className="relative z-10 max-w-6xl mx-auto px-6">
+          <div className="text-center mb-12">
+            <p className="telemetry-text text-xs text-telemetry-cyan uppercase tracking-widest mb-3">
+              // Groups
+            </p>
+            <h2 className="racing-headline text-4xl md:text-5xl text-grid-white mb-4">
+              Perfect For <span className="text-apex-red">Parties</span>
+            </h2>
+            <p className="telemetry-text text-pit-gray max-w-2xl mx-auto">
+              Book the sims, the RC track, and the lounge for your group.
+              <span className="block text-grid-white mt-1">
+                Food and drinks are welcome — bring your own.
+              </span>
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-6 mb-12">
+            {[
+              {
+                title: 'Corporate Events',
+                copy: 'Team building at 200 mph. Settle the office rivalry on the track.',
+              },
+              {
+                title: 'Birthday Parties',
+                copy: 'Epic for them, effortless for you. We run the grid, you enjoy it.',
+              },
+              {
+                title: 'Bachelor Parties',
+                copy: 'Start the night here. Open late, and nobody has to drive to race.',
+              },
+            ].map((c) => (
+              <div
+                key={c.title}
+                className="border border-white/10 bg-asphalt-dark p-6 hover:border-apex-red/40 transition-colors"
+              >
+                <h3 className="racing-headline text-xl text-grid-white mb-2">{c.title}</h3>
+                <p className="telemetry-text text-sm text-pit-gray">{c.copy}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center">
+            <Button href="/pit-lane" size="lg">
+              Plan Your Party
+            </Button>
+            <p className="telemetry-text text-sm text-pit-gray mt-4">
+              Or call{' '}
+              <a href="tel:+18082202600" className="text-telemetry-cyan hover:underline">
+                (808) 220-2600
+              </a>{' '}
+              and we&apos;ll build the package with you.
+            </p>
           </div>
         </div>
       </section>
@@ -405,7 +525,7 @@ export default function Home() {
               </ul>
               <div className="mb-8 p-4 bg-apex-red/10 border border-apex-red/30">
                 <p className="telemetry-text text-sm text-grid-white">
-                  <span className="text-apex-red font-bold">COMBO DEAL:</span> Book a sim session and get <span className="text-telemetry-cyan font-bold">50% off</span> RC track time!
+                  <span className="text-apex-red font-bold">BOOK 2+ HOURS:</span> the <span className="text-telemetry-cyan font-bold">whole entertainment center is yours</span> — sims, RC track, and lounge included.
                 </p>
               </div>
               <Button href="/pricing" variant="secondary">

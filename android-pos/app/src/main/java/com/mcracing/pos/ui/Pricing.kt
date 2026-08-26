@@ -48,18 +48,21 @@ fun formatHours(hours: Double): String =
 
 /**
  * Session price in cents for (date, any racer count >= 1, 1–3 hours in
- * half-hour steps). The matrix only lists whole hours, so a half hour is the
- * exact midpoint of the whole hours either side. Returns 0 if out of range.
+ * half-hour steps). The matrix only lists whole hours; a trailing half hour
+ * bills at half the one-hour rate. Returns 0 if out of range.
  */
 fun sessionPriceCents(isoDate: String, racers: Int, hours: Double): Long {
     val matrix = if (isWeekend(isoDate)) WEEKEND else WEEKDAY
     val seated = racers.coerceIn(1, SIM_COUNT)
     val withinMatrix = hours.coerceIn(1.0, 3.0)
-    val lo = Math.floor(withinMatrix).toInt()
-    val hi = Math.ceil(withinMatrix).toInt()
-    val loPrice = matrix[seated]?.get(lo) ?: return 0L
-    val hiPrice = matrix[seated]?.get(hi) ?: return 0L
-    val base = loPrice + (hiPrice - loPrice) * (withinMatrix - lo)
+    val whole = Math.floor(withinMatrix).toInt()
+    val hasHalf = withinMatrix - whole >= 0.5
+    val wholePrice = matrix[seated]?.get(whole) ?: return 0L
+    val oneHourPrice = matrix[seated]?.get(1) ?: return 0L
+    // A trailing half hour bills at HALF THE ONE-HOUR RATE — it must NOT
+    // interpolate toward the next tier, which would hand out part of the 2h
+    // bulk discount. Keep in sync with matrixPrice() in src/lib/pricing.ts.
+    val base = wholePrice + (if (hasHalf) oneHourPrice / 2.0 else 0.0)
     // Past 3 hours the matrix runs out — bill the flat per-seat rate per hour.
     val longHours = (hours - 3.0).coerceAtLeast(0.0)
     val longCharge = longHours * LONG_SESSION_RATE_PER_SEAT_HOUR * seated

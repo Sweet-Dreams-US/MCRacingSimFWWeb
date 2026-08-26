@@ -269,7 +269,7 @@ export default function BookPage() {
               }
             />
             <FeatureCard
-              title="Real Physics, No Risk"
+              title="Extreme, But Totally Safe"
               body="Feel every apex and slide with true-to-life handling. Wreck with zero consequences and hit reset."
               icon={
                 <svg {...svgProps}>
