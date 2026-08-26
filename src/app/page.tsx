@@ -207,7 +207,7 @@ export default function Home() {
         <div className="relative z-20 max-w-6xl mx-auto px-6 text-center">
           {/* Rating leads the hero — the logo already sits in the nav, so a
               second copy here was redundant. Social proof before the pitch. */}
-          <div className="hero-title flex flex-col items-center gap-1 mb-6">
+          <div className="hero-title flex flex-col items-center gap-1 mb-8">
             <div className="flex items-center gap-2">
               <span className="text-xl tracking-[0.2em] text-apex-red" aria-hidden="true">
                 ★★★★★
@@ -219,12 +219,6 @@ export default function Home() {
             <p className="telemetry-text text-xs sm:text-sm text-pit-gray uppercase tracking-wider">
               {REVIEW_HEADLINE}
             </p>
-          </div>
-
-          {/* Real reviews scrolling at the top of the hero — social proof in
-              the customers' own words, before any of our own copy. */}
-          <div className="hero-title mb-8">
-            <ReviewsMarquee />
           </div>
 
           <h1 className="hero-subtitle racing-headline text-3xl md:text-5xl text-grid-white mb-4 leading-tight">
@@ -255,6 +249,13 @@ export default function Home() {
             Prefer to book by phone?{' '}
             <a href="tel:+18082202600" className="text-telemetry-cyan hover:underline">Call (808) 220-2600</a>
           </p>
+
+          {/* Reviews close out the hero: the pitch and the CTA land first, then
+              real customers back it up on the way into the page. Grouped with
+              .hero-cta so it reveals last, after the buttons. */}
+          <div className="hero-cta mt-10">
+            <ReviewsMarquee />
+          </div>
 
         </div>
 
