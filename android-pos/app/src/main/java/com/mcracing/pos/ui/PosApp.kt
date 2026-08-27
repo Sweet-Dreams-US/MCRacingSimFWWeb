@@ -589,6 +589,10 @@ fun PosApp() {
     // Tab shell: the active screen fills the space above a persistent bottom nav,
     // which shows only on the two "home" tabs (Bookings / Schedule) — never mid-sale.
     Column(Modifier.fillMaxSize()) {
+      // Battery sits above the stage content so it shows on EVERY screen —
+      // including mid-sale and while the reader is in the customer's hands —
+      // rather than only on the tabbed home screens.
+      BatteryIndicator()
       Box(Modifier.weight(1f)) {
         when (stage) {
         Stage.Bookings -> BookingsScreen(

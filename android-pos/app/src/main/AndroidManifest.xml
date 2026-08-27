@@ -20,10 +20,15 @@
 
         <!-- A normal LAUNCHER activity. Stripe assigns the kiosk/home role at
              deploy time (choose this as the "kiosk app" in the Dashboard). -->
+        <!-- Locked to tall portrait. The reader is handheld and gets passed to
+             the customer to tap and tip; letting it flip to landscape (or
+             upside-down) mid-sale reflows the whole UI for no benefit.
+             "portrait" is stricter than "sensorPortrait" — it also prevents the
+             180-degree flip when the device is turned over. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="fullSensor"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
