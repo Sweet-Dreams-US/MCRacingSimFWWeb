@@ -296,6 +296,7 @@ fun SaleScreen(
     onMarkComplete: () -> Unit,
     onNoShow: () -> Unit,
     onCancelBooking: () -> Unit,
+    onReopenBooking: () -> Unit,
     onBack: () -> Unit,
 ) {
     val isBooking = draft.bookingId != null
@@ -664,12 +665,23 @@ fun SaleScreen(
                 ) { Text("Cancel") }
             }
         } else if (isBooking && bookingDone) {
+            // Previously this was a dead end: it told staff to "use the admin
+            // site", which had no status control at all — so one mis-tap of
+            // "Mark complete" stranded the booking with no way back from any
+            // interface. Reopen is the way out.
             Spacer(Modifier.height(16.dp))
-            Text(
-                "This booking is closed out. To change or delete it, use the admin site.",
-                color = PitGray,
-                fontSize = 11.sp,
-            )
+            Text("Closed out by mistake?", color = PitGray, fontSize = 11.sp)
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { confirm = ConfirmAction.Reopen },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Reopen") }
+                OutlinedButton(
+                    onClick = { confirm = ConfirmAction.Cancel },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Cancel") }
+            }
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -678,7 +690,15 @@ fun SaleScreen(
         AlertDialog(
             onDismissRequest = { confirm = null },
             title = { Text(c.title) },
-            text = { Text(c.body) },
+            text = {
+                Text(
+                    // Surfacing the amount here IS the acknowledgement the
+                    // backend requires before it will cancel a paid booking.
+                    if (c == ConfirmAction.Cancel && draft.paidCents > 0)
+                        "${c.body}\n\n${centsToDollars(draft.paidCents)} is already recorded against it. That stays on the books — refund it separately if it needs returning."
+                    else c.body
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     val chosen = c
@@ -687,6 +707,7 @@ fun SaleScreen(
                         ConfirmAction.Complete -> onMarkComplete()
                         ConfirmAction.NoShow -> onNoShow()
                         ConfirmAction.Cancel -> onCancelBooking()
+                        ConfirmAction.Reopen -> onReopenBooking()
                     }
                 }) { Text("Yes") }
             },
@@ -970,7 +991,8 @@ private fun RowScope.SelectChip(selected: Boolean, label: String, onClick: () ->
 private enum class ConfirmAction(val title: String, val body: String) {
     Complete("Mark complete?", "Close out this booking as completed, even if it wasn't fully paid."),
     NoShow("Mark no-show?", "Flag this booking as a no-show."),
-    Cancel("Cancel booking?", "Cancel this booking. This can't be undone from the reader."),
+    Cancel("Cancel booking?", "Cancel this booking and free the slot. Reopen puts it back if this was a mistake."),
+    Reopen("Reopen booking?", "Put this booking back to confirmed. Any thank-you email or referral code already sent stands."),
 }
 
 @Composable

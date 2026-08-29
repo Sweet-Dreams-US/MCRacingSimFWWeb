@@ -14,6 +14,7 @@ import {
 import NoShowDialog from './NoShowDialog'
 import ChargeRetryButton from './ChargeRetryButton'
 import EditBookingPanel from './EditBookingPanel'
+import BookingStatusPanel from './BookingStatusPanel'
 
 function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
@@ -137,6 +138,11 @@ export default async function BookingDetailPage({
           discountCode={booking.discount_code}
         />
       )}
+
+      {/* Status control — deliberately NOT gated on the booking being open:
+          its whole reason for existing is undoing a close-out that was a
+          mistake, which by definition happens after the booking is closed. */}
+      <BookingStatusPanel bookingId={booking.id} status={booking.status} />
 
       {/* No-show action — only show for confirmed bookings */}
       {booking.status === 'confirmed' && (

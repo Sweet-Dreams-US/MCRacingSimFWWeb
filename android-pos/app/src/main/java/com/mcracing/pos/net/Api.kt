@@ -111,8 +111,13 @@ data class CustomersResponse(val customers: List<CustomerHit>)
 
 data class BookingActionRequest(
     val bookingId: String,
-    val action: String, // "complete" | "noshow" | "cancel" | "note"
+    val action: String, // "complete" | "noshow" | "cancel" | "reopen" | "note"
     val note: String? = null,
+    // Cancelling a booking with money recorded against it is refused unless the
+    // operator has acknowledged it. The reader already knows the paid amount
+    // (SaleDraft.paidCents), so it shows the figure in the confirm dialog and
+    // sends this once the operator has actually seen it.
+    val acknowledgePaid: Boolean = false,
 )
 
 data class CashPaymentRequest(
@@ -149,6 +154,9 @@ data class ActionResponse(
     val success: Boolean = false,
     val error: String? = null,
     val transactionId: String? = null,
+    /** Server refused a cancel because money is attached; error carries the amount. */
+    val needsAcknowledge: Boolean = false,
+    val paidCents: Long = 0,
 )
 
 // ---- Receipts ---------------------------------------------------------------

@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isDeviceAuthorized } from '@/lib/device-auth'
-import { onBookingCompleted } from '@/lib/booking'
+import { onBookingCompleted, setBookingStatus, BookingStatusError } from '@/lib/booking'
 import type { Database } from '@/lib/supabase/types'
 
 export const runtime = 'nodejs'
@@ -13,14 +13,16 @@ type BookingStatus = Database['public']['Enums']['booking_status']
 
 interface Body {
   bookingId?: string
-  action?: 'complete' | 'noshow' | 'cancel' | 'note'
+  action?: 'complete' | 'noshow' | 'cancel' | 'reopen' | 'note'
+  /** Cancelling a booking with money recorded against it requires this. */
+  acknowledgePaid?: boolean
   note?: string
 }
 
+// cancel/reopen are handled by setBookingStatus() below, not this map.
 const STATUS_FOR: Record<string, BookingStatus> = {
   complete: 'completed',
   noshow: 'noshow',
-  cancel: 'cancelled',
 }
 
 export async function POST(request: NextRequest) {
@@ -66,6 +68,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
     return NextResponse.json({ success: true })
+  }
+
+  // Cancel and reopen go through the shared helper so the reader gets the same
+  // calendar cleanup, audit note and money guard as the admin site.
+  if (action === 'cancel' || action === 'reopen') {
+    try {
+      const result = await setBookingStatus(bookingId, action, {
+        acknowledgePaid: body.acknowledgePaid === true,
+      })
+      return NextResponse.json({ success: true, status: result.status })
+    } catch (err) {
+      if (err instanceof BookingStatusError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: err.message,
+            code: err.code,
+            paidCents: err.paidCents,
+            needsAcknowledge: err.code === 'paid',
+          },
+          { status: err.code === 'not_found' ? 404 : 409 }
+        )
+      }
+      const message = err instanceof Error ? err.message : 'Status change failed'
+      return NextResponse.json({ success: false, error: message }, { status: 500 })
+    }
   }
 
   const status = STATUS_FOR[action]

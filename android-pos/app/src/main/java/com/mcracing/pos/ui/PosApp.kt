@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcracing.pos.net.ApiClient
 import com.mcracing.pos.net.BlockDto
+import com.mcracing.pos.net.ActionResponse
 import com.mcracing.pos.net.BookingActionRequest
 import com.mcracing.pos.net.BookingDto
 import com.mcracing.pos.net.CashPaymentRequest
@@ -534,12 +535,33 @@ fun PosApp() {
         val id = draft.bookingId ?: return
         stage = Stage.Processing
         scope.launch {
-            val ok = try {
-                ApiClient.service.bookingAction(BookingActionRequest(id, action)).success
+            // The confirm dialog already showed the operator any money recorded
+            // against the booking, so a cancel carries that acknowledgement.
+            val resp = try {
+                ApiClient.service.bookingAction(
+                    BookingActionRequest(id, action, acknowledgePaid = action == "cancel")
+                )
+            } catch (e: HttpException) {
+                // Retrofit throws on 4xx/5xx, so the backend's actual reason
+                // ("already cancelled", "nothing to reopen") would otherwise be
+                // replaced by a generic failure. Recover it from the body.
+                try {
+                    Gson().fromJson(
+                        e.response()?.errorBody()?.string(),
+                        ActionResponse::class.java,
+                    )
+                } catch (_: Exception) {
+                    null
+                }
             } catch (_: Exception) {
-                false
+                null
             }
-            if (ok) showResult(true, doneTitle) else showResult(false, "Action failed")
+            if (resp != null && resp.success) {
+                loadBookings() // reflect the new status in the list straight away
+                showResult(true, doneTitle)
+            } else {
+                showResult(false, "Action failed", 0L, resp?.error ?: "Check the connection.")
+            }
         }
     }
 
@@ -664,6 +686,7 @@ fun PosApp() {
             onMarkComplete = { doBookingAction("complete", "Booking completed") },
             onNoShow = { doBookingAction("noshow", "Marked no-show") },
             onCancelBooking = { doBookingAction("cancel", "Booking cancelled") },
+            onReopenBooking = { doBookingAction("reopen", "Booking reopened") },
             onBack = { stage = Stage.Bookings },
         )
 

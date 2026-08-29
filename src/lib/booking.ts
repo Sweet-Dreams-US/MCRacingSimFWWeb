@@ -22,7 +22,11 @@ import {
   isMonday,
   isValidDuration,
 } from './pricing'
-import { createBookingCalendarEvent, resyncBookingCalendarEvent } from './calendar'
+import {
+  createBookingCalendarEvent,
+  resyncBookingCalendarEvent,
+  deleteBookingCalendarEvent,
+} from './calendar'
 import {
   isSlotBlocked,
   seatsAvailableFor,
@@ -1669,4 +1673,129 @@ export async function editBooking(
     noShowFeeCents: newNoShowFeeCents,
     warnings,
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Booking status changes (cancel / reopen)
+// ---------------------------------------------------------------------------
+
+export type BookingStatusAction = 'cancel' | 'reopen'
+
+export class BookingStatusError extends Error {
+  constructor(
+    message: string,
+    /** 'paid' means the caller must acknowledge attached money before proceeding. */
+    readonly code: 'not_found' | 'invalid_transition' | 'paid' = 'invalid_transition',
+    readonly paidCents = 0
+  ) {
+    super(message)
+    this.name = 'BookingStatusError'
+  }
+}
+
+export interface SetBookingStatusResult {
+  bookingId: string
+  status: 'cancelled' | 'confirmed'
+  /** Money still attached to the booking — never altered by this call. */
+  paidCents: number
+}
+
+/**
+ * Cancel a booking, or reopen one that was closed out by mistake.
+ *
+ * Reopen exists because the reader hides its Cancel button the moment a booking
+ * is completed and tells staff to "use the admin site" — which, until now, had
+ * no such control. One mis-tap of "Mark complete" left a booking with no way
+ * back from any interface.
+ *
+ * DELIBERATELY DOES NOT TOUCH MONEY. Transactions are the accounting record of
+ * cash that really moved; silently deleting them to tidy a status would put the
+ * books out. If any are attached, the caller must pass acknowledgePaid so the
+ * decision is explicit, and the amount is reported back either way. Refunds
+ * stay a separate, deliberate action.
+ *
+ * Side effects already fired by a completion (the thank-you email and the
+ * first-timer referral code) cannot be recalled — reopening notes that rather
+ * than pretending otherwise.
+ */
+export async function setBookingStatus(
+  bookingId: string,
+  action: BookingStatusAction,
+  opts: { actorUserId?: string | null; reason?: string | null; acknowledgePaid?: boolean } = {}
+): Promise<SetBookingStatusResult> {
+  const supabase = createAdminClient()
+
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select('id, status, notes, google_calendar_event_id')
+    .eq('id', bookingId)
+    .maybeSingle()
+  if (error) throw new Error(`Booking lookup failed: ${error.message}`)
+  if (!booking) throw new BookingStatusError('Booking not found.', 'not_found')
+
+  const next: 'cancelled' | 'confirmed' = action === 'cancel' ? 'cancelled' : 'confirmed'
+
+  if (booking.status === next) {
+    throw new BookingStatusError(
+      action === 'cancel' ? 'That booking is already cancelled.' : 'That booking is already open.',
+      'invalid_transition'
+    )
+  }
+  // Reopen only makes sense from a closed-out or cancelled state.
+  if (
+    action === 'reopen' &&
+    !['completed', 'noshow', 'partial_noshow', 'cancelled'].includes(booking.status)
+  ) {
+    throw new BookingStatusError(
+      `A ${booking.status} booking is already open — nothing to reopen.`,
+      'invalid_transition'
+    )
+  }
+
+  // Money attached? Report it, and make cancelling it an explicit choice.
+  const { data: txns } = await supabase
+    .from('transactions')
+    .select('amount_cents')
+    .eq('booking_id', bookingId)
+    .is('soft_deleted_at', null)
+  const paidCents = (txns ?? []).reduce((sum, t) => sum + (t.amount_cents ?? 0), 0)
+
+  if (action === 'cancel' && paidCents > 0 && !opts.acknowledgePaid) {
+    throw new BookingStatusError(
+      `This booking has $${(paidCents / 100).toFixed(2)} recorded against it. Cancelling leaves that money on the books — refund it separately if it needs returning.`,
+      'paid',
+      paidCents
+    )
+  }
+
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+  const detail =
+    action === 'cancel'
+      ? `Cancelled (was ${booking.status}).`
+      : `Reopened to confirmed (was ${booking.status}). Any thank-you email or referral code already sent by the earlier close-out stands.`
+  const line = `[${stamp}] ${detail}${opts.reason ? ` Reason: ${opts.reason}` : ''}`
+  const notes = booking.notes ? `${booking.notes}\n${line}` : line
+
+  const { error: updateError } = await supabase
+    .from('bookings')
+    .update({ status: next, notes, updated_by_user_id: opts.actorUserId ?? null })
+    .eq('id', bookingId)
+  if (updateError) throw new Error(`Status update failed: ${updateError.message}`)
+
+  // Calendar is best-effort — the booking record is the source of truth and
+  // must not be held hostage to a Google outage.
+  if (action === 'cancel' && booking.google_calendar_event_id) {
+    try {
+      await deleteBookingCalendarEvent(booking.google_calendar_event_id)
+      await supabase
+        .from('bookings')
+        .update({ google_calendar_event_id: null })
+        .eq('id', bookingId)
+    } catch (err) {
+      console.error(`setBookingStatus: calendar delete failed for ${bookingId}:`, err)
+    }
+  }
+
+  return { bookingId, status: next, paidCents }
 }
