@@ -24,12 +24,17 @@
              the customer to tap and tip; letting it flip to landscape (or
              upside-down) mid-sale reflows the whole UI for no benefit.
              "portrait" is stricter than "sensorPortrait" — it also prevents the
-             180-degree flip when the device is turned over. -->
+             180-degree flip when the device is turned over.
+
+             uiMode is in configChanges because docking/undocking a Stripe
+             reader raises a configuration change: without it Android recreates
+             the activity, which would wipe a half-entered sale mid-transaction.
+             (Per Stripe's Apps on Devices "Working with device accessories".) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="portrait"
-            android:configChanges="orientation|screenSize|keyboardHidden">
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

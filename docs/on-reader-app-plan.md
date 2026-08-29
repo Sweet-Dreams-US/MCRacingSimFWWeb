@@ -102,10 +102,21 @@ Recommendation: device API key header for v1.
 
 ## Status
 - [x] Shared backend ready: `/api/admin/bookings/search`, `/api/admin/customers/search`, POS charge + webhook accounting.
-- [ ] Stripe "Apps on Devices" approval (owner/dev action — email Stripe).
-- [ ] DevKit reader acquired.
-- [ ] `POST /api/admin/pos/intent` + device auth.
-- [ ] Native Android app built + deployed.
+- [x] Stripe "Apps on Devices" approval — GRANTED.
+- [x] Device auth (`POS_DEVICE_KEY`) + the `/api/terminal/*` routes.
+- [x] Native Android app built + deployed — running on the shop's live S710.
+- [ ] **No DevKit.** The only reader is the live one in the shop, so there is no
+      safe place to test: a bad build takes the POS down during trading. Treat
+      every release as going straight to production.
+
+## Signing — read before building
+
+The APK on the reader was signed with a keystore that is **not in this repo and
+not on every dev machine** (it is gitignored). Android refuses to install an
+update to `com.mcracing.pos` signed with a different key, so a fresh keystore
+produces an APK that fails to deploy. Always build with the ORIGINAL keystore,
+and keep a backup of it plus its password — losing it means never being able to
+update this app again.
 
 Reference docs:
 - Overview: https://docs.stripe.com/terminal/features/apps-on-devices/overview
