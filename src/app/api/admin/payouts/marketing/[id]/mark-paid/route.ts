@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { computeMonthlyPayout, refreshMarketingPayout } from '@/lib/marketing-revenue'
 
 export const runtime = 'nodejs'
 
@@ -78,7 +79,9 @@ export async function POST(
   const admin = createAdminClient()
   const { data: calc, error: calcErr } = await admin
     .from('marketing_payout_calculations')
-    .select('id, period_year, period_month, computed_payout_cents, paid, paid_transaction_id')
+    .select(
+      'id, period_year, period_month, gross_revenue_cents, computed_payout_cents, paid, paid_transaction_id'
+    )
     .eq('id', id)
     .maybeSingle()
 
@@ -97,6 +100,49 @@ export async function POST(
       { status: 409 }
     )
   }
+  // ---- Freshness guard -----------------------------------------------------
+  // The stored figure is a SNAPSHOT from whenever someone last recalculated.
+  // September 2026 sat at a Sept-15 snapshot ($0 owed) after the month closed
+  // with about $136.79 owed — and marking that row paid would have settled the
+  // month at $0 for good, since the zero-payout path below writes no ledger
+  // entry. So never pay off a snapshot: re-read live revenue first, and if the
+  // payout has moved, refresh the row and make the owner look at the new number
+  // instead of silently paying a different amount than the one they confirmed.
+  let fresh
+  try {
+    fresh = await computeMonthlyPayout(admin, calc.period_year, calc.period_month)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json(
+      { error: `Couldn't verify current revenue, so nothing was paid: ${message}` },
+      { status: 500 }
+    )
+  }
+  const usd = (cents: number) =>
+    `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  if (fresh.payoutCents !== calc.computed_payout_cents) {
+    // Best-effort: even if this refresh loses a race, the 409 below still stops the payment.
+    await refreshMarketingPayout(admin, calc.period_year, calc.period_month).catch(() => null)
+    return NextResponse.json(
+      {
+        error:
+          `Revenue has changed since this payout was calculated. It is now ` +
+          `${usd(fresh.payoutCents)} (was ${usd(calc.computed_payout_cents)}). ` +
+          `The figure has been refreshed — review it, then press Mark as Paid again.`,
+        stale: true,
+        previous_payout_cents: calc.computed_payout_cents,
+        current_payout_cents: fresh.payoutCents,
+      },
+      { status: 409 }
+    )
+  }
+  if (fresh.grossCents !== calc.gross_revenue_cents) {
+    // Same payout, just more revenue inside the same band — keep the stored
+    // gross + breakdown honest before it's locked in by the payment.
+    await refreshMarketingPayout(admin, calc.period_year, calc.period_month).catch(() => null)
+  }
+
   if (calc.computed_payout_cents <= 0) {
     // The 0% band can produce a $0 payout for slow months — refuse to write
     // a $0 ledger entry. Mark the row paid directly instead so the UI

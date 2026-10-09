@@ -14,7 +14,7 @@
 // Never throws: returns a discriminated result so a missing migration or a
 // Supabase blip renders a friendly note instead of breaking the admin page.
 import { createAdminClient } from '../supabase/admin'
-import type { DatePreset } from './insights'
+import { presetWindow, type DatePreset } from './date-presets'
 
 export interface CampaignAttributionRow {
   campaign: string
@@ -36,22 +36,6 @@ export type CampaignAttributionResult =
       organicRevenueCents: number
     }
 
-/** Ads-page preset to lookback days. null = all time. */
-export function presetToDays(preset: DatePreset): number | null {
-  switch (preset) {
-    case 'today':
-      return 1
-    case 'last_7d':
-      return 7
-    case 'last_30d':
-      return 30
-    case 'last_90d':
-      return 90
-    case 'maximum':
-      return null
-  }
-}
-
 export async function getCampaignAttribution(
   preset: DatePreset
 ): Promise<CampaignAttributionResult> {
@@ -65,12 +49,11 @@ export async function getCampaignAttribution(
       .eq('source', 'online')
       .neq('status', 'pending') // everything past the card step
 
-    const days = presetToDays(preset)
-    if (days !== null) {
-      const since = new Date()
-      since.setUTCDate(since.getUTCDate() - days)
-      query = query.gte('created_at', since.toISOString())
-    }
+    // Same window the spend figures above it use — including real calendar
+    // months, whose upper bound is exclusive.
+    const { since, until } = presetWindow(preset)
+    if (since) query = query.gte('created_at', since.toISOString())
+    if (until) query = query.lt('created_at', until.toISOString())
 
     const { data, error } = await query
     if (error) {

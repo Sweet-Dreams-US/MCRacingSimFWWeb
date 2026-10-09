@@ -120,7 +120,7 @@ export const posts: BlogPost[] = [
 
       '<h2>Start Applying It Today</h2>' +
       '<p>Next time you sit in a simulator, focus on one thing: smooth transitions. Move gradually from braking to turning, from turning to accelerating. Keep the imaginary dot on the edge of the circle. Start with one corner and expand to the full lap as the technique becomes natural.</p>' +
-      '<p>Check out our <a href="/memberships">membership plans</a> for unlimited practice time, and visit us at <a href="/location">1205 W Main St in Fort Wayne</a> to start training with the right equipment.</p>' +
+      '<p>Check out our <a href="/memberships">membership plans</a> for regular practice time, and visit us at <a href="/location">1205 W Main St in Fort Wayne</a> to start training with the right equipment.</p>' +
       '<div class="blog-cta"><h3>Become a Member</h3><p>Members get priority booking and discounted rates. Perfect for serious racers working on their technique every week.</p><a href="/memberships" class="cta-button">Book Now</a></div>',
   },
   {

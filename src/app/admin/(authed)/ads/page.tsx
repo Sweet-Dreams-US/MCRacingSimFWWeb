@@ -28,6 +28,14 @@ function fmtInt(n: number): string {
   return n.toLocaleString('en-US')
 }
 
+/** "2026-09-01" + "2026-09-30" -> "Sep 1 – Sep 30, 2026". Parsed as plain dates (no timezone shift). */
+function fmtPeriod(start: string, end: string): string {
+  const d = (s: string) => new Date(`${s}T12:00:00`)
+  const md = (s: string) => d(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const year = d(end).getFullYear()
+  return start === end ? `${md(end)}, ${year}` : `${md(start)} – ${md(end)}, ${year}`
+}
+
 function StatCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
     <div className="card-dark p-6">
@@ -68,6 +76,30 @@ export default async function AdsPage({ searchParams }: PageProps) {
           <p className="telemetry-text text-xs text-pit-gray/70 uppercase tracking-wider mt-2">
             Showing only campaigns named with &ldquo;{campaignKeyword}&rdquo; (shared ad account)
           </p>
+          {result.status === 'ok' && (
+            <div className="telemetry-text text-xs mt-2 space-y-1">
+              {result.period && (
+                <p className="text-pit-gray">
+                  Period:{' '}
+                  <span className="text-grid-white">
+                    {fmtPeriod(result.period.start, result.period.end)}
+                  </span>
+                </p>
+              )}
+              {/* Shows WHICH ad account these numbers came from, so a wrong or
+                  closed account is obvious instead of just looking like "no spend". */}
+              {result.account && (
+                <p className={result.account.healthy ? 'text-pit-gray' : 'text-yellow-400'}>
+                  Ad account:{' '}
+                  <span className={result.account.healthy ? 'text-grid-white' : 'text-yellow-400'}>
+                    {result.account.name}
+                  </span>{' '}
+                  &middot; {result.account.statusLabel}
+                  {result.account.currency ? ` · ${result.account.currency}` : ''}
+                </p>
+              )}
+            </div>
+          )}
         </div>
         {/* Date-range switcher — plain links so it works without client JS. */}
         <div className="flex flex-wrap gap-2">
@@ -133,7 +165,11 @@ export default async function AdsPage({ searchParams }: PageProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <StatCard label="Spend" value={formatDollars(Math.round(result.summary.spend * 100))} />
                 <StatCard label="Impressions" value={fmtInt(result.summary.impressions)} />
-                <StatCard label="Reach" value={fmtInt(result.summary.reach)} />
+                <StatCard
+                  label="Reach"
+                  value={result.summary.reach === null ? '—' : fmtInt(result.summary.reach)}
+                  helper={result.summary.reach === null ? 'Meta did not return reach' : undefined}
+                />
                 <StatCard
                   label="Clicks"
                   value={fmtInt(result.summary.clicks)}

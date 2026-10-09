@@ -1,64 +1,24 @@
 // POST /api/admin/payouts/marketing/recalculate
 //
 // Sums gross revenue for a given month (defaults to current month, Eastern
-// time) and upserts a marketing_payout_calculations row with the resulting
-// Sweet Dreams payout. Owners and the Sweet Dreams role can both run this —
-// it's a pure read-and-store operation that doesn't create any money
-// transactions yet (that happens in /[id]/mark-paid).
+// time) and stores the resulting Sweet Dreams payout in
+// marketing_payout_calculations. Owners and the Sweet Dreams role can both run
+// this — it's a pure read-and-store operation that doesn't create any money
+// transactions (that happens in /[id]/mark-paid).
 //
 // Body (all optional): { year?: number, month?: number (1-12) }
 //
-// Gross revenue = SUM(amount_cents) WHERE
-//   type IN ('booking_income', 'no_show_fee', 'in_person_sale', 'other_income')
-//   AND occurred_on BETWEEN <start of month> AND <end of month>
-//   AND soft_deleted_at IS NULL
-//
-// We page through transactions in chunks of 1000 because Supabase's PostgREST
-// can't do server-side SUM unless we wrap it in an RPC, and the row count for
-// a single month will always be well under a few thousand.
+// The revenue sum and the refresh itself live in src/lib/marketing-revenue.ts,
+// shared with the daily refresh cron and the mark-paid guard. A month that has
+// already been paid is LOCKED and returns 409: its payout transaction is already
+// in the ledger, so rewriting the stored figure would put the record and the
+// books out of step.
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, AdminAuthError } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { calculateMarketingPayout } from '@/lib/payouts'
-import type { Database, Json } from '@/lib/supabase/types'
+import { easternYearMonth, refreshMarketingPayout } from '@/lib/marketing-revenue'
 
 export const runtime = 'nodejs'
-
-type TransactionType = Database['public']['Enums']['transaction_type']
-
-// Anything in this set counts toward gross monthly revenue for the payout calc.
-const REVENUE_TYPES: readonly TransactionType[] = [
-  'booking_income',
-  'no_show_fee',
-  'in_person_sale',
-  'other_income',
-] as const
-
-// Eastern time helper — Mark's books are kept on local Fort Wayne calendar
-// dates, so "current month" needs to be Eastern, not UTC. We use Intl rather
-// than a tz library because dropping a dependency wasn't part of the brief.
-function getEasternYearMonth(): { year: number; month: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: 'numeric',
-  }).formatToParts(new Date())
-  const year = Number(parts.find((p) => p.type === 'year')?.value)
-  const month = Number(parts.find((p) => p.type === 'month')?.value)
-  return { year, month }
-}
-
-// Build the inclusive YYYY-MM-DD date range for a given calendar month.
-// occurred_on is a DATE column (no tz), so string comparison works correctly.
-function monthDateRange(year: number, month: number): { start: string; end: string } {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const start = `${year}-${pad(month)}-01`
-  // Last day of the month — Date(year, month, 0) gives the last day of month-1
-  // when month is 1-indexed, which is exactly what we want here.
-  const lastDay = new Date(year, month, 0).getDate()
-  const end = `${year}-${pad(month)}-${pad(lastDay)}`
-  return { start, end }
-}
 
 export async function POST(request: NextRequest) {
   // ---- Auth gate (owner or sweet_dreams) ----------------------------------
@@ -89,7 +49,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (year === undefined || month === undefined) {
-    const now = getEasternYearMonth()
+    const now = easternYearMonth()
     year ??= now.year
     month ??= now.month
   }
@@ -101,81 +61,24 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ---- Sum gross revenue for the period ------------------------------------
+  // ---- Recompute from live transactions and store ---------------------------
   const admin = createAdminClient()
-  const { start, end } = monthDateRange(year, month)
-
-  // Page through transactions. We expect ~hundreds of rows per month at scale;
-  // 1000-row pages give us 10x headroom before this becomes a problem.
-  const PAGE_SIZE = 1000
-  let from = 0
-  let grossCents = 0
-  // Guard against runaway pagination if something goes very wrong with the
-  // range query. 50 pages × 1000 = 50K rows per month is a hard ceiling well
-  // beyond plausible volume.
-  for (let page = 0; page < 50; page++) {
-    const { data: rows, error: txErr } = await admin
-      .from('transactions')
-      .select('amount_cents')
-      .in('type', REVENUE_TYPES as unknown as TransactionType[])
-      .gte('occurred_on', start)
-      .lte('occurred_on', end)
-      .is('soft_deleted_at', null)
-      .range(from, from + PAGE_SIZE - 1)
-
-    if (txErr) {
-      return NextResponse.json(
-        { error: `Failed to read transactions: ${txErr.message}` },
-        { status: 500 }
-      )
-    }
-    if (!rows || rows.length === 0) break
-
-    for (const row of rows) {
-      grossCents += row.amount_cents
-    }
-
-    if (rows.length < PAGE_SIZE) break
-    from += PAGE_SIZE
-  }
-
-  // ---- Run the calculator --------------------------------------------------
-  // The calculator throws if it gets a non-integer or negative. In practice
-  // amount_cents is always a positive integer in the DB, but we belt-and-
-  // suspenders this so a corrupt row surfaces as a 500 rather than a crash.
-  let payoutResult
+  let outcome
   try {
-    payoutResult = calculateMarketingPayout(grossCents)
+    outcome = await refreshMarketingPayout(admin, year, month)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json(
-      { error: `Calculator rejected gross revenue: ${message}` },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 
-  // ---- Upsert the calculation row ------------------------------------------
-  // There's a unique (period_year, period_month) constraint on the table so
-  // we can let Postgres handle the merge. We re-write calculated_at on every
-  // recalc — the displayed timestamp should always reflect the latest run.
-  const { error: upsertErr } = await admin
-    .from('marketing_payout_calculations')
-    .upsert(
-      {
-        period_year: year,
-        period_month: month,
-        gross_revenue_cents: grossCents,
-        computed_payout_cents: payoutResult.payoutCents,
-        bracket_breakdown: payoutResult.breakdown as unknown as Json,
-        calculated_at: new Date().toISOString(),
-      },
-      { onConflict: 'period_year,period_month' }
-    )
-
-  if (upsertErr) {
+  if (outcome.status === 'skipped_paid') {
     return NextResponse.json(
-      { error: `Failed to save calculation: ${upsertErr.message}` },
-      { status: 500 }
+      {
+        error:
+          'That month has already been paid, so its figure is locked. ' +
+          'The payout transaction is already in the ledger.',
+      },
+      { status: 409 }
     )
   }
 
@@ -183,8 +86,9 @@ export async function POST(request: NextRequest) {
     success: true,
     period_year: year,
     period_month: month,
-    gross_revenue_cents: grossCents,
-    computed_payout_cents: payoutResult.payoutCents,
-    breakdown: payoutResult.breakdown,
+    gross_revenue_cents: outcome.figures.grossCents,
+    computed_payout_cents: outcome.figures.payoutCents,
+    breakdown: outcome.figures.breakdown,
+    changed: outcome.changed,
   })
 }

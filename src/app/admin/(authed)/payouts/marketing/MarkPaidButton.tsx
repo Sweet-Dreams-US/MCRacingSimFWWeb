@@ -49,7 +49,14 @@ export default function MarkPaidButton({
         { method: 'POST' }
       )
       if (!res.ok) {
-        const payload = (await res.json().catch(() => ({}))) as { error?: string }
+        const payload = (await res.json().catch(() => ({}))) as { error?: string; stale?: boolean }
+        // The server refreshed the stored figure when it refused (stale). Reload
+        // so the corrected amount is on screen before they try again.
+        if (payload.stale) {
+          startTransition(() => {
+            router.refresh()
+          })
+        }
         throw new Error(payload.error ?? `Request failed (${res.status})`)
       }
       startTransition(() => {
