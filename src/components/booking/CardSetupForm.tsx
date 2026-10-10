@@ -7,6 +7,9 @@
 // directly to Stripe via its iframe.
 //
 // On submit:
+//   0. /api/booking/seat-check — whoever's card saves first gets the seats. If
+//      another booking confirmed into this slot while this customer was
+//      typing, stop here: the card is never saved and they pick a new time.
 //   1. stripe.confirmSetup() — saves the card to the customer + fires the
 //      setup_intent.succeeded webhook server-side (which sets
 //      bookings.stripe_payment_method_id).
@@ -43,6 +46,7 @@ export default function CardSetupForm({
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [slotTaken, setSlotTaken] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,6 +58,26 @@ export default function CardSetupForm({
     }
 
     setSubmitting(true)
+
+    // Is the slot still free? Only a definite "no" stops the card. If the check
+    // itself can't run, let the card through: the database re-checks when the
+    // card lands and turns away a booking that no longer fits.
+    try {
+      const res = await fetch('/api/booking/seat-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId }),
+      })
+      if (res.status === 409 || res.status === 404) {
+        const data = (await res.json().catch(() => null)) as { error?: string; reason?: string } | null
+        if (data?.reason === 'full') setSlotTaken(true)
+        setError(data?.error ?? 'That time is no longer available. Please pick another time.')
+        setSubmitting(false)
+        return
+      }
+    } catch {
+      // Network hiccup — fall through to Stripe; the server-side gate still applies.
+    }
 
     // Build the redirect URL ahead of time so we don't need to recompute it
     // in the success path.
@@ -122,6 +146,14 @@ export default function CardSetupForm({
       {error && (
         <div className="bg-apex-red/10 border border-apex-red p-4">
           <p className="telemetry-text text-sm text-apex-red">{error}</p>
+          {slotTaken && (
+            <a
+              href="/book"
+              className="inline-block mt-3 px-4 py-2 bg-apex-red text-white racing-headline text-sm hover:bg-apex-red/90 transition-colors"
+            >
+              Pick Another Time
+            </a>
+          )}
         </div>
       )}
 
@@ -142,7 +174,7 @@ export default function CardSetupForm({
 
       <button
         type="submit"
-        disabled={!stripe || submitting}
+        disabled={!stripe || submitting || slotTaken}
         className="w-full px-8 py-4 bg-apex-red text-white racing-headline text-xl hover:bg-apex-red/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {submitting ? (

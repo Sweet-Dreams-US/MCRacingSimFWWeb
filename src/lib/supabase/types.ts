@@ -1240,7 +1240,10 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      confirm_booking_if_seats_free: {
+        Args: { p_booking_id: string; p_capacity: number }
+        Returns: string
+      }
     }
     Enums: {
       admin_role: "owner" | "staff" | "sweet_dreams" | "readonly"

@@ -1117,3 +1117,59 @@ export function incompleteBookingReminderEmail(
     html: layout(inner, `You're almost booked in — finish saving your card to lock in your session.`),
   }
 }
+
+// ===========================================================================
+// Slot filled while the customer was saving their card.
+// Two customers can check out for the same time at once; whoever's card saves
+// first gets the seats (see confirm_booking_if_seats_free). The other booking
+// is cancelled and these two emails go out — nothing is charged.
+// ===========================================================================
+
+export interface SlotFilledEmailParams {
+  bookingId: string
+  customerName: string
+  customerEmail?: string | null
+  customerPhone?: string | null
+  sessionDate: string
+  startTime: string
+  racerCount: number
+}
+
+export function slotFilledCustomerEmail(
+  params: SlotFilledEmailParams
+): { subject: string; html: string } {
+  const { customerName, sessionDate, startTime, racerCount } = params
+  const when = `${formatDateLong(sessionDate)} at ${formatTimeDisplay(startTime)}`
+  const subject = `That time just filled up — ${formatDateLong(sessionDate)} ${formatTimeDisplay(startTime)}`
+
+  const inner = `
+    ${h1('That time just filled up')}
+    ${p(`Sorry${customerName ? `, ${escapeHtml(customerName)}` : ''}. Another group finished booking ${escapeHtml(when)} a moment before you did, so there aren't enough rigs left for ${racerCount} racer${racerCount === 1 ? '' : 's'}.`)}
+    ${noticeBox('You have not been charged', 'Your booking was not confirmed and nothing will be charged to your card.')}
+    ${p(`Pick another time at <a href="https://www.mcracingfortwayne.com/book" style="color:${COLOR.telemetryCyan};text-decoration:none;">mcracingfortwayne.com/book</a>, or call <a href="tel:+18082202600" style="color:${COLOR.telemetryCyan};text-decoration:none;">(808) 220-2600</a> and we'll find you a spot.`)}
+  `
+  return { subject, html: layout(inner, `${when} filled up before your booking went through. You were not charged.`) }
+}
+
+export function slotFilledOwnerEmail(
+  params: SlotFilledEmailParams
+): { subject: string; html: string } {
+  const { bookingId, customerName, customerEmail, customerPhone, sessionDate, startTime, racerCount } = params
+  const subject = `[Slot Filled] ${customerName} — ${formatDateLong(sessionDate)} ${formatTimeDisplay(startTime)} (${bookingId})`
+
+  const inner = `
+    ${bookingIdBadge(bookingId)}
+    ${h1('Booking turned away: slot filled')}
+    ${p('Two customers were checking out for the same time. The other card saved first, so this booking was cancelled automatically and the customer was emailed. Nothing was charged. No double booking.')}
+    ${detailsCard([
+      ['Date', escapeHtml(formatDateLong(sessionDate))],
+      ['Start', escapeHtml(formatTimeDisplay(startTime))],
+      ['Racers', `${racerCount}`],
+      ['Name', escapeHtml(customerName)],
+      ['Email', customerEmail ? escapeHtml(customerEmail) : '&mdash;'],
+      ['Phone', customerPhone ? `<a href="tel:${escapeHtml(customerPhone)}" style="color:${COLOR.telemetryCyan};text-decoration:none;">${escapeHtml(customerPhone)}</a>` : '&mdash;'],
+    ])}
+    ${p('You may want to call them and offer another time.')}
+  `
+  return { subject, html: layout(inner, `${customerName} lost ${formatDateLong(sessionDate)} ${formatTimeDisplay(startTime)} to another booking.`) }
+}

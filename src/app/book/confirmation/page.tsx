@@ -88,6 +88,12 @@ export default async function ConfirmationPage({ searchParams }: PageProps) {
     return <GenericSuccess />
   }
 
+  // A cancelled booking must never show "Confirmed!" — most commonly the slot
+  // filled because another customer's card saved first (refresh / email link).
+  if (booking.status === 'cancelled') {
+    return <NoLongerAvailable />
+  }
+
   const customer = Array.isArray(booking.customer)
     ? (booking.customer[0] ?? null)
     : booking.customer
@@ -324,6 +330,36 @@ function GenericSuccess() {
         <Link href="/" className="btn-primary inline-block">
           Back to Home
         </Link>
+      </div>
+    </main>
+  )
+}
+
+function NoLongerAvailable() {
+  return (
+    <main className="min-h-screen bg-asphalt pt-24 pb-16 px-4">
+      <div className="max-w-2xl mx-auto text-center">
+        <h1 className="racing-headline text-4xl md:text-5xl text-grid-white mb-4">
+          Time No Longer <span className="text-apex-red">Available</span>
+        </h1>
+        <p className="telemetry-text text-pit-gray mb-8">
+          This booking isn&apos;t active. If another group booked this time just before you,
+          you have not been charged. Pick another time or give us a call.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            href="/book"
+            className="px-8 py-4 bg-apex-red text-white racing-headline text-lg hover:bg-apex-red/90 transition-colors"
+          >
+            Pick Another Time
+          </Link>
+          <a
+            href="tel:+18082202600"
+            className="px-8 py-4 border border-white/20 text-grid-white racing-headline text-lg hover:border-telemetry-cyan transition-colors"
+          >
+            Call (808) 220-2600
+          </a>
+        </div>
       </div>
     </main>
   )

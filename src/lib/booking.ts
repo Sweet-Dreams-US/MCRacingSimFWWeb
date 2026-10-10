@@ -52,6 +52,8 @@ import {
   ownerNewBookingEmail,
   sessionThankYouEmail,
   firstTimerThankYouEmail,
+  slotFilledCustomerEmail,
+  slotFilledOwnerEmail,
 } from './emails/templates'
 
 // ---------------------------------------------------------------------------
@@ -268,6 +270,162 @@ async function assertSeatsAvailable(
       'That time is fully booked for the number of racers you selected — please pick a different time, fewer racers, or call the venue.'
     )
   }
+}
+
+/** Message shown when another customer's card saved first. */
+export const SLOT_TAKEN_MESSAGE =
+  "Sorry — someone just booked that time and there aren't enough rigs left. " +
+  'Your card was not saved and you have not been charged. Please pick another time, or call (808) 220-2600.'
+
+export type SeatCheckResult =
+  | { ok: true }
+  | { ok: false; reason: 'full' | 'not_found' | 'not_pending'; message: string }
+
+/**
+ * Called by the card form the instant the customer presses "Save Card", BEFORE
+ * the card goes to Stripe. Whoever's card saves first gets the seats, so if
+ * another booking confirmed while this customer was typing, we stop them here
+ * and their card is never saved. Read-only: the race-proof decision happens in
+ * confirm_booking_if_seats_free when the card actually lands.
+ */
+export async function checkSeatsBeforeCardSave(bookingId: string): Promise<SeatCheckResult> {
+  const supabase = createAdminClient()
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select('id, status, source, session_date, start_time, duration_hours, racer_count')
+    .eq('id', bookingId)
+    .maybeSingle()
+  if (error) throw new Error(`Seat check failed: ${error.message}`)
+  if (!booking) {
+    return { ok: false, reason: 'not_found', message: 'We could not find this booking. Please start again.' }
+  }
+  if (booking.status !== 'pending') {
+    return {
+      ok: false,
+      reason: 'not_pending',
+      message:
+        booking.status === 'confirmed'
+          ? 'This booking is already confirmed.'
+          : 'This booking is no longer active. Please start a new booking.',
+    }
+  }
+  // Staff-created bookings may overbook on purpose (same rule as creation).
+  if (booking.source !== 'online') return { ok: true }
+
+  try {
+    await assertSeatsAvailable(
+      supabase,
+      booking.session_date,
+      toHHMM(booking.start_time),
+      booking.duration_hours,
+      booking.racer_count,
+      booking.id
+    )
+  } catch (err) {
+    if (err instanceof AvailabilityBlockedError) {
+      return { ok: false, reason: 'full', message: SLOT_TAKEN_MESSAGE }
+    }
+    throw err
+  }
+  return { ok: true }
+}
+
+type ConfirmOutcome = 'confirmed' | 'full' | 'not_pending' | 'not_found'
+
+/**
+ * Re-check seats and flip pending -> confirmed in one database transaction,
+ * serialized per session date, so two cards saved in the same instant can't
+ * both get the last rigs. See supabase/migrations/019_atomic_seat_confirm.sql.
+ *
+ * If the database function itself errors we fall back to the old plain flip:
+ * a broken gate must never stop real customers' bookings from confirming.
+ */
+async function confirmIfSeatsFree(
+  supabase: ReturnType<typeof createAdminClient>,
+  bookingId: string
+): Promise<ConfirmOutcome> {
+  const { data, error } = await supabase.rpc('confirm_booking_if_seats_free', {
+    p_booking_id: bookingId,
+    p_capacity: seatCapacity(),
+  })
+  if (!error && (data === 'confirmed' || data === 'full' || data === 'not_pending' || data === 'not_found')) {
+    return data
+  }
+  console.error(
+    `confirm_booking_if_seats_free failed for ${bookingId} (${error?.message ?? `unexpected result ${String(data)}`}); falling back to plain confirm`
+  )
+  const { data: flipped } = await supabase
+    .from('bookings')
+    .update({ status: 'confirmed' })
+    .eq('id', bookingId)
+    .eq('status', 'pending')
+    .select('id')
+  return Array.isArray(flipped) && flipped.length > 0 ? 'confirmed' : 'not_pending'
+}
+
+/**
+ * The other customer's card saved first. Cancel this booking (nothing has been
+ * charged — saving a card charges $0) and tell the customer and the owner.
+ */
+async function cancelBecauseSlotFilled(
+  supabase: ReturnType<typeof createAdminClient>,
+  booking: {
+    id: string
+    session_date: string
+    start_time: string
+    racer_count: number
+    customer_id: string | null
+  },
+  customer: { first_name: string | null; last_name: string | null; email: string | null; phone: string | null } | null
+): Promise<void> {
+  const { data: existing } = await supabase.from('bookings').select('notes').eq('id', booking.id).maybeSingle()
+  const note = `Auto-cancelled ${new Date().toISOString()}: another booking's card saved first and filled the slot. Not charged.`
+  const { data: cancelled } = await supabase
+    .from('bookings')
+    .update({ status: 'cancelled', notes: existing?.notes ? `${existing.notes}\n${note}` : note })
+    .eq('id', booking.id)
+    .eq('status', 'pending')
+    .select('id')
+  // Someone else already moved it on (e.g. staff confirmed it by hand) — leave it.
+  if (!Array.isArray(cancelled) || cancelled.length === 0) return
+
+  const customerName = customer ? `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim() : ''
+  const params = {
+    bookingId: booking.id,
+    customerName: customerName || 'Customer',
+    customerEmail: customer?.email ?? null,
+    customerPhone: customer?.phone ?? null,
+    sessionDate: booking.session_date,
+    startTime: booking.start_time,
+    racerCount: booking.racer_count,
+  }
+
+  const sends: Array<Promise<unknown>> = []
+  if (customer?.email) {
+    const c = slotFilledCustomerEmail({ ...params, customerName: customer.first_name ?? '' })
+    sends.push(
+      sendEmail({
+        to: customer.email,
+        subject: c.subject,
+        html: c.html,
+        template: 'booking_slot_filled',
+        relatedBookingId: booking.id,
+        relatedCustomerId: booking.customer_id,
+      })
+    )
+  }
+  const o = slotFilledOwnerEmail(params)
+  sends.push(
+    sendEmail({
+      to: getOwnerNotificationEmail(),
+      subject: o.subject,
+      html: o.html,
+      template: 'owner_booking_slot_filled',
+      relatedBookingId: booking.id,
+      relatedCustomerId: booking.customer_id,
+    })
+  )
+  await Promise.all(sends) // sendEmail never throws
 }
 
 /**
@@ -623,13 +781,16 @@ export async function finalizeConfirmedBooking(bookingId: string): Promise<void>
   // partially fails. The conditional update + returned row tells us whether THIS
   // call won the pending→confirmed race — only the winner records the discount
   // redemption, so a re-fired webhook can never double-count a code's usage.
-  const { data: flipped } = await supabase
-    .from('bookings')
-    .update({ status: 'confirmed' })
-    .eq('id', bookingId)
-    .eq('status', 'pending')
-    .select('id')
-  const wonConfirmRace = Array.isArray(flipped) && flipped.length > 0
+  //
+  // The flip also re-checks seats atomically: if another booking's card saved
+  // first and filled the slot, this one is cancelled instead of confirmed.
+  const outcome = await confirmIfSeatsFree(supabase, bookingId)
+  if (outcome === 'full') {
+    const c = Array.isArray(booking.customer) ? (booking.customer[0] ?? null) : booking.customer
+    await cancelBecauseSlotFilled(supabase, booking, c)
+    return
+  }
+  const wonConfirmRace = outcome === 'confirmed'
 
   // Record the discount redemption now that the booking is real (card on file).
   // Deferred to here (not createBooking) so an abandoned pending booking never
