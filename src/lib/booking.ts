@@ -30,6 +30,7 @@ import {
 import {
   isSlotBlocked,
   seatsAvailableFor,
+  toExtendedMinutes,
   DEFAULT_SEAT_CAPACITY,
   type SeatBooking,
 } from './availability'
@@ -184,12 +185,44 @@ function isRealCalendarDate(ymd: string): boolean {
   )
 }
 
+/** A booking holding seats during a requested window. Staff-facing only — never sent to customers. */
+export interface SeatConflict {
+  bookingId: string
+  /** Customer first name + last initial, or "Walk-in / hold" for a bare slot block. */
+  name: string
+  startTime: string // "HH:MM"
+  endTime: string // "HH:MM"
+  racerCount: number
+}
+
 /** Thrown when the requested slot falls inside an admin availability block. Routes map it to 400. */
 export class AvailabilityBlockedError extends Error {
-  constructor(message: string) {
+  /** Set when the slot is full: the bookings in the way. */
+  conflicts?: SeatConflict[]
+  constructor(message: string, conflicts?: SeatConflict[]) {
     super(message)
     this.name = 'AvailabilityBlockedError'
+    this.conflicts = conflicts
   }
+}
+
+/** "23:30" -> "11:30pm", "01:00" -> "1am". */
+function formatClock(time: string): string {
+  const [hStr = '0', mStr = '00'] = time.split(':')
+  const h = Number(hStr)
+  const suffix = h >= 12 ? 'pm' : 'am'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}${mStr === '00' ? '' : `:${mStr}`}${suffix}`
+}
+
+/** "Full: Bryce R. (3 racers, 11:30pm–1:30am)" — for the staff booking form. */
+export function describeSeatConflicts(conflicts: SeatConflict[]): string {
+  return conflicts
+    .map(
+      (c) =>
+        `${c.name} (${c.racerCount} racer${c.racerCount === 1 ? '' : 's'}, ${formatClock(c.startTime)}–${formatClock(c.endTime)})`
+    )
+    .join(', ')
 }
 
 /**
@@ -251,23 +284,45 @@ async function assertSeatsAvailable(
   // are inserted 'confirmed', so they DO still block, as intended.
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, start_time, duration_hours, racer_count, status')
+    .select('id, start_time, end_time, duration_hours, racer_count, status, customer:customers(first_name, last_name)')
     .eq('session_date', sessionDate)
     .in('status', ['confirmed', 'completed', 'partial_noshow'])
   if (error) {
     throw new Error(`Seat availability check failed: ${error.message}`)
   }
-  const existing: SeatBooking[] = (data ?? [])
-    .filter((b) => b.id !== excludeBookingId)
-    .map((b) => ({
-      startTime: b.start_time,
-      durationHours: b.duration_hours,
-      racerCount: b.racer_count,
-    }))
+  const rows = (data ?? []).filter((b) => b.id !== excludeBookingId)
+  const existing: SeatBooking[] = rows.map((b) => ({
+    startTime: b.start_time,
+    durationHours: b.duration_hours,
+    racerCount: b.racer_count,
+  }))
 
   if (!seatsAvailableFor(existing, startTime, durationHours, racerCount, seatCapacity())) {
+    // Which bookings overlap the requested window — so staff can see WHY it's
+    // full. The customer-facing message stays generic (no other names).
+    const candStart = toExtendedMinutes(startTime)
+    const candEnd = candStart + durationHours * 60
+    const conflicts: SeatConflict[] = rows
+      .filter((b) => {
+        const s = toExtendedMinutes(b.start_time)
+        return s < candEnd && candStart < s + b.duration_hours * 60
+      })
+      .sort((a, b) => toExtendedMinutes(a.start_time) - toExtendedMinutes(b.start_time))
+      .map((b) => {
+        const c = Array.isArray(b.customer) ? b.customer[0] : b.customer
+        const first = c?.first_name?.trim() ?? ''
+        const lastInitial = c?.last_name?.trim()?.[0]
+        return {
+          bookingId: b.id,
+          name: first ? `${first}${lastInitial ? ` ${lastInitial}.` : ''}` : 'Walk-in / hold',
+          startTime: toHHMM(b.start_time),
+          endTime: toHHMM(b.end_time),
+          racerCount: b.racer_count,
+        }
+      })
     throw new AvailabilityBlockedError(
-      'That time is fully booked for the number of racers you selected — please pick a different time, fewer racers, or call the venue.'
+      'That time is fully booked for the number of racers you selected — please pick a different time, fewer racers, or call the venue.',
+      conflicts
     )
   }
 }
@@ -1287,10 +1342,12 @@ export async function createInviteBooking(
       )
     } catch (err) {
       if (err instanceof AvailabilityBlockedError) {
+        const who = err.conflicts?.length ? ` Already booked: ${describeSeatConflicts(err.conflicts)}.` : ''
         throw new AvailabilityBlockedError(
           `That time is already full — ${input.racerCount} racer${
             input.racerCount > 1 ? 's' : ''
-          } won't fit alongside the bookings already on the 3 sims. Pick another time or fewer racers.`
+          } won't fit on the 3 sims.${who} Pick another time, fewer racers, or book it anyway.`,
+          err.conflicts
         )
       }
       throw err

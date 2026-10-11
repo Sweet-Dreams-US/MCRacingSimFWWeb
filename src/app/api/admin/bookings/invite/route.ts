@@ -24,6 +24,8 @@ interface InviteBody {
   price?: number | string
   // false = put it on the books without emailing the customer.
   sendCustomerEmail?: boolean
+  // true = staff pressed "Book anyway" on a full slot: skip the seat check.
+  allowOverbook?: boolean
 }
 
 /** "45", "45.50", 45 → cents. Returns undefined for blank/invalid. */
@@ -131,6 +133,7 @@ export async function POST(request: NextRequest) {
       requireCard: body.requireCard === true,
       priceCents: asPriceCents(body.price),
       sendCustomerEmail: body.sendCustomerEmail !== false,
+      allowOverbook: body.allowOverbook === true,
     })
     return NextResponse.json({
       success: true,
@@ -142,8 +145,16 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     // A full slot is a user-actionable 400, not a server error.
     const status = err instanceof AvailabilityBlockedError ? 400 : 500
+    // `full` + `conflicts` let the form show who's in the way and offer
+    // "Book anyway". Only the seat check sets conflicts (not blocked-off time,
+    // which can never be overridden).
+    const conflicts = err instanceof AvailabilityBlockedError ? err.conflicts : undefined
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Invite failed' },
+      {
+        success: false,
+        error: err instanceof Error ? err.message : 'Invite failed',
+        ...(conflicts ? { full: true, conflicts } : {}),
+      },
       { status }
     )
   }

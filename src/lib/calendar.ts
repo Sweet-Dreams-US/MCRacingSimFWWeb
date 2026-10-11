@@ -19,7 +19,7 @@
 // See SETUP_GOOGLE_CALENDAR.md in the project root for the one-time setup.
 
 import { google, type calendar_v3 } from 'googleapis'
-import { addHoursToTime } from './time'
+import { bookingWallClockWindow } from './time'
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -158,13 +158,20 @@ function toCalendarDateTime(
 }
 
 /**
- * Add `hours` to "HH:MM" wall-clock, wrapping past midnight.
- * Now a thin alias over the shared helper in src/lib/time.ts — this used to be
- * a hand-copied duplicate of booking.ts's version, and both carried the same
- * whole-hour bug that broke half-hour sessions.
+ * Start + end for a booking event on their REAL dates. Sessions crossing
+ * midnight end the next day, and post-midnight starts belong to the next day
+ * (see bookingWallClockWindow). Every booking event goes through here.
  */
-function addHours(time: string, hours: number): string {
-  return addHoursToTime(time, hours)
+function bookingEventTimes(
+  sessionDate: string,
+  startTime: string,
+  durationHours: number
+): { start: calendar_v3.Schema$EventDateTime; end: calendar_v3.Schema$EventDateTime } {
+  const w = bookingWallClockWindow(sessionDate, startTime, durationHours)
+  return {
+    start: toCalendarDateTime(w.startDate, w.startTime),
+    end: toCalendarDateTime(w.endDate, w.endTime),
+  }
 }
 
 function formatMoney(cents: number): string {
@@ -225,14 +232,12 @@ export async function createBookingCalendarEvent(
   const calendar = getCalendarClient()
   if (!calendar) return null
 
-  const endTime = addHours(input.startTime, input.durationHours)
   const source = input.source ?? 'online'
 
   const event: calendar_v3.Schema$Event = {
     summary: buildSummary(input),
     description: buildDescription(input),
-    start: toCalendarDateTime(input.sessionDate, input.startTime),
-    end: toCalendarDateTime(input.sessionDate, endTime),
+    ...bookingEventTimes(input.sessionDate, input.startTime, input.durationHours),
     colorId: COLOR_BY_SOURCE[source] ?? DEFAULT_COLOR,
     // Reminders help Mark stay on top of his schedule without needing to
     // open the app — the email gives him a day to prep, the popup is a
@@ -359,9 +364,9 @@ export async function updateBookingCalendarEvent(
         'updateBookingCalendarEvent: sessionDate, startTime, and durationHours must be passed together'
       )
     }
-    const endTime = addHours(updates.startTime, updates.durationHours)
-    patch.start = toCalendarDateTime(updates.sessionDate, updates.startTime)
-    patch.end = toCalendarDateTime(updates.sessionDate, endTime)
+    const times = bookingEventTimes(updates.sessionDate, updates.startTime, updates.durationHours)
+    patch.start = times.start
+    patch.end = times.end
   }
 
   await calendar.events.patch({
@@ -390,7 +395,6 @@ export async function resyncBookingCalendarEvent(
   const calendar = getCalendarClient()
   if (!calendar) return false
 
-  const endTime = addHours(input.startTime, input.durationHours)
   const source = input.source ?? 'online'
 
   await calendar.events.patch({
@@ -399,8 +403,7 @@ export async function resyncBookingCalendarEvent(
     requestBody: {
       summary: buildSummary(input),
       description: buildDescription(input),
-      start: toCalendarDateTime(input.sessionDate, input.startTime),
-      end: toCalendarDateTime(input.sessionDate, endTime),
+      ...bookingEventTimes(input.sessionDate, input.startTime, input.durationHours),
       colorId: COLOR_BY_SOURCE[source] ?? DEFAULT_COLOR,
     },
   })
@@ -440,4 +443,71 @@ export async function deleteBookingCalendarEvent(
     }
     throw err
   }
+}
+
+export type EnsureEventOutcome =
+  | { action: 'ok'; eventId: string }
+  | { action: 'created'; eventId: string; reason: 'missing' | 'deleted_in_calendar' }
+  | { action: 'retimed'; eventId: string }
+  | { action: 'skipped'; reason: 'calendar_not_configured' }
+
+/**
+ * Make sure a booking has a calendar event with the right times. Used by the
+ * 15-minute sync job so a failed insert (or an event deleted by hand in Google
+ * Calendar) is repaired automatically instead of silently missing forever.
+ *
+ * Only the TIMES are corrected on an existing event — summary/description are
+ * left alone so notes typed into the event in Google Calendar survive.
+ * THROWS on real API errors; the caller records them per booking.
+ */
+export async function ensureBookingCalendarEvent(
+  existingEventId: string | null,
+  input: CreateBookingCalendarEventInput
+): Promise<EnsureEventOutcome> {
+  const calendar = getCalendarClient()
+  if (!calendar) return { action: 'skipped', reason: 'calendar_not_configured' }
+
+  if (!existingEventId) {
+    const id = await createBookingCalendarEvent(input)
+    if (!id) throw new Error('Calendar insert returned no event id')
+    return { action: 'created', eventId: id, reason: 'missing' }
+  }
+
+  let current: calendar_v3.Schema$Event | null = null
+  try {
+    const res = await calendar.events.get({
+      calendarId: getCalendarId(),
+      eventId: existingEventId,
+      // Return times in venue local time so they compare against ours.
+      timeZone: CALENDAR_TIMEZONE,
+    })
+    current = res.data
+  } catch (err: unknown) {
+    const status =
+      typeof err === 'object' && err !== null && 'code' in err ? (err as { code?: number }).code : undefined
+    if (status !== 404 && status !== 410) throw err
+  }
+
+  if (!current || current.status === 'cancelled') {
+    const id = await createBookingCalendarEvent(input)
+    if (!id) throw new Error('Calendar insert returned no event id')
+    return { action: 'created', eventId: id, reason: 'deleted_in_calendar' }
+  }
+
+  const want = bookingEventTimes(input.sessionDate, input.startTime, input.durationHours)
+  // "YYYY-MM-DDTHH:MM" — Google returns e.g. "2026-10-10T23:30:00-04:00".
+  const minute = (dt: string | null | undefined) => (dt ?? '').slice(0, 16)
+  if (
+    minute(current.start?.dateTime) === minute(want.start.dateTime) &&
+    minute(current.end?.dateTime) === minute(want.end.dateTime)
+  ) {
+    return { action: 'ok', eventId: existingEventId }
+  }
+
+  await calendar.events.patch({
+    calendarId: getCalendarId(),
+    eventId: existingEventId,
+    requestBody: { start: want.start, end: want.end },
+  })
+  return { action: 'retimed', eventId: existingEventId }
 }

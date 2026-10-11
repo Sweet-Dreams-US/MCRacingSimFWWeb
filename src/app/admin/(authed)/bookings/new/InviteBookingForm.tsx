@@ -166,6 +166,14 @@ export default function InviteBookingForm() {
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set when the server said the slot is full — offers "Book anyway".
+  const [slotFull, setSlotFull] = useState(false)
+  // "Book anyway" applies only to the slot that was just refused. Change the
+  // date, time, length or racers and it disappears, so it can never skip the
+  // seat check for a slot nobody looked at.
+  useEffect(() => {
+    setSlotFull(false)
+  }, [sessionDate, startTime, durationHours, racerCount])
   const [result, setResult] = useState<{
     bookingId: string
     requireCard: boolean
@@ -182,8 +190,9 @@ export default function InviteBookingForm() {
   // No email = a bare slot block: no customer, nothing to send.
   const hasEmail = email.trim().length > 0
 
-  async function submit() {
+  async function submit(allowOverbook = false) {
     setError(null)
+    setSlotFull(false)
     if (hasEmail && !email.includes('@')) {
       setError('That email address is not valid.')
       return
@@ -214,10 +223,14 @@ export default function InviteBookingForm() {
           requireCard,
           price: price.trim() || undefined,
           sendCustomerEmail,
+          allowOverbook,
         }),
       })
       const data = await res.json()
-      if (!res.ok || !data.success) throw new Error(data.error || 'Invite failed')
+      if (!res.ok || !data.success) {
+        if (data.full) setSlotFull(true)
+        throw new Error(data.error || 'Invite failed')
+      }
       // Booking is on the books — the draft has served its purpose.
       draft.clear()
       setDraftRestored(false)
@@ -522,16 +535,32 @@ export default function InviteBookingForm() {
       {error && (
         <div className="bg-apex-red/10 border border-apex-red/30 p-3">
           <p className="telemetry-text text-sm text-apex-red">{error}</p>
-          <p className="telemetry-text text-xs text-apex-red/80 mt-1.5">
-            If this keeps happening, block the time so the slot isn&apos;t
-            double-booked, and take the details by phone — (808) 220-2600.
-          </p>
+          {slotFull ? (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => submit(true)}
+                disabled={submitting}
+                className="racing-headline text-xs uppercase tracking-wider border border-apex-red text-apex-red hover:bg-apex-red hover:text-grid-white disabled:opacity-50 px-4 py-2 transition-colors"
+              >
+                {submitting ? 'Booking…' : 'Book anyway (overbook)'}
+              </button>
+              <p className="telemetry-text text-xs text-apex-red/80 mt-1.5">
+                Only if you know it works — e.g. the group shares sims or someone is leaving early.
+              </p>
+            </div>
+          ) : (
+            <p className="telemetry-text text-xs text-apex-red/80 mt-1.5">
+              If this keeps happening, block the time so the slot isn&apos;t
+              double-booked, and take the details by phone — (808) 220-2600.
+            </p>
+          )}
         </div>
       )}
 
       <button
         type="button"
-        onClick={submit}
+        onClick={() => submit()}
         disabled={submitting}
         className="racing-headline text-sm uppercase tracking-wider bg-apex-red hover:bg-apex-red-dark disabled:opacity-50 text-grid-white px-6 py-3 transition-colors"
       >

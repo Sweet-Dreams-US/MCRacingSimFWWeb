@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/refresh-marketing-payouts",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/sync-booking-calendar",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

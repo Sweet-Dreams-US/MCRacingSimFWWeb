@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 // vi.mock calls below are hoisted above this import by Vitest.
-import { checkSeatsBeforeCardSave, finalizeConfirmedBooking, SLOT_TAKEN_MESSAGE } from '../booking'
+import {
+  checkSeatsBeforeCardSave,
+  finalizeConfirmedBooking,
+  SLOT_TAKEN_MESSAGE,
+  createInviteBooking,
+  describeSeatConflicts,
+  AvailabilityBlockedError,
+} from '../booking'
 
 // The 2026-10-10 double booking: Bethany and Andrew each booked 2 racers at
 // 5pm (3 rigs). Both started checkout while the other was still typing a card,
@@ -117,6 +124,7 @@ function booking(over: Partial<Row>): Row {
     source: 'online',
     session_date: '2026-10-10',
     start_time: '17:00:00',
+    end_time: '18:00:00',
     duration_hours: 1,
     racer_count: 2,
     customer_id: 'cust-1',
@@ -214,5 +222,72 @@ describe('finalizeConfirmedBooking (runs when the card lands at Stripe)', () => 
     spy.mockRestore()
     expect(db.bookings[0].status).toBe('confirmed')
     expect(sendBookingEmails).toHaveBeenCalledWith('ME')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Staff booking form: Mark could not book 1 racer at 11pm on 2026-10-10 and the
+// error didn't say why. Bryce had all 3 sims from 11:30pm. Now the error names
+// who's in the way, and staff can press "Book anyway".
+// ---------------------------------------------------------------------------
+describe('staff booking on a full slot', () => {
+  const tonight = () => [
+    booking({ id: 'MC-WALKIN1010-2', source: 'admin', status: 'confirmed', start_time: '21:30:00', end_time: '22:30:00', racer_count: 1, customer: null }),
+    booking({
+      id: 'MC-BRYCE1010',
+      status: 'confirmed',
+      start_time: '23:30:00',
+      end_time: '01:30:00',
+      duration_hours: 2,
+      racer_count: 3,
+      customer: { first_name: 'Bryce', last_name: 'Miller' },
+    }),
+  ]
+
+  it('names exactly the booking in the way (not the 9:30 walk-in that already ended)', async () => {
+    db.bookings = tonight()
+    const err = await createInviteBooking({ sessionDate: '2026-10-10', startTime: '23:00', durationHours: 1, racerCount: 1 }).catch(
+      (e) => e
+    )
+    expect(err).toBeInstanceOf(AvailabilityBlockedError)
+    expect(err.message).toContain('Already booked: Bryce M. (3 racers, 11:30pm–1:30am)')
+    expect(err.conflicts.map((c: { bookingId: string }) => c.bookingId)).toEqual(['MC-BRYCE1010'])
+  })
+
+  it('a half hour before Bryce still fits', async () => {
+    db.bookings = tonight()
+    const err = await createInviteBooking({ sessionDate: '2026-10-10', startTime: '22:30', durationHours: 1, racerCount: 1 }).catch(
+      (e) => e
+    )
+    // 10:30-11:30pm touches Bryce's 11:30 start but doesn't overlap: no seat error.
+    expect(err).not.toBeInstanceOf(AvailabilityBlockedError)
+  })
+
+  it('"Book anyway" skips the seat check', async () => {
+    db.bookings = tonight()
+    const err = await createInviteBooking({
+      sessionDate: '2026-10-10',
+      startTime: '23:00',
+      durationHours: 1,
+      racerCount: 1,
+      allowOverbook: true,
+    }).catch((e) => e)
+    expect(err).not.toBeInstanceOf(AvailabilityBlockedError)
+  })
+
+  it('customers never see other customers\' names', async () => {
+    db.bookings = [...tonight(), booking({ id: 'ME', start_time: '23:00:00' })]
+    const r = await checkSeatsBeforeCardSave('ME')
+    expect(r.ok).toBe(false)
+    expect(JSON.stringify(r)).not.toMatch(/Bryce/)
+  })
+
+  it('formats bare slot blocks and on-the-hour times', () => {
+    expect(
+      describeSeatConflicts([
+        { bookingId: 'a', name: 'Walk-in / hold', startTime: '12:00', endTime: '13:00', racerCount: 1 },
+        { bookingId: 'b', name: 'Ann K.', startTime: '00:30', endTime: '02:00', racerCount: 2 },
+      ])
+    ).toBe('Walk-in / hold (1 racer, 12pm–1pm), Ann K. (2 racers, 12:30am–2am)')
   })
 })
