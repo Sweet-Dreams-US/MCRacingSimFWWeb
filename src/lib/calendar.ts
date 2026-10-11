@@ -446,10 +446,52 @@ export async function deleteBookingCalendarEvent(
 }
 
 export type EnsureEventOutcome =
-  | { action: 'ok'; eventId: string }
-  | { action: 'created'; eventId: string; reason: 'missing' | 'deleted_in_calendar' }
-  | { action: 'retimed'; eventId: string }
+  | { action: 'ok'; eventId: string; duplicatesRemoved: number }
+  | { action: 'created'; eventId: string; reason: 'missing' | 'deleted_in_calendar'; duplicatesRemoved: number }
+  | { action: 'adopted'; eventId: string; duplicatesRemoved: number }
+  | { action: 'retimed'; eventId: string; duplicatesRemoved: number }
   | { action: 'skipped'; reason: 'calendar_not_configured' }
+
+/**
+ * Every live event on the calendar stamped with this booking id (we set
+ * extendedProperties.private.booking_id on every event we create), oldest first.
+ */
+async function findBookingEvents(
+  calendar: calendar_v3.Calendar,
+  bookingId: string
+): Promise<calendar_v3.Schema$Event[]> {
+  const res = await calendar.events.list({
+    calendarId: getCalendarId(),
+    privateExtendedProperty: [`booking_id=${bookingId}`],
+    showDeleted: false,
+    singleEvents: true,
+    maxResults: 50,
+  })
+  return (res.data.items ?? [])
+    .filter((e) => e.id && e.status !== 'cancelled')
+    .sort((a, b) => (a.created ?? '').localeCompare(b.created ?? ''))
+}
+
+/** Delete every event for this booking except `keepId`. Returns how many were removed. */
+async function removeDuplicateEvents(
+  calendar: calendar_v3.Calendar,
+  events: calendar_v3.Schema$Event[],
+  keepId: string
+): Promise<number> {
+  let removed = 0
+  for (const e of events) {
+    if (!e.id || e.id === keepId) continue
+    try {
+      await calendar.events.delete({ calendarId: getCalendarId(), eventId: e.id, sendUpdates: 'none' })
+      removed++
+    } catch (err: unknown) {
+      const status =
+        typeof err === 'object' && err !== null && 'code' in err ? (err as { code?: number }).code : undefined
+      if (status !== 404 && status !== 410) throw err
+    }
+  }
+  return removed
+}
 
 /**
  * Make sure a booking has a calendar event with the right times. Used by the
@@ -467,11 +509,25 @@ export async function ensureBookingCalendarEvent(
   const calendar = getCalendarClient()
   if (!calendar) return { action: 'skipped', reason: 'calendar_not_configured' }
 
+  // Ask the CALENDAR, not just our database, whether this booking already has
+  // events. That makes creation idempotent per booking: a stale database read
+  // can never produce a second event, and any duplicates get cleaned up.
+  const tagged = await findBookingEvents(calendar, input.bookingId)
+
   if (!existingEventId) {
+    if (tagged.length > 0) {
+      const keep = tagged[0].id as string
+      const duplicatesRemoved = await removeDuplicateEvents(calendar, tagged, keep)
+      return { action: 'adopted', eventId: keep, duplicatesRemoved }
+    }
     const id = await createBookingCalendarEvent(input)
     if (!id) throw new Error('Calendar insert returned no event id')
-    return { action: 'created', eventId: id, reason: 'missing' }
+    return { action: 'created', eventId: id, reason: 'missing', duplicatesRemoved: 0 }
   }
+
+  const duplicatesRemoved = tagged.some((e) => e.id === existingEventId)
+    ? await removeDuplicateEvents(calendar, tagged, existingEventId)
+    : 0
 
   let current: calendar_v3.Schema$Event | null = null
   try {
@@ -489,9 +545,16 @@ export async function ensureBookingCalendarEvent(
   }
 
   if (!current || current.status === 'cancelled') {
+    // Our saved id is gone. Reuse another tagged event if one exists before
+    // creating a fresh one.
+    const others = tagged.filter((e) => e.id !== existingEventId)
+    if (others.length > 0) {
+      const keep = others[0].id as string
+      return { action: 'adopted', eventId: keep, duplicatesRemoved: await removeDuplicateEvents(calendar, others, keep) }
+    }
     const id = await createBookingCalendarEvent(input)
     if (!id) throw new Error('Calendar insert returned no event id')
-    return { action: 'created', eventId: id, reason: 'deleted_in_calendar' }
+    return { action: 'created', eventId: id, reason: 'deleted_in_calendar', duplicatesRemoved }
   }
 
   const want = bookingEventTimes(input.sessionDate, input.startTime, input.durationHours)
@@ -501,7 +564,7 @@ export async function ensureBookingCalendarEvent(
     minute(current.start?.dateTime) === minute(want.start.dateTime) &&
     minute(current.end?.dateTime) === minute(want.end.dateTime)
   ) {
-    return { action: 'ok', eventId: existingEventId }
+    return { action: 'ok', eventId: existingEventId, duplicatesRemoved }
   }
 
   await calendar.events.patch({
@@ -509,5 +572,5 @@ export async function ensureBookingCalendarEvent(
     eventId: existingEventId,
     requestBody: { start: want.start, end: want.end },
   })
-  return { action: 'retimed', eventId: existingEventId }
+  return { action: 'retimed', eventId: existingEventId, duplicatesRemoved }
 }

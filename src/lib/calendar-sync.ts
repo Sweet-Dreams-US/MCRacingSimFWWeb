@@ -27,6 +27,10 @@ export interface CalendarSyncResult {
   created: string[]
   recreated: string[]
   retimed: string[]
+  /** Booking ids whose existing calendar event was found by tag and linked. */
+  adopted: string[]
+  /** Duplicate events deleted (more than one event for the same booking). */
+  duplicatesRemoved: number
   failed: Array<{ bookingId: string; error: string }>
   skipped: 'calendar_not_configured' | null
 }
@@ -38,7 +42,9 @@ function addDaysISO(dateStr: string, days: number): string {
 }
 
 export async function syncBookingCalendar(admin: Admin, now: Date = new Date()): Promise<CalendarSyncResult> {
-  const result: CalendarSyncResult = { checked: 0, created: [], recreated: [], retimed: [], failed: [], skipped: null }
+  const result: CalendarSyncResult = {
+    checked: 0, created: [], recreated: [], retimed: [], adopted: [], duplicatesRemoved: 0, failed: [], skipped: null,
+  }
 
   // From the current business evening (which includes tonight's after-midnight
   // tail) through the lookahead window.
@@ -86,15 +92,19 @@ export async function syncBookingCalendar(admin: Admin, now: Date = new Date()):
         result.skipped = outcome.reason
         break // no credentials: nothing below can work either
       }
-      if (outcome.action === 'created') {
-        // Only fill an EMPTY slot / replace the id we read, so a concurrent
-        // writer's newer id is never clobbered.
-        const q = admin.from('bookings').update({ google_calendar_event_id: outcome.eventId }).eq('id', b.id)
-        const { error: saveErr } = b.google_calendar_event_id
-          ? await q.eq('google_calendar_event_id', b.google_calendar_event_id)
-          : await q.is('google_calendar_event_id', null)
-        if (saveErr) throw new Error(`event created but id not saved: ${saveErr.message}`)
-        ;(outcome.reason === 'missing' ? result.created : result.recreated).push(b.id)
+      result.duplicatesRemoved += outcome.duplicatesRemoved
+      if (outcome.action === 'created' || outcome.action === 'adopted') {
+        // Link the booking to its event. Safe to write unconditionally: the
+        // calendar itself is the source of truth for "does this booking have
+        // an event" (tag lookup), so a lost write just gets re-linked next run
+        // instead of producing a duplicate.
+        const { error: saveErr } = await admin
+          .from('bookings')
+          .update({ google_calendar_event_id: outcome.eventId })
+          .eq('id', b.id)
+        if (saveErr) throw new Error(`event ${outcome.eventId} not linked: ${saveErr.message}`)
+        if (outcome.action === 'adopted') result.adopted.push(b.id)
+        else (outcome.reason === 'missing' ? result.created : result.recreated).push(b.id)
       } else if (outcome.action === 'retimed') {
         result.retimed.push(b.id)
       }

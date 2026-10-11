@@ -65,27 +65,22 @@ describe('bookingWallClockWindow', () => {
 const NOW = new Date('2026-10-11T02:10:00Z') // 10:10pm Oct 10 in Fort Wayne
 
 function fakeAdmin(rows: Array<Record<string, unknown>>) {
-  const saved: Array<{ id: unknown; eventId: unknown; guard: unknown }> = []
+  const saved: Array<{ id: unknown; eventId: unknown }> = []
   const readFilters: Record<string, unknown> = {}
   const admin = {
     saved,
     readFilters,
     from() {
       let patch: Record<string, unknown> | null = null
-      let id: unknown
       const b: Record<string, unknown> = {}
       b.select = () => b
       b.eq = (k: string, v: unknown) => {
-        if (patch && k === 'id') id = v
-        else if (patch && k === 'google_calendar_event_id') {
-          saved.push({ id, eventId: patch.google_calendar_event_id, guard: v })
+        if (patch && k === 'id') {
+          saved.push({ id: v, eventId: patch.google_calendar_event_id })
           return Promise.resolve({ error: null })
-        } else readFilters[k] = v
+        }
+        readFilters[k] = v
         return b
-      }
-      b.is = (_k: string, v: unknown) => {
-        saved.push({ id, eventId: patch!.google_calendar_event_id, guard: v })
-        return Promise.resolve({ error: null })
       }
       b.gte = (k: string, v: unknown) => ((readFilters[`${k}>=`] = v), b)
       b.lte = (k: string, v: unknown) => ((readFilters[`${k}<=`] = v), b)
@@ -120,7 +115,7 @@ beforeEach(() => ensureBookingCalendarEvent.mockReset())
 
 describe('syncBookingCalendar', () => {
   it("puts Bryce's missing booking on the calendar and saves the event id", async () => {
-    ensureBookingCalendarEvent.mockResolvedValue({ action: 'created', eventId: 'evt_new', reason: 'missing' })
+    ensureBookingCalendarEvent.mockResolvedValue({ action: 'created', eventId: 'evt_new', reason: 'missing', duplicatesRemoved: 0 })
     const admin = fakeAdmin([row({ id: 'MC-BRYCE1010' })])
     const r = await syncBookingCalendar(admin as never, NOW)
 
@@ -132,12 +127,11 @@ describe('syncBookingCalendar', () => {
       startTime: '23:30:00',
       durationHours: 2,
     }))
-    // Saved only into an empty slot, so a concurrent writer is never clobbered.
-    expect(admin.saved).toEqual([{ id: 'MC-BRYCE1010', eventId: 'evt_new', guard: null }])
+    expect(admin.saved).toEqual([{ id: 'MC-BRYCE1010', eventId: 'evt_new' }])
   })
 
   it('only looks at confirmed bookings from tonight onward', async () => {
-    ensureBookingCalendarEvent.mockResolvedValue({ action: 'ok', eventId: 'e' })
+    ensureBookingCalendarEvent.mockResolvedValue({ action: 'ok', eventId: 'e', duplicatesRemoved: 0 })
     const admin = fakeAdmin([])
     await syncBookingCalendar(admin as never, NOW)
     expect(admin.readFilters).toMatchObject({ status: 'confirmed', 'session_date>=': '2026-10-10' })
@@ -151,7 +145,7 @@ describe('syncBookingCalendar', () => {
   })
 
   it('names a booking with no customer "Walk-in"', async () => {
-    ensureBookingCalendarEvent.mockResolvedValue({ action: 'ok', eventId: 'e' })
+    ensureBookingCalendarEvent.mockResolvedValue({ action: 'ok', eventId: 'e', duplicatesRemoved: 0 })
     await syncBookingCalendar(fakeAdmin([row({ id: 'HOLD', customer: null, google_calendar_event_id: 'e' })]) as never, NOW)
     expect(ensureBookingCalendarEvent.mock.calls[0][1].customerName).toBe('Walk-in')
   })
@@ -159,7 +153,7 @@ describe('syncBookingCalendar', () => {
   it('one failure does not stop the rest, and is reported', async () => {
     ensureBookingCalendarEvent
       .mockRejectedValueOnce(new Error('Google 500'))
-      .mockResolvedValueOnce({ action: 'retimed', eventId: 'e2' })
+      .mockResolvedValueOnce({ action: 'retimed', eventId: 'e2', duplicatesRemoved: 0 })
     const r = await syncBookingCalendar(
       fakeAdmin([row({ id: 'A', google_calendar_event_id: 'e1' }), row({ id: 'B', google_calendar_event_id: 'e2' })]) as never,
       NOW
@@ -169,10 +163,22 @@ describe('syncBookingCalendar', () => {
   })
 
   it('replaces the id of an event someone deleted in Google Calendar', async () => {
-    ensureBookingCalendarEvent.mockResolvedValue({ action: 'created', eventId: 'evt_back', reason: 'deleted_in_calendar' })
+    ensureBookingCalendarEvent.mockResolvedValue({ action: 'created', eventId: 'evt_back', reason: 'deleted_in_calendar', duplicatesRemoved: 0 })
     const admin = fakeAdmin([row({ id: 'GONE', google_calendar_event_id: 'evt_old' })])
     const r = await syncBookingCalendar(admin as never, NOW)
     expect(r.recreated).toEqual(['GONE'])
-    expect(admin.saved).toEqual([{ id: 'GONE', eventId: 'evt_back', guard: 'evt_old' }])
+    expect(admin.saved).toEqual([{ id: 'GONE', eventId: 'evt_back' }])
+  })
+})
+
+describe('syncBookingCalendar — duplicates', () => {
+  it('links an adopted event and reports removed duplicates', async () => {
+    ensureBookingCalendarEvent.mockResolvedValue({ action: 'adopted', eventId: 'evt_first', duplicatesRemoved: 4 })
+    const admin = fakeAdmin([row({ id: 'MC-BRYCE1010' })])
+    const r = await syncBookingCalendar(admin as never, NOW)
+    expect(r.adopted).toEqual(['MC-BRYCE1010'])
+    expect(r.created).toEqual([])
+    expect(r.duplicatesRemoved).toBe(4)
+    expect(admin.saved).toEqual([{ id: 'MC-BRYCE1010', eventId: 'evt_first' }])
   })
 })

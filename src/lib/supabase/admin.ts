@@ -31,6 +31,12 @@ export function createAdminClient(): SupabaseClient<Database> {
       autoRefreshToken: false,
       persistSession: false,
     },
+    // Never let Next.js's fetch cache answer a database read. A cached GET
+    // made the calendar sync see the same stale "no event yet" row every
+    // 15 minutes and create a new Google event each time (2026-10-10).
+    global: {
+      fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }),
+    },
   })
 
   return cached
