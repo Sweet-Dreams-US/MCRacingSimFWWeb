@@ -1,23 +1,19 @@
 {
   "crons": [
     {
-      "path": "/api/cron/send-reminders",
-      "schedule": "0 10 * * *"
-    },
-    {
-      "path": "/api/cron/send-booking-reminders",
+      "path": "/api/cron/send-booking-reminders/",
       "schedule": "0 15 * * *"
     },
     {
-      "path": "/api/cron/complete-booking-reminders",
+      "path": "/api/cron/complete-booking-reminders/",
       "schedule": "*/15 * * * *"
     },
     {
-      "path": "/api/cron/refresh-marketing-payouts",
+      "path": "/api/cron/refresh-marketing-payouts/",
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/cron/sync-booking-calendar",
+      "path": "/api/cron/sync-booking-calendar/",
       "schedule": "*/15 * * * *"
     }
   ]
