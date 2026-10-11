@@ -18,6 +18,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // PAUSED 2026-10-10 23:48: each run was re-creating Bryce's event (stale
+  // cached read), firing Mark's reminders every 15 min. Re-enabled once the
+  // read is uncached and creation is idempotent per booking.
+  if (process.env.CALENDAR_SYNC_ENABLED !== 'true') {
+    return NextResponse.json({ ok: true, paused: true })
+  }
+
   try {
     const result = await syncBookingCalendar(createAdminClient())
     if (result.created.length || result.recreated.length || result.retimed.length || result.failed.length) {
