@@ -2,10 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useHasBlog } from './useHasBlog'
 
 export default function Footer() {
   const currentYear = new Date().getFullYear()
   const pathname = usePathname()
+  // The Blog link shows only once at least one post has been released.
+  const hasBlog = useHasBlog()
 
   // Admin panel renders its own chrome — hide the public footer on /admin/*.
   if (pathname?.startsWith('/admin')) {
@@ -52,7 +55,7 @@ export default function Footer() {
                 { href: '/pit-lane', label: 'Parties' },
                 { href: '/contact', label: 'Contact' },
                 { href: '/location', label: 'The Paddock' },
-                { href: '/blog', label: 'Pit Wall (Blog)' },
+                ...(hasBlog ? [{ href: '/blog', label: 'Pit Wall (Blog)' }] : []),
                 { href: '/booking-lookup', label: 'Find My Booking' },
               ].map((link) => (
                 <li key={link.href}>

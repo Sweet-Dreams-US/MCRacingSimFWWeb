@@ -314,19 +314,22 @@ body {
   background: var(--apex-red);
 }
 
-/* Blog content styles */
+/* Blog content styles (post body on /blog/<slug>) */
 .blog-content h2 {
   font-family: 'Oswald', sans-serif;
   font-weight: 700;
   font-style: italic;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  font-size: 1.75rem;
+  font-size: clamp(1.35rem, 5vw, 1.75rem);
+  line-height: 1.2;
   color: var(--grid-white);
   margin-top: 2.5rem;
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
   border-bottom: 2px solid var(--apex-red);
+  /* Clears the fixed navigation when a contents link jumps here. */
+  scroll-margin-top: 6rem;
 }
 
 .blog-content h3 {
@@ -336,6 +339,7 @@ body {
   color: var(--telemetry-cyan);
   margin-top: 1.75rem;
   margin-bottom: 0.75rem;
+  scroll-margin-top: 6rem;
 }
 
 .blog-content p {
@@ -382,77 +386,130 @@ body {
   color: var(--grid-white);
 }
 
-.blog-content .brand-tip {
-  background: rgba(0, 174, 239, 0.08);
-  border-left: 4px solid var(--telemetry-cyan);
-  padding: 1.25rem 1.5rem;
-  margin: 2rem 0;
-  font-family: 'JetBrains Mono', monospace;
+.blog-content blockquote {
+  border-left: 3px solid var(--apex-red);
+  padding-left: 1rem;
+  margin: 0 0 1.25rem;
+}
+
+.blog-content img {
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.blog-content table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  margin-bottom: 1.25rem;
+  border-collapse: collapse;
   font-size: 0.85rem;
-  line-height: 1.7;
+}
+
+.blog-content th,
+.blog-content td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
   color: #CCCCCC;
 }
 
-.blog-content .brand-tip strong {
+.blog-content th {
+  color: var(--grid-white);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Callouts: :::tip and :::note blocks in a post */
+.blog-callout {
+  margin: 2rem 0;
+  padding: 1.1rem 1.25rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left-width: 4px;
+}
+
+.blog-callout-tip {
+  background: linear-gradient(135deg, rgba(230, 35, 34, 0.12), rgba(230, 35, 34, 0.04));
+  border-left-color: var(--apex-red);
+}
+
+.blog-callout-note {
+  background: rgba(0, 174, 239, 0.08);
+  border-left-color: var(--telemetry-cyan);
+}
+
+.blog-content .blog-callout-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.blog-content .blog-callout-tip .blog-callout-kicker {
+  color: var(--apex-red-glow);
+}
+
+.blog-content .blog-callout-note .blog-callout-kicker {
   color: var(--telemetry-cyan);
-  display: block;
-  margin-bottom: 0.5rem;
 }
 
-.blog-content .blog-cta {
-  background: linear-gradient(135deg, rgba(230, 35, 34, 0.1), rgba(230, 35, 34, 0.05));
-  border: 1px solid rgba(230, 35, 34, 0.3);
-  padding: 2rem;
-  margin: 2.5rem 0;
-  text-align: center;
-}
-
-.blog-content .blog-cta h3 {
+.blog-content .blog-callout-title {
   font-family: 'Oswald', sans-serif;
   font-weight: 700;
   font-style: italic;
   text-transform: uppercase;
-  font-size: 1.5rem;
+  letter-spacing: 0.05em;
+  font-size: 1.15rem;
+  line-height: 1.25;
   color: var(--grid-white);
-  margin-top: 0;
+  margin-bottom: 0.6rem;
+}
+
+.blog-content .blog-callout-text p {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: #CCCCCC;
   margin-bottom: 0.75rem;
 }
 
-.blog-content .blog-cta p {
-  font-size: 0.85rem;
-  margin-bottom: 1.25rem;
-  color: #AAAAAA;
+.blog-content .blog-callout-text p:last-child {
+  margin-bottom: 0;
 }
 
-.blog-content .blog-cta .cta-button {
+.blog-callout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+/* Tip links are buttons, in the site's own primary button style. */
+.blog-content a.blog-callout-button {
   display: inline-block;
-  background: var(--apex-red);
-  color: white;
-  font-family: 'Oswald', sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 0.75rem 2rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  text-align: center;
   text-decoration: none;
-  transition: all 0.3s;
-  clip-path: polygon(0 0, 100% 0, 95% 100%, 5% 100%);
+  color: #fff;
 }
 
-.blog-content .blog-cta .cta-button:hover {
-  background: var(--apex-red-glow);
-  box-shadow: 0 4px 20px rgba(230, 35, 34, 0.5);
-  color: white;
+.blog-content a.blog-callout-button:hover {
+  color: #fff;
 }
 
-/* Reading progress bar */
-.reading-progress {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 3px;
-  background: var(--apex-red);
-  z-index: 100;
-  transition: width 0.1s linear;
+@media (max-width: 480px) {
+  .blog-callout-actions {
+    display: block;
+  }
+
+  .blog-content a.blog-callout-button {
+    display: block;
+    width: 100%;
+  }
 }
 
 /* ---------------------------------------------------------------------------

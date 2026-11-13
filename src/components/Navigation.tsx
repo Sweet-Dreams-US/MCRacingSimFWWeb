@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { useHasBlog } from './useHasBlog'
 
-const navLinks = [
+const baseNavLinks = [
   { href: '/', label: 'Home', shortLabel: 'Home' },
   { href: '/pricing', label: 'Pricing', shortLabel: 'Pricing' },
   { href: '/memberships', label: 'Memberships', shortLabel: 'Members' },
@@ -15,10 +16,22 @@ const navLinks = [
   { href: '/contact', label: 'Contact', shortLabel: 'Contact' },
 ]
 
+// Shown only once at least one blog post has been released.
+const blogLink = { href: '/blog', label: 'Blog', shortLabel: 'Blog' }
+
+function isActiveLink(href: string, pathname: string | null) {
+  if (href === '/blog') return Boolean(pathname?.startsWith('/blog'))
+  return pathname === href
+}
+
 export default function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const pathname = usePathname()
+  const hasBlog = useHasBlog()
+  const navLinks = hasBlog
+    ? [...baseNavLinks.slice(0, -1), blogLink, baseNavLinks[baseNavLinks.length - 1]]
+    : baseNavLinks
 
   useEffect(() => {
     const handleScroll = () => {
@@ -55,17 +68,17 @@ export default function Navigation() {
         </Link>
 
         {/* Desktop Navigation */}
-        <div className="hidden lg:flex items-center gap-8">
+        <div className="hidden lg:flex items-center gap-5 xl:gap-8">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               className={`relative telemetry-text text-sm uppercase tracking-widest transition-colors duration-300 hover:text-apex-red ${
-                pathname === link.href ? 'text-apex-red' : 'text-grid-white'
+                isActiveLink(link.href, pathname) ? 'text-apex-red' : 'text-grid-white'
               }`}
             >
               {link.label}
-              {pathname === link.href && (
+              {isActiveLink(link.href, pathname) && (
                 <span className="absolute -bottom-2 left-0 right-0 h-0.5 bg-apex-red"></span>
               )}
             </Link>
@@ -114,7 +127,7 @@ export default function Navigation() {
               href={link.href}
               onClick={() => setIsMobileMenuOpen(false)}
               className={`racing-headline text-2xl transition-colors ${
-                pathname === link.href ? 'text-apex-red' : 'text-grid-white'
+                isActiveLink(link.href, pathname) ? 'text-apex-red' : 'text-grid-white'
               }`}
             >
               {link.label}
